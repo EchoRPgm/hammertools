@@ -81,8 +81,11 @@ def build():
     v.create_ent("ht_rope", origin="-1400 800 400", targetname="cabo1", slack="40")            # cabo pendurado entre 3 pontos
     v.create_ent("ht_rope_node", origin="-900 1000 440", targetname="cabo1", order="1")
     v.create_ent("ht_rope_end", origin="-400 1300 400", targetname="cabo1")
-    v.create_ent("ht_rope", origin="200 -1400 0", targetname="trilho1", kind="rail", train="1", material=mat("trilho1"))            # trilho reto no chão
-    v.create_ent("ht_rope_end", origin="1200 -1400 0", targetname="trilho1")
+    # circuito elevado de trem dando a volta na sala (z=300), automático
+    v.create_ent("ht_rope", origin="-1400 -1300 300", targetname="trilho1", kind="rail", train="1", train_mode="auto", loop="1", train_speed="250", material=mat("trilho1"))
+    v.create_ent("ht_rope_node", origin="1400 -1300 300", targetname="trilho1", order="1")
+    v.create_ent("ht_rope_node", origin="1400 1300 300", targetname="trilho1", order="2")
+    v.create_ent("ht_rope_end", origin="-1400 1300 300", targetname="trilho1")
     v.create_ent("ht_terrain", origin="1024 -1536 0", targetname="terreno1", tile="512", power="3", amplitude="48", thickness="16", material=mat("terreno1"))
     v.create_ent("ht_terrain_end", origin="1536 -1024 0", targetname="terreno1")               # canto +X/-Y da sala, 512x512
     v.create_ent("ht_cubemaps", origin="-1408 -1408 96", targetname="cubemaps1", spacing="512", margin="128")

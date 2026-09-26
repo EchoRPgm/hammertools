@@ -15,8 +15,8 @@ DEFAULTS = {
     "kind": "rope", "slack": 25.0, "width": 2.0, "rope_material": "cable/cable.vmt", "subdiv": 4,
     "gauge": 64.0, "rail_size": 4.0, "tie_spacing": 48.0, "tie_size": 8.0, "tie_width": 96.0,
     "material": "dev/dev_measuregeneric01b",
-    "train": "0", "train_length": 128.0, "train_width": 80.0, "train_height": 48.0, "train_speed": 200.0,
-    "loop": "0", "material_train": "",
+    "train": "0", "train_mode": "auto", "train_length": 128.0, "train_width": 80.0, "train_height": 48.0,
+    "train_speed": 200.0, "loop": "0", "material_train": "",
 }
 
 
@@ -60,7 +60,10 @@ def _rail(vmf, group, start, path, res):
     ts, tsz, tw = _f(start, "tie_spacing"), _f(start, "tie_size"), _f(start, "tie_width")
     mat = start.get("material") or DEFAULTS["material"]
     solids = []
-    for p, q in zip(path, path[1:]):
+    segs = list(zip(path, path[1:]))
+    if start.get("loop", DEFAULTS["loop"]) == "1" and len(path) > 2:
+        segs.append((path[-1], path[0]))  # fecha o circuito
+    for p, q in segs:
         d = q - p
         L = d.mag()
         if L < 1e-6:
@@ -111,11 +114,19 @@ def _train(vmf, group, start, path, rail_top, res):
     ]
     car = [body, *walls]
     brush.place3d(car, p0, 0, yaw)
+    auto = start.get("train_mode", DEFAULTS["train_mode"]) != "manual"
+    speed = _f(start, "train_speed")
     train = ents.brush_ent(vmf, "func_tracktrain", car, targetname=name, origin=p0, target=tracks[0],
-                           speed=_f(start, "train_speed"), startspeed="0", wheels=str(L * 0.75), height="8",
-                           bank="0", dmg="0", volume="10", spawnflags="0", velocitytype="1", orientationtype="1",
+                           speed=speed, startspeed=(speed if auto else 0), wheels=str(L * 0.75), height="8",
+                           bank="0", dmg="0", volume="10", spawnflags=("2" if auto else "0"),  # 2 = No User Control
+                           velocitytype="1", orientationtype="1",
                            MoveSound="plats/train_move.wav", StopSound="plats/train_stop.wav")
     res.ents.append(train)
-    ctl = brush.box(vmf, Vec(L / 2 - 40, -W / 2 + 8, 8), Vec(L / 2 - 8, W / 2 - 8, H), "tools/toolstrigger")
-    brush.place3d([ctl], p0, 0, yaw)
-    res.ents.append(ents.brush_ent(vmf, "func_traincontrols", [ctl], target=name, parentname=name, origin=p0))
+    if auto:
+        la = vmf.create_ent("logic_auto", origin=p0 + Vec(0, 0, 64), targetname=f"{name}_auto", spawnflags="1")
+        ents.out(la, "OnMapSpawn", name, "StartForward", delay=0.5)
+        res.ents.append(la)
+    else:
+        ctl = brush.box(vmf, Vec(L / 2 - 40, -W / 2 + 8, 8), Vec(L / 2 - 8, W / 2 - 8, H), "tools/toolstrigger")
+        brush.place3d([ctl], p0, 0, yaw)
+        res.ents.append(ents.brush_ent(vmf, "func_traincontrols", [ctl], target=name, parentname=name, origin=p0))

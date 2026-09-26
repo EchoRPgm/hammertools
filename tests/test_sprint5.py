@@ -112,11 +112,13 @@ def test_zone_clip_and_nav(room, tmp_path):
 
 
 def test_rail_with_train(room, tmp_path):
-    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", train="1", loop="1", tie_spacing="64")
+    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", train="1", train_mode="manual", loop="1", tie_spacing="64")
     room.create_ent("ht_rope_node", origin="256 0 0", targetname="tr", order="1")
     room.create_ent("ht_rope_end", origin="256 256 0", targetname="tr")
     built, n, warnings = _rt(room, tmp_path)
     assert warnings == []
+    rails = [s for s in gen_solids(built) if max(s.get_bbox()[1].x - s.get_bbox()[0].x, s.get_bbox()[1].y - s.get_bbox()[0].y) > 200]
+    assert len(rails) == 6  # 3 trechos (o loop fecha o último) x 2 trilhos
     pts = {e["targetname"]: e for e in _ents(built, "path_track")}
     assert set(pts) == {"tr_t0", "tr_t1", "tr_t2"}
     assert pts["tr_t0"]["target"] == "tr_t1" and pts["tr_t1"]["target"] == "tr_t2" and pts["tr_t2"]["target"] == "tr_t0"  # loop
@@ -125,3 +127,16 @@ def test_rail_with_train(room, tmp_path):
     assert train.is_brush() and len(train.solids) == 5 and train["target"] == "tr_t0" and train["targetname"] == "tr"
     ctl = _ents(built, "func_traincontrols")[0]
     assert ctl.is_brush() and ctl["target"] == "tr" and ctl["parentname"] == "tr"
+
+
+def test_rail_train_auto(room, tmp_path):
+    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", train="1", loop="1", train_speed="150")
+    room.create_ent("ht_rope_node", origin="512 0 0", targetname="tr", order="1")
+    room.create_ent("ht_rope_end", origin="512 512 0", targetname="tr")
+    built, _, warnings = _rt(room, tmp_path)
+    assert warnings == []
+    train = _ents(built, "func_tracktrain")[0]
+    assert train["spawnflags"] == "2" and train["startspeed"] == "150.0"
+    assert not _ents(built, "func_traincontrols")
+    la = _ents(built, "logic_auto")[0]
+    assert [(o.output, o.target, o.input) for o in la.outputs] == [("OnMapSpawn", "tr", "StartForward")]

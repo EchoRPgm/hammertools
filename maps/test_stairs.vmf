@@ -2,7 +2,7 @@ versioninfo
 {
 	"editorversion" "400"
 	"editorbuild" "5304"
-	"mapversion" "2"
+	"mapversion" "3"
 	"formatversion" "100"
 	"prefab" "0"
 }
@@ -21,7 +21,7 @@ world
 {
 	"id" "1"
 	"classname" "worldspawn"
-	"mapversion" "2"
+	"mapversion" "3"
 	solid
 	{
 		"id" "5"
@@ -1263,7 +1263,7 @@ entity
 {
 	"id" "19"
 	"classname" "ht_ladder_end"
-	"origin" "1408 -640 176"
+	"origin" "1408 -640 192"
 	"targetname" "ladder1"
 	editor
 	{

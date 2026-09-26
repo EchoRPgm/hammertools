@@ -90,6 +90,8 @@
 [
 	width(float) : "Largura" : "32" : "Largura do brush visual."
 	climb_offset(float) : "Distância da linha de subida à face" : "24" : "gm_construct usa 24."
+	top_offset(float) : "point1 em relação ao piso de cima" : "1" : "+1 = pés logo acima da borda; abaixo de 0 a saída de cima trava na quina."
+	bottom_offset(float) : "point0 em relação ao chão" : "-8" : ""
 	visual(choices) : "Visual" : "brush" : "" = [ "brush" : "Brush fino na parede" "none" : "Nenhum (só lógica)" ]
 	visual_depth(float) : "Profundidade do brush visual" : "4" : ""
 	material(material) : "Textura do brush visual" : "dev/dev_measuregeneric01b" : ""

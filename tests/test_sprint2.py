@@ -103,7 +103,7 @@ def test_ladder_useable_gm_construct_layout(room, tmp_path):
     assert warnings == [] and n == 1
     assert not [e for e in built.entities if e["classname"] == "func_ladder"]
     lad = next(e for e in built.entities if e["classname"] == "func_useableladder")
-    assert Vec.from_str(lad["point0"]) == Vec(76, 0, -8) and Vec.from_str(lad["point1"]) == Vec(76, 0, 120)
+    assert Vec.from_str(lad["point0"]) == Vec(76, 0, -8) and Vec.from_str(lad["point1"]) == Vec(76, 0, 129)
     assert Vec.from_str(lad["origin"]) == Vec(100, 0, 0)
     dis = sorted((Vec.from_str(e["origin"]) for e in built.entities if e["classname"] == "info_ladder_dismount"), key=lambda v: (v.z, v.x, v.y))
     assert dis == [Vec(36, 0, 0), Vec(76, -40, 0), Vec(120, 0, 129)]  # frente, lado, e em cima ALÉM da face

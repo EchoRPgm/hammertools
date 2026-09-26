@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.egg-info/
+*.pyc
+*.log
+maps/*_built.vmf
+maps/build/
+maps/leak/build/
+vm-share/*.zip
+vm-share/hammertools_pkg/
+vm-share/*.vmf
+vm-share/leak/
+hammerplusplus_gmod_build8871/

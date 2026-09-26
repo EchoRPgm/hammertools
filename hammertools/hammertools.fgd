@@ -1,0 +1,258 @@
+// hammertools: marcadores ht_* (viram geometria com `ht build`)
+// Registre como GameData extra no Hammer++ (depois do garrysmod.fgd).
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_stairs :
+	"PÉ da escada reta: nível do chão, centro da largura, borda do 1º degrau. " +
+	"Coloque um ht_stairs_end com o MESMO targetname no topo. Todos os parâmetros ficam aqui."
+[
+	width(float) : "Largura" : "64" : "Largura total da escada em unidades."
+	step_height(float) : "Altura do degrau" : "8" : "Altura alvo; o número de degraus é arredondado pra fechar a subida."
+	style(choices) : "Estilo" : "solid" : "Solid = cada degrau vai até o chão. Floating = só a laje." =
+	[
+		"solid" : "Solid"
+		"floating" : "Floating"
+	]
+	tread_thickness(float) : "Espessura da laje" : "8" : "Só para estilo Floating."
+	material(material) : "Textura" : "dev/dev_measuregeneric01b" : "Textura dos degraus."
+	material_top(material) : "Textura do topo" : "" : "Opcional: textura só da face de cima."
+	nodraw_hidden(choices) : "Nodraw nas faces escondidas" : 1 : "Faces laterais/baixo em toolsnodraw." =
+	[
+		0 : "Não"
+		1 : "Sim"
+	]
+	playerclip(choices) : "Rampa de playerclip" : 1 : "Gera uma rampa invisível (tools/toolsplayerclip) pelos narizes dos degraus, pra subida lisa sem bater em cada degrau." =
+	[
+		0 : "Não"
+		1 : "Sim"
+	]
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_stairs_end :
+	"TOPO da escada reta: nível do piso de cima, centro da largura, borda do último degrau. " +
+	"Use o mesmo targetname do ht_stairs correspondente. Não tem parâmetros."
+[
+]
+
+// ---------------------------------------------------------------- cerca modular
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_fence :
+	"INÍCIO da cerca/grade/parede modular: no chão, na linha da cerca. Coloque um ht_fence_end no fim com o mesmo targetname."
+[
+	mode(choices) : "Modo" : "brush" : "Brush = postes + painéis; Prop = repete um prop_static." =
+	[
+		"brush" : "Brush (postes + painéis)"
+		"prop" : "Prop (prop_static repetido)"
+	]
+	spacing(float) : "Espaçamento" : "64" : "Distância entre postes / props. O último painel é cortado pra fechar."
+	height(float) : "Altura do painel" : "96" : "Só modo brush."
+	thickness(float) : "Espessura do painel" : "8" : "Só modo brush."
+	post_size(float) : "Lado do poste" : "8" : "Só modo brush. 0 = sem poste."
+	post_extra(float) : "Poste acima do painel" : "8" : "Quanto o poste passa da altura do painel."
+	material(material) : "Textura do painel" : "dev/dev_measuregeneric01b" : ""
+	material_post(material) : "Textura do poste" : "" : "Vazio = mesma do painel."
+	model(studio) : "Modelo (prop)" : "models/props_c17/fence01a.mdl" : "Só modo prop."
+	prop_spacing(string) : "Espaçamento dos props" : "auto" : "Só modo prop. auto = comprimento do modelo (lido do .mdl)."
+	model_yaw(string) : "Yaw extra do modelo" : "auto" : "Só modo prop. auto = alinha o eixo longo do modelo com a linha; ou um número em graus."
+	model_z(string) : "Deslocamento Z do modelo" : "auto" : "Só modo prop. auto = apoia o modelo no chão; ou um número."
+	prop_at_end(choices) : "Prop extra no fim" : 0 : "Se o comprimento não for múltiplo do módulo, encaixa um último prop encostado no fim (sobrepõe o anterior)." = [ 0 : "Não" 1 : "Sim" ]
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_fence_end :
+	"FIM da cerca modular. Mesmo targetname do ht_fence."
+[
+]
+
+// ---------------------------------------------------------------- corrimão
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_railing :
+	"INÍCIO do corrimão: no nível do chão, NA LINHA do corrimão (ex: borda lateral da escada, no pé). " +
+	"Coloque um ht_railing_end na outra ponta (no nível do piso de lá) com o mesmo targetname. Segue a inclinação."
+[
+	height(float) : "Altura" : "40" : "Do chão até o topo da barra."
+	post_spacing(float) : "Espaçamento dos postes" : "48" : ""
+	post_size(float) : "Lado do poste" : "4" : ""
+	rail_size(float) : "Espessura da barra" : "4" : ""
+	mid_rail(choices) : "Barra do meio" : 1 : "" = [ 0 : "Não" 1 : "Sim" ]
+	material(material) : "Textura" : "dev/dev_measuregeneric01b" : ""
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_railing_end :
+	"FIM do corrimão. Mesmo targetname do ht_railing."
+[
+]
+
+// ---------------------------------------------------------------- escada de mão
+@PointClass base(Targetname, Angles) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_ladder :
+	"BASE da escada de mão: no chão, encostada na face da parede, centro da largura. " +
+	"O ângulo (yaw) aponta PRA PAREDE. Coloque um ht_ladder_end no piso de cima, na mesma posição XY, com o mesmo targetname. " +
+	"Gera um volume func_ladder (estilo CS/GMod, toolsinvisibleladder) + brush visual."
+[
+	width(float) : "Largura" : "32" : "Largura da escada (visual e volume)."
+	ladder_depth(float) : "Espessura do volume climbável" : "16" : "Da face visual pra fora."
+	overshoot(float) : "Sobra acima do topo" : "24" : "O volume passa do piso de cima pra dar pra sair."
+	visual(choices) : "Visual" : "brush" : "" = [ "brush" : "Brush fino na parede" "none" : "Nenhum (só lógica)" ]
+	visual_depth(float) : "Profundidade do brush visual" : "4" : ""
+	material(material) : "Textura do brush visual" : "dev/dev_measuregeneric01b" : ""
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_ladder_end :
+	"TOPO da escada de mão: nível do piso superior, mesma posição XY da base. Mesmo targetname do ht_ladder."
+[
+]
+
+// ---------------------------------------------------------------- arco / abóbada
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_arch :
+	"PÉ do arco: no chão, no centro da espessura. Coloque um ht_arch_end no outro pé (mesmo nível) com o mesmo targetname. " +
+	"O arco fica no plano vertical entre os dois pés."
+[
+	height(string) : "Altura" : "auto" : "Do chão ao topo do intradorso + espessura. auto = metade do vão (semicírculo)."
+	segments(integer) : "Segmentos" : 8 : "Número de brushes do arco. Mais = mais redondo, mais faces."
+	thickness(float) : "Espessura (radial)" : "16" : "Espessura da faixa do arco."
+	depth(float) : "Profundidade" : "16" : "Extrusão perpendicular ao plano do arco (grossura da parede)."
+	grid(float) : "Grid dos vértices" : "1" : "Vértices arredondados pra esse grid."
+	material(material) : "Textura" : "dev/dev_measuregeneric01b" : ""
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_arch_end :
+	"Outro PÉ do arco. Mesmo targetname do ht_arch."
+[
+]
+
+// ---------------------------------------------------------------- tubo / duto
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_pipe :
+	"INÍCIO do tubo/duto (no eixo). Coloque ht_pipe_node nos vértices intermediários (com Ordem crescente) e " +
+	"ht_pipe_end no fim, todos com o mesmo targetname. Em cada vértice entra um cotovelo curvo tangente aos dois trechos."
+[
+	radius(float) : "Raio" : "32" : "Do eixo à face plana (apótema): 32 numa seção quadrada = tubo de 64 de largura."
+	sides(choices) : "Seção" : 4 : "" = [ 4 : "Quadrada" 8 : "Octogonal" ]
+	hollow(choices) : "Oco" : 0 : "Oco = duto com paredes (dá pra andar dentro)." = [ 0 : "Sólido" 1 : "Oco" ]
+	wall(float) : "Espessura da parede" : "4" : "Só oco."
+	bend_radius(string) : "Raio da curva" : "auto" : "Raio do eixo nos cotovelos. auto = 2x o raio do tubo. Cada trecho reto precisa ter comprimento >= soma das tangentes (raio_curva * tan(ângulo/2))."
+	bend_segments(integer) : "Segmentos por 90° de curva" : 4 : "Mais = cotovelo mais redondo, mais brushes."
+	grid(float) : "Grid dos vértices" : "1" : ""
+	material(material) : "Textura" : "dev/dev_measuregeneric01b" : ""
+	material_inside(material) : "Textura interna" : "" : "Só oco. Vazio = mesma."
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_pipe_node :
+	"Vértice intermediário do tubo. Mesmo targetname do ht_pipe; a Ordem define a sequência."
+[
+	order(integer) : "Ordem" : 1 : "Posição na sequência (1, 2, 3...)."
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_pipe_end :
+	"FIM do tubo. Mesmo targetname do ht_pipe."
+[
+]
+
+// ---------------------------------------------------------------- escada em curva
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_stairs_curve :
+	"PÉ da escada em curva: chão, centro da largura. Coloque um ht_stairs_curve_ctrl (ponto de controle, define a curva) " +
+	"e um ht_stairs_curve_end no piso de cima, mesmo targetname. Degraus seguem uma bezier quadrática."
+[
+	width(float) : "Largura" : "64" : ""
+	step_height(float) : "Altura do degrau" : "8" : ""
+	style(choices) : "Estilo" : "solid" : "" = [ "solid" : "Solid" "floating" : "Floating" ]
+	tread_thickness(float) : "Espessura da laje" : "8" : "Só Floating."
+	grid(float) : "Grid dos vértices" : "1" : ""
+	material(material) : "Textura" : "dev/dev_measuregeneric01b" : ""
+	material_top(material) : "Textura do topo" : "" : ""
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_stairs_curve_ctrl :
+	"Ponto de CONTROLE da escada em curva (a curva é puxada em direção a ele). Mesmo targetname."
+[
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_stairs_curve_end :
+	"TOPO da escada em curva: nível do piso de cima, centro da largura. Mesmo targetname."
+[
+]
+
+// ---------------------------------------------------------------- porta
+@PointClass base(Targetname, Angles) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) = ht_door :
+	"PORTA completa num marcador só: origem = centro do vão no chão; o yaw aponta pra onde a porta abre (lado de fora). " +
+	"Gera folha (prop_door_rotating ou func_door), batente e, se quiser, trigger que abre/fecha sozinho."
+[
+	type(choices) : "Tipo" : "prop" : "" = [ "prop" : "prop_door_rotating (dobradiça)" "brush" : "func_door (brush deslizante)" ]
+	width(float) : "Largura do vão" : "56" : ""
+	height(float) : "Altura do vão" : "112" : ""
+	thickness(float) : "Espessura (brush)" : "8" : ""
+	frame(choices) : "Batente" : 1 : "" = [ 0 : "Não" 1 : "Sim" ]
+	frame_size(float) : "Largura do batente" : "8" : ""
+	frame_depth(float) : "Profundidade do batente" : "16" : "Espessura da parede em volta."
+	material(material) : "Textura (folha brush)" : "dev/dev_measuregeneric01b" : ""
+	material_frame(material) : "Textura do batente" : "" : "Vazio = mesma."
+	model(studio) : "Modelo (prop)" : "models/props_c17/door01_left.mdl" : ""
+	hinge(choices) : "Dobradiça" : "left" : "" = [ "left" : "Esquerda" "right" : "Direita" ]
+	model_yaw(float) : "Yaw extra do modelo" : "0" : ""
+	slide(choices) : "Deslize (brush)" : "side" : "" = [ "side" : "Pro lado" "up" : "Pra cima" ]
+	speed(float) : "Velocidade" : "100" : ""
+	wait(float) : "Tempo aberta" : "4" : "Segundos até fechar sozinha."
+	auto_open(choices) : "Abrir ao aproximar" : 0 : "trigger_multiple dos dois lados." = [ 0 : "Não" 1 : "Sim" ]
+	trigger_depth(float) : "Alcance do trigger" : "48" : "Pra cada lado."
+	locked(choices) : "Trancada" : 0 : "" = [ 0 : "Não" 1 : "Sim" ]
+]
+
+// ---------------------------------------------------------------- luzes em fila
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_lights :
+	"INÍCIO da fila de luzes (na altura onde as luzes ficam). ht_lights_end no fim, mesmo targetname."
+[
+	spacing(float) : "Espaçamento" : "128" : ""
+	kind(choices) : "Tipo" : "light_spot" : "" = [ "light_spot" : "light_spot (mira pra baixo)" "light" : "light (omni)" ]
+	brightness(string) : "Cor e brilho" : "255 244 220 200" : "R G B brilho."
+	pitch(float) : "Pitch (spot)" : "-90" : "-90 = reto pra baixo."
+	cone(float) : "Cone (spot)" : "45" : ""
+	inner_cone(float) : "Cone interno (spot)" : "30" : ""
+	light_z(float) : "Deslocamento Z da luz" : "-8" : "Abaixo da luminária."
+	with_prop(choices) : "Com luminária (prop_static)" : 0 : "" = [ 0 : "Não" 1 : "Sim" ]
+	model(studio) : "Modelo da luminária" : "models/props_c17/light_cagelight01_on.mdl" : ""
+	prop_z(float) : "Deslocamento Z da luminária" : "0" : ""
+	prop_yaw(float) : "Yaw extra da luminária" : "0" : ""
+	at_ends(choices) : "Luz nas pontas" : 1 : "Sim = em 0, N, 2N... e no fim. Não = centradas nos vãos." = [ 0 : "Não" 1 : "Sim" ]
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_lights_end :
+	"FIM da fila de luzes. Mesmo targetname."
+[
+]
+
+// ---------------------------------------------------------------- elevador
+@PointClass base(Targetname, Angles) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_elevator :
+	"ELEVADOR, andar de baixo: centro da plataforma, nível do piso. ht_elevator_end no andar de cima (mesma XY), mesmo targetname. " +
+	"Yaw = lado dos botões de chamada. Gera plataforma func_door, botão a bordo (Toggle) e botões de chamada (Open/Close)."
+[
+	width(float) : "Largura (Y)" : "128" : ""
+	depth(float) : "Profundidade (X)" : "128" : ""
+	thickness(float) : "Espessura da plataforma" : "8" : ""
+	speed(float) : "Velocidade" : "100" : ""
+	material(material) : "Textura" : "dev/dev_measuregeneric01b" : ""
+	material_button(material) : "Textura dos botões" : "dev/dev_measuregeneric01" : ""
+	button_size(float) : "Tamanho do botão" : "16" : ""
+	button_height(float) : "Altura dos botões" : "48" : ""
+	onboard_button(choices) : "Botão a bordo" : 1 : "" = [ 0 : "Não" 1 : "Sim" ]
+	call_buttons(choices) : "Botões de chamada nos andares" : 1 : "" = [ 0 : "Não" 1 : "Sim" ]
+	sound_move(sound) : "Som de movimento" : "plats/elevator_move.wav" : ""
+	sound_stop(sound) : "Som de parada" : "plats/elevator_stop.wav" : ""
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_elevator_end :
+	"Andar de CIMA do elevador (mesma XY do de baixo). Mesmo targetname."
+[
+]
+
+// ---------------------------------------------------------------- spawn room
+@PointClass base(Targetname, Angles) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_spawnroom :
+	"SPAWN ROOM: um canto do retângulo, no chão; ht_spawnroom_end no canto oposto, mesmo targetname. Yaw = direção dos spawns. " +
+	"GMod: grade de info_player_start. TF2: info_player_teamspawn + func_respawnroom (+ func_regenerate)."
+[
+	game(choices) : "Jogo" : "gmod" : "" = [ "gmod" : "Garry's Mod (info_player_start)" "tf2" : "TF2 (teamspawn + respawnroom)" ]
+	spacing(float) : "Espaçamento da grade" : "64" : ""
+	margin(float) : "Margem das bordas" : "32" : ""
+	team(choices) : "Time (TF2)" : 2 : "" = [ 2 : "RED" 3 : "BLU" ]
+	height(float) : "Altura da sala (TF2)" : "128" : ""
+	resupply(choices) : "Resupply (TF2)" : 0 : "" = [ 0 : "Não" 1 : "Sim" ]
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_spawnroom_end :
+	"Canto OPOSTO do spawn room. Mesmo targetname."
+[
+]

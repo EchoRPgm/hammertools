@@ -142,8 +142,8 @@ def _train(vmf, group, start, path, rail_top, res):
     walls = [
         brush.box(vmf, Vec(-L / 2, -W / 2, 8), Vec(-L / 2 + 8, W / 2, H), mat),               # traseira
         brush.box(vmf, Vec(L / 2 - 8, -W / 2, 8), Vec(L / 2, W / 2, H), mat),                 # frente
-        brush.box(vmf, Vec(-L / 2, -W / 2, 8), Vec(L / 2, -W / 2 + 4, H * 0.6), mat),        # mureta lateral
-        brush.box(vmf, Vec(-L / 2, W / 2 - 4, 8), Vec(L / 2, W / 2, H * 0.6), mat),
+        brush.box(vmf, Vec(-L / 2, -W / 2, 8), Vec(L / 2, -W / 2 + 4, round(H * 0.6)), mat),   # mureta lateral
+        brush.box(vmf, Vec(-L / 2, W / 2 - 4, 8), Vec(L / 2, W / 2, round(H * 0.6)), mat),
     ]
     car = [body, *walls]
     brush.place3d(car, p0, 0, yaw)

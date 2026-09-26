@@ -123,7 +123,21 @@ def park_marker(vmf: VMF, ent: Entity) -> None:
     ent.vis_shown = False
 
 
-def add_generated(vmf: VMF, group_name: str, solids: list[Solid], ents: list[Entity]) -> None:
+def _place_solids(vmf: VMF, vg_id: int, solids: list[Solid], detail: bool, group_name: str) -> None:
+    """Solids gerados: como func_detail (um por grupo, não corta visibilidade) ou brushes de mundo (selam)."""
+    if not solids:
+        return
+    if detail:
+        e = Entity(vmf, {"classname": "func_detail"}, solids=solids)
+        e.visgroup_ids.add(vg_id)
+        vmf.add_ent(e)
+    else:
+        for s in solids:
+            s.visgroup_ids.add(vg_id)
+            vmf.add_brush(s)
+
+
+def add_generated(vmf: VMF, group_name: str, solids: list[Solid], ents: list[Entity], detail: bool = True) -> None:
     """Adiciona ao mapa e marca num visgroup por grupo (ht_generated/<nome>)."""
     parent = _visgroup(vmf, GENERATED_VISGROUP, (0, 200, 255))
     child = None
@@ -134,9 +148,7 @@ def add_generated(vmf: VMF, group_name: str, solids: list[Solid], ents: list[Ent
         child = vmf.create_visgroup(group_name, (0, 200, 255))
         vmf.vis_tree.remove(child)
         parent.child_groups.append(child)
-    for s in solids:
-        s.visgroup_ids.add(child.id)
-        vmf.add_brush(s)
+    _place_solids(vmf, child.id, solids, detail, group_name)
     for e in ents:
         e.visgroup_ids.add(child.id)
         if e.map is not vmf:
@@ -172,16 +184,23 @@ def strip_visgroup(vmf: VMF, name: str) -> int:
     return n
 
 
-def add_preview(vmf: VMF, group_name: str, solids: list[Solid], ents: list[Entity]) -> None:
+def add_preview(vmf: VMF, group_name: str, solids: list[Solid], ents: list[Entity], detail: bool = True) -> None:
     """Como add_generated, mas sob ht_preview (conteúdo descartável, regenerado a cada `ht preview`)."""
     parent = _visgroup(vmf, PREVIEW_VISGROUP, (255, 0, 200))
     child = vmf.create_visgroup(group_name, (255, 0, 200))
     vmf.vis_tree.remove(child)
     parent.child_groups.append(child)
-    for s in solids:
-        s.visgroup_ids.add(child.id)
-        vmf.add_brush(s)
+    _place_solids(vmf, child.id, solids, detail, group_name)
     for e in ents:
         e.visgroup_ids.add(child.id)
         if e.map is not vmf:
             vmf.add_ent(e)
+
+
+def detail_for(group: Group, default: bool) -> bool:
+    """Keyvalue `detail` do marcador principal (1/0) sobrescreve o padrão do gerador."""
+    start = group.by_role("start")
+    val = start.get("detail", "") if start is not None else ""
+    if val in ("0", "1"):
+        return val == "1"
+    return default

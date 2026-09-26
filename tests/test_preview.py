@@ -2,6 +2,7 @@ from pathlib import Path
 
 from hammertools.cli import build, preview
 from hammertools.core import vmf as vmfio
+from conftest import gen_solids, all_solids
 
 
 def _src(room, tmp_path: Path) -> Path:
@@ -18,7 +19,7 @@ def test_preview_is_idempotent_and_keeps_markers_visible(room, tmp_path):
         n_groups, n_solids, warnings = preview(src)
         assert (n_groups, n_solids, warnings) == (1, 8, [])
         v = vmfio.load(src)
-        assert len(v.brushes) == 6 + 8              # nunca acumula
+        assert len(all_solids(v)) == 6 + 8       # nunca acumula
         assert all(not m.hidden for m in vmfio.markers(v))
         names = [vg.name for vg in v.vis_tree]
         assert names.count("ht_preview") == 1 and "ht_markers" not in names
@@ -30,10 +31,10 @@ def test_build_after_preview_has_no_duplicates(room, tmp_path):
     out = tmp_path / "m_built.vmf"
     _, n_solids, _ = build(src, out)
     b = vmfio.load(out)
-    assert n_solids == 8 and len(b.brushes) == 6 + 8
+    assert n_solids == 8 and len(all_solids(b)) == 6 + 8
     assert all(vg.name != "ht_preview" for vg in b.vis_tree)
     # o fonte continua com o preview (build não mexe nele)
-    assert len(vmfio.load(src).brushes) == 6 + 8
+    assert len(all_solids(vmfio.load(src))) == 6 + 8
 
 
 def test_preview_refuses_built(tmp_path):
@@ -46,7 +47,7 @@ def test_preview_clear(room, tmp_path):
     from hammertools.cli import clear_preview
     src = _src(room, tmp_path)
     preview(src)
-    assert clear_preview(src) == 8
+    assert clear_preview(src) == 1  # 1 func_detail com os 8 degraus
     v = vmfio.load(src)
-    assert len(v.brushes) == 6 and all(vg.name != "ht_preview" for vg in v.vis_tree)
+    assert len(all_solids(v)) == 6 and all(vg.name != "ht_preview" for vg in v.vis_tree)
     assert len(vmfio.markers(v)) == 2

@@ -5,6 +5,7 @@ from srctools import Vec
 from hammertools.cli import build
 from hammertools.core import repeat
 from hammertools.core import vmf as vmfio
+from conftest import gen_solids, all_solids
 
 
 def _rt(v, tmp_path: Path):
@@ -14,15 +15,6 @@ def _rt(v, tmp_path: Path):
     return vmfio.load(out), n_solids, warnings
 
 
-def _gen_solids(built):
-    ids = {vg.id for vg in _walk(built.vis_tree) if vg.name not in ("ht_generated", "ht_markers")}
-    return [s for s in built.brushes if s.visgroup_ids & ids]
-
-
-def _walk(groups):
-    for g in groups:
-        yield g
-        yield from _walk(g.child_groups)
 
 
 def test_repeat_helpers():
@@ -38,7 +30,7 @@ def test_fence_brush(room, tmp_path):
     built, n, warnings = _rt(room, tmp_path)
     assert warnings == []
     assert n == 5 + 3  # 5 postes (0,64,128,192,200) + 3 painéis; o resto de 8u cabe no poste final
-    gen = _gen_solids(built)
+    gen = gen_solids(built)
     lo, hi = Vec.bbox(*[p for s in gen for side in s.sides for p in side.planes])
     assert (lo.x, hi.x) == (-4, 204) and (lo.z, hi.z) == (0, 104)
     for s in gen:
@@ -89,7 +81,7 @@ def test_railing_follows_slope(room, tmp_path):
     built, n, warnings = _rt(room, tmp_path)
     assert warnings == []
     assert n == 3 + 2  # postes em 0,64,128 + barra de cima + barra do meio
-    gen = _gen_solids(built)
+    gen = gen_solids(built)
     bars = [s for s in gen if s.get_bbox()[1].x - s.get_bbox()[0].x > 100]
     assert len(bars) == 2
     top = max(bars, key=lambda s: s.get_bbox()[1].z)
@@ -116,10 +108,10 @@ def test_ladder_func_ladder_gmod(room, tmp_path):
     # visual de x=96..100; volume de 16 na frente: x=80..96, largura 32, do chão até 128+24
     assert (lo.x, hi.x, lo.y, hi.y, lo.z, hi.z) == (80, 96, -16, 16, 0, 152)
     assert all(side.mat == "tools/toolsinvisibleladder" for side in lad.solids[0].sides)
-    s = _gen_solids(built)[0]
+    s = gen_solids(built)[0]
     lo, hi = s.get_bbox()
     assert (lo.x, hi.x, lo.y, hi.y, lo.z, hi.z) == (96, 100, -16, 16, 0, 128)
-    assert len(built.brushes) == 6 + 1  # o volume da func_ladder não vai pro mundo
+    assert len(built.brushes) == 6 and len(all_solids(built)) == 6 + 1  # visual em func_detail; func_ladder fora do mundo
 
 
 def test_fence_last_panel_cut(room, tmp_path):
@@ -127,6 +119,6 @@ def test_fence_last_panel_cut(room, tmp_path):
     room.create_ent("ht_fence_end", origin="216 0 0", targetname="c")
     built, n, _ = _rt(room, tmp_path)
     assert n == 5 + 4
-    last = max(_gen_solids(built), key=lambda s: s.get_bbox()[1].x - 1000 * (s.get_bbox()[1].x - s.get_bbox()[0].x < 9))
+    last = max(gen_solids(built), key=lambda s: s.get_bbox()[1].x - 1000 * (s.get_bbox()[1].x - s.get_bbox()[0].x < 9))
     lo, hi = last.get_bbox()
     assert (lo.x, hi.x) == (196, 212)  # 192+4 .. 216-4

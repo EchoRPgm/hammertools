@@ -15,6 +15,7 @@ class Result:
     solids: list[Solid] = field(default_factory=list)
     ents: list[Entity] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    detail: bool = True  # solids viram um func_detail por grupo (não cortam visibilidade); o marcador pode forçar com detail=0/1
 
 
 Generator = Callable[[VMF, Group], Result]

@@ -4,6 +4,7 @@ from srctools import Vec
 
 from hammertools.cli import build
 from hammertools.core import vmf as vmfio
+from conftest import gen_solids, all_solids
 
 
 def _rt(v, tmp_path: Path):
@@ -34,7 +35,7 @@ def test_door_prop_with_frame_and_trigger(room, tmp_path):
     assert tr.is_brush() and ("OnStartTouch", "porta1", "Open") in _outs(tr) and ("OnEndTouchAll", "porta1", "Close") in _outs(tr)
     lo, hi = tr.solids[0].get_bbox()
     assert (lo.y, hi.y) == (256 - 48, 256 + 48) and (lo.x, hi.x) == (-44, 44) and hi.z == 112  # yaw 90: X local -> Y mundo
-    assert len(built.brushes) == 6 + 3  # solids do trigger NÃO vão pro mundo
+    assert len(built.brushes) == 6 and len(all_solids(built)) == 6 + 3  # batente em func_detail; trigger fora do mundo
 
 
 def test_door_brush_slide(room, tmp_path):

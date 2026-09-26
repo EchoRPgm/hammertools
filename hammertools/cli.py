@@ -37,7 +37,7 @@ def build(src: Path, out: Path, game: str | None = None) -> tuple[int, int, list
             continue
         res = gen(v, g)
         warnings.extend(res.warnings)
-        vmfio.add_generated(v, g.name, res.solids, res.ents)
+        vmfio.add_generated(v, g.name, res.solids, res.ents, vmfio.detail_for(g, res.detail))
         n_solids += len(res.solids)
         for e in g.ents:
             vmfio.park_marker(v, e)
@@ -62,7 +62,7 @@ def preview(src: Path, game: str | None = None) -> tuple[int, int, list[str]]:
             continue
         res = gen(v, g)
         warnings.extend(res.warnings)
-        vmfio.add_preview(v, g.name, res.solids, res.ents)
+        vmfio.add_preview(v, g.name, res.solids, res.ents, vmfio.detail_for(g, res.detail))
         n_solids += len(res.solids)
     vmfio.save(v, src)
     return len(groups), n_solids, warnings

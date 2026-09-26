@@ -147,4 +147,5 @@ def generate(vmf: VMF, group: Group) -> Result:
             for ra, rb in zip(rings, rings[1:]):
                 add_section(ra, rb)
     res.solids = solids
+    res.detail = not hollow  # duto oco é parede (sela); tubo sólido é detalhe
     return res

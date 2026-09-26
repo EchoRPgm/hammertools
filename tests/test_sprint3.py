@@ -4,6 +4,7 @@ from srctools import Vec
 
 from hammertools.cli import build
 from hammertools.core import vmf as vmfio
+from conftest import gen_solids, all_solids
 
 
 def _rt(v, tmp_path: Path):
@@ -13,15 +14,6 @@ def _rt(v, tmp_path: Path):
     return vmfio.load(out), n_solids, warnings
 
 
-def _gen(built):
-    ids = {vg.id for vg in _walk(built.vis_tree) if vg.name not in ("ht_generated", "ht_markers")}
-    return [s for s in built.brushes if s.visgroup_ids & ids]
-
-
-def _walk(groups):
-    for g in groups:
-        yield g
-        yield from _walk(g.child_groups)
 
 
 def _on_grid(solids, grid=1.0):
@@ -38,7 +30,7 @@ def test_arch_semicircle(room, tmp_path):
     room.create_ent("ht_arch_end", origin="256 0 0", targetname="a")
     built, n, warnings = _rt(room, tmp_path)
     assert warnings == [] and n == 8
-    gen = _gen(built)
+    gen = gen_solids(built)
     assert _on_grid(gen)
     # topo do arco: extradorso em z=128 (raio 128), intradorso em z=112, no meio do vão x=128
     assert _inside_any(gen, (120, 0, 118))   # dentro da faixa, perto do topo (x=128 é junta entre segmentos)
@@ -54,7 +46,7 @@ def test_arch_rotated_and_custom_height(room, tmp_path):
     room.create_ent("ht_arch_end", origin="0 256 0", targetname="a")  # ao longo de +Y
     built, n, warnings = _rt(room, tmp_path)
     assert n == 4 and warnings == []
-    gen = _gen(built)
+    gen = gen_solids(built)
     lo, hi = Vec.bbox(*[p for s in gen for side in s.sides for p in side.planes])
     assert (lo.y, hi.y, lo.z, hi.z) == (0, 256, 0, 64) and (lo.x, hi.x) == (-8, 8)
 
@@ -66,7 +58,7 @@ def test_pipe_solid_elbow(room, tmp_path):
     room.create_ent("ht_pipe_end", origin="256 256 64", targetname="p")
     built, n, warnings = _rt(room, tmp_path)
     assert warnings == [] and n == 2 + 4  # 2 retos + 4 pedaços de cotovelo
-    gen = _gen(built)
+    gen = gen_solids(built)
     assert _on_grid(gen)
     # retos encurtados pela tangente (32): reto 1 vai até x=224, reto 2 começa em y=32
     assert _inside_any(gen, (128, 0, 64)) and _inside_any(gen, (256, 128, 64))
@@ -82,7 +74,7 @@ def test_pipe_hollow_elbow_open_inside(room, tmp_path):
     room.create_ent("ht_pipe_end", origin="256 256 64", targetname="p")
     built, n, warnings = _rt(room, tmp_path)
     assert warnings == [] and n == 4 * (2 + 4)   # 4 paredes por seção
-    gen = _gen(built)
+    gen = gen_solids(built)
     assert _on_grid(gen)
     # eixo livre ao longo de todo o caminho, inclusive no meio do cotovelo (centro (192,64): eixo a 45° = (237, 19))
     for p in ((128, 0, 64), (192, 0, 64), (237, 19, 64), (256, 64, 64), (256, 128, 64)):
@@ -98,7 +90,7 @@ def test_pipe_vertical_bend_octagon(room, tmp_path):
     room.create_ent("ht_pipe_end", origin="256 0 288", targetname="p")  # sobe reto
     built, n, warnings = _rt(room, tmp_path)
     assert warnings == [] and n == 2 + 4
-    gen = _gen(built)
+    gen = gen_solids(built)
     assert _inside_any(gen, (128, 0, 32)) and _inside_any(gen, (256, 0, 200))
     # centro do arco (208, 0, 80); ponto do eixo a 45°: (208+48*.707, 0, 80-48*.707) = (242, 0, 46)
     assert _inside_any(gen, (242, 0, 46))
@@ -120,7 +112,7 @@ def test_stairs_curve_quarter_turn(room, tmp_path):
     room.create_ent("ht_stairs_curve_end", origin="256 256 128", targetname="c")
     built, n, warnings = _rt(room, tmp_path)
     assert warnings == [] and n == 16
-    gen = _gen(built)
+    gen = gen_solids(built)
     assert _on_grid(gen)
     zs = sorted(round(s.get_bbox()[1].z) for s in gen)
     assert zs == [8 * (i + 1) for i in range(16)]
@@ -138,7 +130,7 @@ def test_stairs_curve_floating(room, tmp_path):
     room.create_ent("ht_stairs_curve_end", origin="128 128 64", targetname="c")
     built, n, _ = _rt(room, tmp_path)
     assert n == 8
-    assert all(round(s.get_bbox()[1].z - s.get_bbox()[0].z) == 4 for s in _gen(built))
+    assert all(round(s.get_bbox()[1].z - s.get_bbox()[0].z) == 4 for s in gen_solids(built))
 
 
 def test_generated_faces_have_valid_texture_axes(room, tmp_path):
@@ -151,7 +143,7 @@ def test_generated_faces_have_valid_texture_axes(room, tmp_path):
     room.create_ent("ht_stairs", origin="0 -512 0", targetname="s")
     room.create_ent("ht_stairs_end", origin="128 -512 64", targetname="s")
     built, _, _ = _rt(room, tmp_path)
-    for s in _gen(built):
+    for s in gen_solids(built):
         n = s.sides[0].normal()
         for side in s.sides:
             n = side.normal()
@@ -166,7 +158,7 @@ def test_hollow_walls_are_bounded(room, tmp_path):
     room.create_ent("ht_pipe_node", origin="256 0 64", targetname="p", order="1")
     room.create_ent("ht_pipe_end", origin="256 256 64", targetname="p")
     built, _, _ = _rt(room, tmp_path)
-    for s in _gen(built):
+    for s in gen_solids(built):
         lo, hi = s.get_bbox()
         assert all(abs(c) < 2000 for c in (*lo, *hi)), (s.id, lo, hi)
         assert hi.x - lo.x < 400 and hi.y - lo.y < 400 and hi.z - lo.z < 100

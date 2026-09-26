@@ -590,6 +590,7 @@ entity
 {
 	"id" "4"
 	"classname" "ht_stairs"
+	"detail" "0"
 	"origin" "0 0 0"
 	"step_height" "8"
 	"targetname" "e"

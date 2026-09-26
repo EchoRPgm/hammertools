@@ -88,7 +88,7 @@ def map_stairs_as_floor():
                  ((-256 - T, -128 - T, 384), (512 + T, 128 + T, 384 + T))):
         box(v, a, b)
     v.create_ent("info_player_start", origin="-128 0 8")
-    v.create_ent("ht_stairs", origin="0 0 0", targetname="e", width="256", step_height="8")   # 16 degraus de 8x8
+    v.create_ent("ht_stairs", origin="0 0 0", targetname="e", width="256", step_height="8", detail="0")   # 16 degraus 8x8, parede do mapa
     v.create_ent("ht_stairs_end", origin="128 0 128", targetname="e")
     return v
 
@@ -104,7 +104,7 @@ def map_arch_in_wall():
     room(v, (16, -256, 0), (512, 256, 256), hole=("x-", (-span / 2, span / 2), (0, 256)))
     v.create_ent("info_player_start", origin="-256 0 8")
     # arco na divisória: profundidade 16 (= espessura x 0..16), altura 128, espessura radial 16
-    v.create_ent("ht_arch", origin="8 -128 0", targetname="arco", height=str(H), segments="8", thickness="16", depth="16")
+    v.create_ent("ht_arch", origin="8 -128 0", targetname="arco", height=str(H), segments="8", thickness="16", depth="16", detail="0")
     v.create_ent("ht_arch_end", origin="8 128 0", targetname="arco")
     # parede em volta do arco: laje acima (z 128..256) + laterais fora do vão já são as paredes das salas;
     # sobra o espaço entre o extradorso e a laje reta: preenche com uma laje que desce até z=128-? Não:

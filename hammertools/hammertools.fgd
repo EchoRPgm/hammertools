@@ -25,6 +25,7 @@
 		0 : "Não"
 		1 : "Sim"
 	]
+	detail(choices) : "func_detail" : 1 : "1 = os brushes gerados viram func_detail (não cortam visibilidade, vvis rápido). 0 = brushes de mundo (use quando a peça É parede do mapa)." = [ 0 : "Mundo (sela)" 1 : "func_detail" ]
 ]
 
 @PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_stairs_end :
@@ -54,6 +55,7 @@
 	model_yaw(string) : "Yaw extra do modelo" : "auto" : "Só modo prop. auto = alinha o eixo longo do modelo com a linha; ou um número em graus."
 	model_z(string) : "Deslocamento Z do modelo" : "auto" : "Só modo prop. auto = apoia o modelo no chão; ou um número."
 	prop_at_end(choices) : "Prop extra no fim" : 0 : "Se o comprimento não for múltiplo do módulo, encaixa um último prop encostado no fim (sobrepõe o anterior)." = [ 0 : "Não" 1 : "Sim" ]
+	detail(choices) : "func_detail" : 1 : "1 = os brushes gerados viram func_detail (não cortam visibilidade, vvis rápido). 0 = brushes de mundo (use quando a peça É parede do mapa)." = [ 0 : "Mundo (sela)" 1 : "func_detail" ]
 ]
 
 @PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_fence_end :
@@ -72,6 +74,7 @@
 	rail_size(float) : "Espessura da barra" : "4" : ""
 	mid_rail(choices) : "Barra do meio" : 1 : "" = [ 0 : "Não" 1 : "Sim" ]
 	material(material) : "Textura" : "dev/dev_measuregeneric01b" : ""
+	detail(choices) : "func_detail" : 1 : "1 = os brushes gerados viram func_detail (não cortam visibilidade, vvis rápido). 0 = brushes de mundo (use quando a peça É parede do mapa)." = [ 0 : "Mundo (sela)" 1 : "func_detail" ]
 ]
 
 @PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_railing_end :
@@ -91,6 +94,7 @@
 	visual(choices) : "Visual" : "brush" : "" = [ "brush" : "Brush fino na parede" "none" : "Nenhum (só lógica)" ]
 	visual_depth(float) : "Profundidade do brush visual" : "4" : ""
 	material(material) : "Textura do brush visual" : "dev/dev_measuregeneric01b" : ""
+	detail(choices) : "func_detail" : 1 : "1 = os brushes gerados viram func_detail (não cortam visibilidade, vvis rápido). 0 = brushes de mundo (use quando a peça É parede do mapa)." = [ 0 : "Mundo (sela)" 1 : "func_detail" ]
 ]
 
 @PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_ladder_end :
@@ -109,6 +113,7 @@
 	depth(float) : "Profundidade" : "16" : "Extrusão perpendicular ao plano do arco (grossura da parede)."
 	grid(float) : "Grid dos vértices" : "1" : "Vértices arredondados pra esse grid."
 	material(material) : "Textura" : "dev/dev_measuregeneric01b" : ""
+	detail(choices) : "func_detail" : 1 : "1 = os brushes gerados viram func_detail (não cortam visibilidade, vvis rápido). 0 = brushes de mundo (use quando a peça É parede do mapa)." = [ 0 : "Mundo (sela)" 1 : "func_detail" ]
 ]
 
 @PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_arch_end :
@@ -130,6 +135,7 @@
 	grid(float) : "Grid dos vértices" : "1" : ""
 	material(material) : "Textura" : "dev/dev_measuregeneric01b" : ""
 	material_inside(material) : "Textura interna" : "" : "Só oco. Vazio = mesma."
+	detail(choices) : "func_detail" : 1 : "1 = brushes gerados viram func_detail. 0 = brushes de mundo. Padrão real: duto OCO é mundo (parede), tubo sólido é func_detail; este campo força." = [ 0 : "Mundo (sela)" 1 : "func_detail" ]
 ]
 
 @PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_pipe_node :
@@ -155,6 +161,7 @@
 	grid(float) : "Grid dos vértices" : "1" : ""
 	material(material) : "Textura" : "dev/dev_measuregeneric01b" : ""
 	material_top(material) : "Textura do topo" : "" : ""
+	detail(choices) : "func_detail" : 1 : "1 = os brushes gerados viram func_detail (não cortam visibilidade, vvis rápido). 0 = brushes de mundo (use quando a peça É parede do mapa)." = [ 0 : "Mundo (sela)" 1 : "func_detail" ]
 ]
 
 @PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_stairs_curve_ctrl :
@@ -190,6 +197,7 @@
 	auto_open(choices) : "Abrir ao aproximar" : 0 : "trigger_multiple dos dois lados." = [ 0 : "Não" 1 : "Sim" ]
 	trigger_depth(float) : "Alcance do trigger" : "48" : "Pra cada lado."
 	locked(choices) : "Trancada" : 0 : "" = [ 0 : "Não" 1 : "Sim" ]
+	detail(choices) : "func_detail" : 1 : "1 = os brushes gerados viram func_detail (não cortam visibilidade, vvis rápido). 0 = brushes de mundo (use quando a peça É parede do mapa)." = [ 0 : "Mundo (sela)" 1 : "func_detail" ]
 ]
 
 // ---------------------------------------------------------------- luzes em fila
@@ -232,6 +240,7 @@
 	call_buttons(choices) : "Botões de chamada nos andares" : 1 : "" = [ 0 : "Não" 1 : "Sim" ]
 	sound_move(sound) : "Som de movimento" : "plats/elevator_move.wav" : ""
 	sound_stop(sound) : "Som de parada" : "plats/elevator_stop.wav" : ""
+	detail(choices) : "func_detail" : 1 : "1 = os brushes gerados viram func_detail (não cortam visibilidade, vvis rápido). 0 = brushes de mundo (use quando a peça É parede do mapa)." = [ 0 : "Mundo (sela)" 1 : "func_detail" ]
 ]
 
 @PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_elevator_end :

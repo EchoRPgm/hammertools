@@ -4,6 +4,7 @@ from srctools import Vec
 
 from hammertools.cli import build
 from hammertools.core import vmf as vmfio
+from conftest import gen_solids, all_solids
 
 
 def _add_stairs(v, a: str, b: str, name="escada1", **kv):
@@ -25,7 +26,7 @@ def test_straight_x(room, tmp_path):
     built, n_groups, n_solids, warnings = _roundtrip(room, tmp_path)
     assert n_groups == 1 and n_solids == 8
     assert warnings == []
-    gen = [s for s in built.brushes if any(vg.name == "escada1" for vg in _all_vg(built) if vg.id in s.visgroup_ids)]
+    gen = gen_solids(built)
     assert len(gen) == 8
     mins = Vec.bbox(*[p for s in gen for side in s.sides for p in side.planes])[0]
     maxs = Vec.bbox(*[p for s in gen for side in s.sides for p in side.planes])[1]
@@ -49,7 +50,7 @@ def test_rotated_90_stays_on_grid(room, tmp_path):
     _add_stairs(room, "0 0 0", "0 128 64")  # sobe no +Y
     built, _, n_solids, warnings = _roundtrip(room, tmp_path)
     assert n_solids == 8 and warnings == []
-    for s in built.brushes:
+    for s in all_solids(built):
         for side in s.sides:
             for p in side.planes:
                 assert all(abs(c - round(c)) < 1e-6 for c in (p.x, p.y, p.z))
@@ -65,7 +66,7 @@ def test_floating_style(room, tmp_path):
     _add_stairs(room, "0 0 0", "128 0 64", style="floating", tread_thickness="4")
     built, _, n_solids, _ = _roundtrip(room, tmp_path)
     assert n_solids == 8
-    gen = [s for s in built.brushes if s.get_bbox()[1].z <= 64 and s.get_bbox()[0].z >= 0 and s.get_bbox()[1].x <= 128 and s.get_bbox()[0].x >= 0 and s.get_bbox()[1].y <= 32]
+    gen = [s for s in all_solids(built) if s.get_bbox()[1].z <= 64 and s.get_bbox()[0].z >= 0 and s.get_bbox()[1].x <= 128 and s.get_bbox()[0].x >= 0 and s.get_bbox()[1].y <= 32]
     last = max(gen, key=lambda s: s.get_bbox()[1].x)
     lo, hi = last.get_bbox()
     assert (lo.z, hi.z) == (60, 64)
@@ -95,7 +96,7 @@ def _all_vg(v):
 def test_solid_nodraw_only_hidden_faces(room, tmp_path):
     _add_stairs(room, "0 0 0", "128 0 64")
     built, *_ = _roundtrip(room, tmp_path)
-    gen = [s for s in built.brushes if 0 <= s.get_bbox()[0].x and s.get_bbox()[1].x <= 128 and s.get_bbox()[1].y <= 32]
+    gen = [s for s in all_solids(built) if 0 <= s.get_bbox()[0].x and s.get_bbox()[1].x <= 128 and s.get_bbox()[1].y <= 32]
     assert len(gen) == 8
     for s in sorted(gen, key=lambda s: s.get_bbox()[0].x):
         lo, hi = s.get_bbox()
@@ -113,7 +114,7 @@ def test_solid_nodraw_only_hidden_faces(room, tmp_path):
 def test_floating_has_no_nodraw(room, tmp_path):
     _add_stairs(room, "0 0 0", "128 0 64", style="floating")
     built, *_ = _roundtrip(room, tmp_path)
-    gen = [s for s in built.brushes if 0 <= s.get_bbox()[0].x and s.get_bbox()[1].x <= 128 and s.get_bbox()[1].y <= 32]
+    gen = [s for s in all_solids(built) if 0 <= s.get_bbox()[0].x and s.get_bbox()[1].x <= 128 and s.get_bbox()[1].y <= 32]
     assert all(side.mat != "tools/toolsnodraw" for s in gen for side in s.sides)
 
 
@@ -128,7 +129,7 @@ def test_playerclip_ramp_solid(room, tmp_path):
     _add_stairs(room, "0 0 0", "128 0 64", playerclip="1")  # 8 degraus 16x8
     built, _, n_solids, warnings = _roundtrip(room, tmp_path)
     assert n_solids == 9 and warnings == []
-    clips = [s for s in built.brushes if all(side.mat == "tools/toolsplayerclip" for side in s.sides)]
+    clips = [s for s in all_solids(built) if all(side.mat == "tools/toolsplayerclip" for side in s.sides)]
     assert len(clips) == 1
     c = clips[0]
     assert len(c.sides) == 6
@@ -147,6 +148,21 @@ def test_playerclip_ramp_floating_leaves_space_below(room, tmp_path):
     _add_stairs(room, "0 0 0", "128 0 64", playerclip="1", style="floating", tread_thickness="8")
     built, _, n_solids, _ = _roundtrip(room, tmp_path)
     assert n_solids == 9
-    c = next(s for s in built.brushes if all(side.mat == "tools/toolsplayerclip" for side in s.sides))
+    c = next(s for s in all_solids(built) if all(side.mat == "tools/toolsplayerclip" for side in s.sides))
     assert c.point_inside(Vec(64, 0, 0.5 * 64 + 8 - 4))   # dentro da laje (nariz - 4)
     assert not c.point_inside(Vec(64, 0, 10))              # espaço livre embaixo da escada
+
+
+def test_generated_solids_are_func_detail_by_default(room, tmp_path):
+    _add_stairs(room, "0 0 0", "128 0 64")
+    built, *_ = _roundtrip(room, tmp_path)
+    details = [e for e in built.entities if e["classname"] == "func_detail"]
+    assert len(details) == 1 and len(details[0].solids) == 8
+    assert len(built.brushes) == 6  # só a sala sela
+
+
+def test_detail_zero_keeps_world_brushes(room, tmp_path):
+    _add_stairs(room, "0 0 0", "128 0 64", detail="0")
+    built, *_ = _roundtrip(room, tmp_path)
+    assert not [e for e in built.entities if e["classname"] == "func_detail"]
+    assert len(built.brushes) == 6 + 8

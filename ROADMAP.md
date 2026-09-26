@@ -49,7 +49,7 @@ Legenda: ✅ pronto e verificado na VM · 🔧 implementado, em validação · �
 | ✅ | Outputs mirando targetname inexistente (case-insensitive, como o Source) |
 | ✅ | Brushes fora do grid (mundo e entidades, um aviso por solid, displacements identificados) |
 | ⬜ | Textura inexistente (ler VPKs), `prop_static` com modelo não-static, leak provável |
-| ⬜ | Auto `func_detail` por regra de tamanho/textura (`ht detail`) |
+| ✅ | Auto `func_detail`: tudo que os geradores produzem vira um `func_detail` por marcador (keyvalue `detail=0` força brush de mundo; duto oco já é mundo por padrão). `ht detail` pra mapas prontos continua ⬜ |
 | ⬜ | Normalizador de lightmap scale por textura (`ht lightmap`) |
 | ⬜ | Renomeador por padrão com update de outputs (`ht rename`) |
 | ⬜ | Brushes duplicados/sobrepostos e `nodraw` visível |
@@ -92,6 +92,7 @@ duto quadrado atravessando a parede de duas salas com cotovelo; duto quadrado e 
 - **Preview**: `ht preview fonte.vmf`: mesma geração, dentro do fonte em `ht_preview` (regenerado a cada rodada, marcadores visíveis). `--clear` remove.
 - **ht-vbsp**: `hammertools.cli:vbsp_main`. Recebe os args do Hammer (`-game <dir> <path\file>`), limpa o preview do fonte (desligue com `HT_KEEP_PREVIEW=1`), faz o build em `build\`, chama o vbsp real (achado via `-game`, ou `HT_VBSP`) e copia `.bsp/.prt/.lin/.log` de volta pro lado do fonte.
 - **Modelos**: `core/models.py` lê bbox de `.mdl` via `srctools.game.Game(gamedir).get_filesystem()`. Precisa da pasta do jogo (`--game`, `HT_GAME`, ou o `-game` do ht-vbsp).
+- **func_detail**: `add_generated`/`add_preview` embrulham os solids do grupo num `func_detail` (visibilidade não é cortada, vvis rápido). `Result.detail` é o padrão do gerador (duto oco = False), `detail` no marcador sobrescreve. Nos testes, `conftest.all_solids`/`gen_solids` enxergam mundo + func_detail.
 - **Convenções**: unidades Hammer; vértices de geometria curva arredondados pro `grid` do marcador (padrão 1); saída sempre em arquivo novo; cada gerador tem entrada no FGD, módulo e teste.
 
 ## Notas técnicas (o que custou a descobrir)

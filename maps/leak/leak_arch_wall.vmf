@@ -1503,6 +1503,7 @@ entity
 	"id" "4"
 	"classname" "ht_arch"
 	"depth" "16"
+	"detail" "0"
 	"height" "128"
 	"origin" "8 -128 0"
 	"segments" "8"

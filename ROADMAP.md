@@ -113,7 +113,7 @@ duto quadrado atravessando a parede de duas salas com cotovelo; duto quadrado e 
 - **Windows-MCP**: processa um comando por vez e trava em comandos longos (compile, COM). Pra isso existe `~/vms/qga.sh "<powershell>" [timeout]` (QEMU guest agent; roda como SYSTEM, usar caminhos `C:\Users\Quickemu\...`). Destravar: `schtasks /End` + kill python + `schtasks /Run /TN windows-mcp-server`. `~/vms/qga-get.sh` copia arquivo da VM pro host.
 - **vvis na VM**: usar sempre `vvis -fast` na fixture; o vvis completo com os cotovelos octogonais leva dezenas de minutos em software render e dois vvis simultâneos travam a VM.
 - **Fixture**: `tools/fixture.py` gera `maps/test_stairs.vmf` (não editar na mão). Cores por status no `STATUS` do script: LARANJA (`dev/dev_measuregeneric01`) = pendente de validação no jogo, cinza claro (`dev/graygrid`) = validado; a sala é cinza escuro (`01b`). Props e texturas de ferramenta não mudam de cor. Ao validar um item, trocar pra "ok" e regenerar. `srctools` `make_hollow(p1, p2, thick)` põe as paredes POR FORA da caixa: o interior é exatamente p1..p2 (piso em p1.z). A sala antiga usava z −64 e tudo flutuava 64u.
-- **Deploy na VM**: copiar `hammertools/` + `pyproject.toml` pra `vm-share/hammertools_pkg/`, zipar (`shutil.make_archive`), servido em `http://10.0.2.2:8090`; na VM `uv tool install --force <pasta>` e copiar o FGD pra `bin\win64\hammerplusplus\`. Reiniciar o Hammer++ depois.
+- **Deploy na VM**: `tools/deploy.sh [--no-compile] [--reload]` (empacota, converte o FGD pra **cp1252**, que é o que o Hammer++ lê, instala via uv, copia FGD e fixture, compila e regenera o preview; `--reload` recarrega o mapa no GMod). O FGD no repo fica em UTF-8. Reiniciar o Hammer++ pra recarregar FGD/sequências.
 
 ## Ideias fora do roadmap
 

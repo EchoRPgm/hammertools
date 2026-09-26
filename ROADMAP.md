@@ -39,7 +39,7 @@ Legenda: ✅ pronto e verificado na VM · 🔧 implementado, em validação · �
 | ✅ | `ht_lights` + `_end` | Iluminação em fila: `light_spot` ou `light` a cada N, com luminária `prop_static` opcional |
 | ✅ | `ht_elevator` + `_end` | Elevador: plataforma `func_door` (lip negativo = curso), botão a bordo (Toggle) e de chamada por andar (Open/Close), I/O pronta |
 | ✅ | `ht_spawnroom` + `_end` | Spawn room por retângulo: grade de `info_player_start` (GMod) ou `info_player_teamspawn` + `func_respawnroom` + `func_regenerate` (TF2) |
-| 🔧 | `ht_cubemaps` + `ht build --cubemaps` | Grade de `env_cubemap` por retângulo, ou automático: um sob cada luz (sem repetir vizinhos a <128u) |
+| ✅ | `ht_cubemaps` + `ht build --cubemaps` | Grade de `env_cubemap` por retângulo, ou automático: um sob cada luz (sem repetir vizinhos a <128u) |
 | 🔧 | `ht_zone` + `_end` | Volume por retângulo+altura: playerclip, npcclip, clip, block_los, invisible ou `func_nav_blocker` |
 
 ### Fase 3 — Lint e manutenção (`ht lint`, sem marcadores)
@@ -101,6 +101,7 @@ duto quadrado atravessando a parede de duas salas com cotovelo; duto quadrado e 
 - **Normais**: `Side.normal()` aponta PRA DENTRO do solid. `PrismFace` do `make_prism`: west = face -X, east = +X, north = -Y, south = +Y. `Side.from_plane` recebe normal pra dentro e inventa pontos fora do grid; por isso geometria inclinada/curva usa `brush.from_points` com 3 pontos explícitos (winding igual ao `make_prism`: cross(p2-p1, p3-p1) pra dentro). Se `point_inside` do centro der False, o winding está invertido.
 - **Eixos de textura**: `Side(planes=...)` do srctools sai com uaxis/vaxis padrão (`[0 1 0]`/`[0 0 -1]`), degenerado em faces com normal ±Y → o engine desenha a face VERMELHA. `brush.from_points` chama `reset_uv()` em cada face. Sintoma no jogo: face vermelha lisa (não é textura faltando, que seria xadrez rosa/preto).
 - **Modelos com origem no centro**: `props_c17/door01_left` tem origem no meio da altura (z −54..54) e largura 48 (y −1..47 a partir da dobradiça); `ht_door` lê o bbox e sobe a origem (`model_z=auto`). `light_cagelight01_on` pende pra baixo da origem (z −11..2).
+- **Cubemaps na VM**: `buildcubemaps` grava as capturas no BSP (validado: 36 VTFs + VMTs "patch" dos pisos com `$envmap`), mas o GMod na VM roda em D3D por software e não desenha o reflexo; conferir visualmente fora da VM. Texturas `dev/` não têm `$envmap`: o fixture tem duas placas refletivas (`metal/citadel_tilefloor016a`, `tile/tilefloor019a`) pra isso.
 - **Trilho curvo**: offset da polilinha com miter pela BISSETRIZ exata das normais dos trechos (diferença central torce o anel na costura arco→reto); peças do trilho em grade 1/8 (grade 1 torce um trilho de 4u em curva apertada); pedaço degenerado é pulado religando no anel seguinte. Vagão nasce no trecho reto mais longo.
 - **Trem**: `func_tracktrain` precisa do spawnflag 512 (Is unblockable by player), senão para com "Blocked by player" ao encostar em alguém; automático = 512 + 2 (No User Control), `startspeed` = `speed`, `logic_auto` OnMapSpawn → StartForward.
 - **Elevador**: `func_door` spawnflags 256 (Use Opens); 1024 é Touch Opens e faz subir ao pisar. Plataforma nasce em cima do piso (z 0..t), não embutida (embutir precisaria de poço). Piso de cima = rise + t.

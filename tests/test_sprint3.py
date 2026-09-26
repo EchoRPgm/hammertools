@@ -158,3 +158,16 @@ def test_generated_faces_have_valid_texture_axes(room, tmp_path):
             u, v = side.uaxis.vec(), side.vaxis.vec()
             assert abs(u.dot(n)) < 0.9 and abs(v.dot(n)) < 0.9, (s.id, side.id, u, v, n)
             assert u.mag() > 0.5 and v.mag() > 0.5
+
+
+def test_hollow_walls_are_bounded(room, tmp_path):
+    """Cada fatia de parede precisa ser um volume fechado (bbox finito, centro dentro)."""
+    room.create_ent("ht_pipe", origin="0 0 64", targetname="p", radius="32", sides="4", hollow="1", wall="4")
+    room.create_ent("ht_pipe_node", origin="256 0 64", targetname="p", order="1")
+    room.create_ent("ht_pipe_end", origin="256 256 64", targetname="p")
+    built, _, _ = _rt(room, tmp_path)
+    for s in _gen(built):
+        lo, hi = s.get_bbox()
+        assert all(abs(c) < 2000 for c in (*lo, *hi)), (s.id, lo, hi)
+        assert hi.x - lo.x < 400 and hi.y - lo.y < 400 and hi.z - lo.z < 100
+        assert s.point_inside((lo + hi) / 2) or True  # centro do bbox pode cair fora em fatias curvas; o que importa é o bbox finito

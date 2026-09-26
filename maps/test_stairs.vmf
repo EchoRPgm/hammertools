@@ -1488,6 +1488,7 @@ entity
 	"material" "dev/dev_measuregeneric01"
 	"origin" "200 -1400 0"
 	"targetname" "trilho1"
+	"train" "1"
 	editor
 	{
 		"color" "255 255 255"
@@ -1515,7 +1516,7 @@ entity
 	"id" "44"
 	"amplitude" "48"
 	"classname" "ht_terrain"
-	"material" "dev/dev_measuregeneric01"
+	"material" "dev/graygrid"
 	"origin" "1024 -1536 0"
 	"power" "3"
 	"targetname" "terreno1"

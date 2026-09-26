@@ -109,3 +109,19 @@ def test_zone_clip_and_nav(room, tmp_path):
     lo, hi = clip.get_bbox(); assert (lo.x, hi.x, lo.y, hi.y, lo.z, hi.z) == (0, 128, 0, 96, 0, 64)
     nb = _ents(built, "func_nav_blocker")[0]
     assert nb.is_brush() and nb["targetname"] == "z2"
+
+
+def test_rail_with_train(room, tmp_path):
+    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", train="1", loop="1", tie_spacing="64")
+    room.create_ent("ht_rope_node", origin="256 0 0", targetname="tr", order="1")
+    room.create_ent("ht_rope_end", origin="256 256 0", targetname="tr")
+    built, n, warnings = _rt(room, tmp_path)
+    assert warnings == []
+    pts = {e["targetname"]: e for e in _ents(built, "path_track")}
+    assert set(pts) == {"tr_t0", "tr_t1", "tr_t2"}
+    assert pts["tr_t0"]["target"] == "tr_t1" and pts["tr_t1"]["target"] == "tr_t2" and pts["tr_t2"]["target"] == "tr_t0"  # loop
+    assert Vec.from_str(pts["tr_t0"]["origin"]) == Vec(0, 0, 12)  # topo do trilho: dormente 8 + trilho 4
+    train = _ents(built, "func_tracktrain")[0]
+    assert train.is_brush() and len(train.solids) == 5 and train["target"] == "tr_t0" and train["targetname"] == "tr"
+    ctl = _ents(built, "func_traincontrols")[0]
+    assert ctl.is_brush() and ctl["target"] == "tr" and ctl["parentname"] == "tr"

@@ -29,8 +29,8 @@ Legenda: ✅ pronto e verificado na VM · 🔧 implementado, em validação · �
 | ✅ | `ht_arch` + `_end` | Arco/abóbada: semi-elipse em N segmentos, espessura radial, profundidade; altura auto = semicírculo |
 | ✅ | `ht_pipe` + `_node` + `_end` | Tubo/duto por sequência de pontos: seção quadrada ou octogonal, sólido ou oco, cotovelos curvos tangentes em qualquer ângulo (horizontal ou vertical) |
 | ✅ | `ht_stairs_curve` + `_ctrl` + `_end` | Escada em curva: bezier quadrática em XY, degraus sólidos ou flutuantes; sem playerclip ainda |
-| 🔧 | `ht_rope` + `_node` + `_end` | Cabo (`move_rope` + `keyframe_rope` encadeados com folga) ou trilho de brush (2 trilhos + dormentes) por sequência de pontos |
-| 🔧 | `ht_terrain` + `_end` | Terreno: retângulo → tiles de displacement (power 2-4) com ruído determinístico ou heightmap PNG; bordas compartilhadas entre tiles |
+| 🔧 | `ht_rope` + `_node` + `_end` | Cabo (`move_rope` + `keyframe_rope` encadeados com folga) ou trilho de brush (2 trilhos + dormentes), opcionalmente com vagão `func_tracktrain` dirigível (`path_track` por ponto, `func_traincontrols`, loop) |
+| ✅ | `ht_terrain` + `_end` | Terreno: retângulo → tiles de displacement (power 2-4) com ruído determinístico ou heightmap PNG; bordas compartilhadas entre tiles |
 
 ### Fase 2 — Entidades e lógica
 | | Entidades | Item |

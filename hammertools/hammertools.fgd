@@ -283,6 +283,13 @@
 	tie_size(float) : "Espessura do dormente" : "8" : ""
 	tie_width(float) : "Largura do dormente" : "96" : ""
 	material(material) : "Textura (trilho)" : "dev/dev_measuregeneric01b" : ""
+	train(choices) : "Trem (trilho)" : 0 : "Gera um vagão func_tracktrain dirigível: path_track em cada ponto, func_traincontrols (E dentro do vagão, W/S pra dirigir)." = [ 0 : "Não" 1 : "Sim" ]
+	train_length(float) : "Comprimento do vagão" : "128" : ""
+	train_width(float) : "Largura do vagão" : "80" : ""
+	train_height(float) : "Altura do vagão" : "48" : ""
+	train_speed(float) : "Velocidade máxima" : "200" : ""
+	loop(choices) : "Circuito fechado" : 0 : "Último path_track volta pro primeiro." = [ 0 : "Não" 1 : "Sim" ]
+	material_train(material) : "Textura do vagão" : "" : "Vazio = mesma do trilho."
 	detail(choices) : "func_detail" : 1 : "" = [ 0 : "Mundo (sela)" 1 : "func_detail" ]
 ]
 

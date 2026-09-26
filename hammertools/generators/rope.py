@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from srctools import VMF, Vec
 
-from hammertools.core import brush, repeat
+from hammertools.core import brush, ents, repeat
 from hammertools.core.vmf import Group, origin
 from hammertools.generators import Result, register
 
@@ -15,6 +15,8 @@ DEFAULTS = {
     "kind": "rope", "slack": 25.0, "width": 2.0, "rope_material": "cable/cable.vmt", "subdiv": 4,
     "gauge": 64.0, "rail_size": 4.0, "tie_spacing": 48.0, "tie_size": 8.0, "tie_width": 96.0,
     "material": "dev/dev_measuregeneric01b",
+    "train": "0", "train_length": 128.0, "train_width": 80.0, "train_height": 48.0, "train_speed": 200.0,
+    "loop": "0", "material_train": "",
 }
 
 
@@ -77,4 +79,43 @@ def _rail(vmf, group, start, path, res):
                 side.planes = [brush.snap(pt) for pt in side.planes]
         solids.extend(seg)
     res.solids = solids
+    if start.get("train", DEFAULTS["train"]) == "1":
+        _train(vmf, group, start, path, tsz + rs, res)
     return res
+
+
+def _train(vmf, group, start, path, rail_top, res):
+    """Vagão func_tracktrain dirigível: path_track em cada ponto (na altura do topo do trilho),
+    carroceria de brush no 1º ponto, func_traincontrols parentado (E dentro do vagão = dirigir)."""
+    name = group.name
+    L, W, H = _f(start, "train_length"), _f(start, "train_width"), _f(start, "train_height")
+    mat = start.get("material_train") or start.get("material") or DEFAULTS["material"]
+    loop = start.get("loop", DEFAULTS["loop"]) == "1"
+    tracks = [f"{name}_t{i}" for i in range(len(path))]
+    for i, p in enumerate(path):
+        kv = dict(origin=p + Vec(0, 0, rail_top), targetname=tracks[i])
+        if i + 1 < len(path):
+            kv["target"] = tracks[i + 1]
+        elif loop:
+            kv["target"] = tracks[0]
+        res.ents.append(vmf.create_ent("path_track", **kv))
+    p0 = path[0] + Vec(0, 0, rail_top)
+    d = path[1] - path[0]
+    pitch, yaw = brush.direction_angles(d)
+    body = brush.box(vmf, Vec(-L / 2, -W / 2, 0), Vec(L / 2, W / 2, 8), mat)                 # chassi
+    walls = [
+        brush.box(vmf, Vec(-L / 2, -W / 2, 8), Vec(-L / 2 + 8, W / 2, H), mat),               # traseira
+        brush.box(vmf, Vec(L / 2 - 8, -W / 2, 8), Vec(L / 2, W / 2, H), mat),                 # frente
+        brush.box(vmf, Vec(-L / 2, -W / 2, 8), Vec(L / 2, -W / 2 + 4, H * 0.6), mat),        # mureta lateral
+        brush.box(vmf, Vec(-L / 2, W / 2 - 4, 8), Vec(L / 2, W / 2, H * 0.6), mat),
+    ]
+    car = [body, *walls]
+    brush.place3d(car, p0, 0, yaw)
+    train = ents.brush_ent(vmf, "func_tracktrain", car, targetname=name, origin=p0, target=tracks[0],
+                           speed=_f(start, "train_speed"), startspeed="0", wheels=str(L * 0.75), height="8",
+                           bank="0", dmg="0", volume="10", spawnflags="0", velocitytype="1", orientationtype="1",
+                           MoveSound="plats/train_move.wav", StopSound="plats/train_stop.wav")
+    res.ents.append(train)
+    ctl = brush.box(vmf, Vec(L / 2 - 40, -W / 2 + 8, 8), Vec(L / 2 - 8, W / 2 - 8, H), "tools/toolstrigger")
+    brush.place3d([ctl], p0, 0, yaw)
+    res.ents.append(ents.brush_ent(vmf, "func_traincontrols", [ctl], target=name, parentname=name, origin=p0))

@@ -21,7 +21,7 @@ STATUS = {
     "escada1": "ok", "escada2": "ok", "corrimao1": "ok", "cerca1": "ok", "cerca2": "ok", "ladder1": "ok",
     "arco1": "ok", "tubo1": "ok", "duto1": "ok", "curva1": "ok",
     "porta1": "ok", "luzes1": "ok", "elev1": "ok", "spawn1": "ok",
-    "cabo1": "pending", "trilho1": "pending", "terreno1": "pending", "cubemaps1": "pending", "zona1": "pending",
+    "cabo1": "pending", "trilho1": "pending", "terreno1": "ok", "cubemaps1": "pending", "zona1": "pending",
 }
 
 
@@ -81,7 +81,7 @@ def build():
     v.create_ent("ht_rope", origin="-1400 800 400", targetname="cabo1", slack="40")            # cabo pendurado entre 3 pontos
     v.create_ent("ht_rope_node", origin="-900 1000 440", targetname="cabo1", order="1")
     v.create_ent("ht_rope_end", origin="-400 1300 400", targetname="cabo1")
-    v.create_ent("ht_rope", origin="200 -1400 0", targetname="trilho1", kind="rail", material=mat("trilho1"))            # trilho reto no chão
+    v.create_ent("ht_rope", origin="200 -1400 0", targetname="trilho1", kind="rail", train="1", material=mat("trilho1"))            # trilho reto no chão
     v.create_ent("ht_rope_end", origin="1200 -1400 0", targetname="trilho1")
     v.create_ent("ht_terrain", origin="1024 -1536 0", targetname="terreno1", tile="512", power="3", amplitude="48", thickness="16", material=mat("terreno1"))
     v.create_ent("ht_terrain_end", origin="1536 -1024 0", targetname="terreno1")               # canto +X/-Y da sala, 512x512

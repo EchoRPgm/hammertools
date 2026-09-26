@@ -965,6 +965,7 @@ entity
 {
 	"id" "8"
 	"classname" "ht_stairs"
+	"material" "dev/graygrid"
 	"origin" "-256 0 0"
 	"targetname" "escada1"
 	"width" "96"
@@ -994,6 +995,7 @@ entity
 {
 	"id" "10"
 	"classname" "ht_stairs"
+	"material" "dev/graygrid"
 	"origin" "256 -128 0"
 	"style" "floating"
 	"targetname" "escada2"
@@ -1023,6 +1025,7 @@ entity
 {
 	"id" "12"
 	"classname" "ht_railing"
+	"material" "dev/graygrid"
 	"origin" "-256 48 0"
 	"targetname" "corrimao1"
 	editor
@@ -1052,6 +1055,7 @@ entity
 	"id" "14"
 	"classname" "ht_fence"
 	"height" "64"
+	"material" "dev/graygrid"
 	"origin" "-640 -512 0"
 	"spacing" "64"
 	"targetname" "cerca1"
@@ -1111,6 +1115,7 @@ entity
 	"id" "18"
 	"angles" "0 0 0"
 	"classname" "ht_ladder"
+	"material" "dev/graygrid"
 	"origin" "1408 -640 0"
 	"targetname" "ladder1"
 	editor
@@ -1140,6 +1145,7 @@ entity
 	"id" "20"
 	"classname" "ht_arch"
 	"depth" "32"
+	"material" "dev/graygrid"
 	"origin" "-384 640 0"
 	"segments" "12"
 	"targetname" "arco1"
@@ -1170,6 +1176,7 @@ entity
 {
 	"id" "22"
 	"classname" "ht_pipe"
+	"material" "dev/graygrid"
 	"origin" "0 -960 32"
 	"radius" "16"
 	"sides" "8"
@@ -1231,6 +1238,7 @@ entity
 	"id" "26"
 	"classname" "ht_pipe"
 	"hollow" "1"
+	"material" "dev/graygrid"
 	"origin" "-960 -960 64"
 	"radius" "48"
 	"sides" "4"
@@ -1277,6 +1285,7 @@ entity
 {
 	"id" "29"
 	"classname" "ht_stairs_curve"
+	"material" "dev/graygrid"
 	"origin" "384 384 0"
 	"targetname" "curva1"
 	"width" "64"
@@ -1323,6 +1332,7 @@ entity
 	"auto_open" "1"
 	"classname" "ht_door"
 	"frame_depth" "16"
+	"material_frame" "dev/graygrid"
 	"origin" "-1016 1216 0"
 	"targetname" "porta1"
 	editor
@@ -1369,6 +1379,7 @@ entity
 	"angles" "0 0 0"
 	"classname" "ht_elevator"
 	"depth" "128"
+	"material" "dev/graygrid"
 	"origin" "1024 1024 0"
 	"targetname" "elev1"
 	"width" "128"
@@ -1474,6 +1485,7 @@ entity
 	"id" "42"
 	"classname" "ht_rope"
 	"kind" "rail"
+	"material" "dev/dev_measuregeneric01"
 	"origin" "200 -1400 0"
 	"targetname" "trilho1"
 	editor
@@ -1503,6 +1515,7 @@ entity
 	"id" "44"
 	"amplitude" "48"
 	"classname" "ht_terrain"
+	"material" "dev/dev_measuregeneric01"
 	"origin" "1024 -1536 0"
 	"power" "3"
 	"targetname" "terreno1"

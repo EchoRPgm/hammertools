@@ -292,17 +292,32 @@
 	loop(choices) : "Circuito fechado" : 0 : "Último ponto volta pro primeiro (path_track e trilho)." = [ 0 : "Não" 1 : "Sim" ]
 	material_train(material) : "Textura do vagão" : "" : "Vazio = mesma do trilho."
 	detail(choices) : "func_detail" : 1 : "" = [ 0 : "Mundo (sela)" 1 : "func_detail" ]
+	stop(float) : "Parada do trem (s)" : "0" : "Se > 0, o trem para aqui esse tempo (só com train=1)."
+	arrive_sound(sound) : "Som ao chegar" : "" : "ambient_generic tocado quando o trem chega (ex: ambient/alarms/train_horn2.wav)."
+	depart_sound(sound) : "Som ao partir" : "" : "Tocado quando o trem sai (após a parada)."
+	output OnArrive(void) : "Trem chegou neste ponto (ligue aqui abrir porta, som, etc.)."
+	output OnDepart(void) : "Trem partiu deste ponto (dispara após a parada)."
 ]
 
 @PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_rope_node :
-	"Ponto intermediário do cabo/trilho. Mesmo targetname; a Ordem define a sequência."
+	"Ponto intermediário do cabo/trilho. Mesmo targetname; a Ordem define a sequência. Com trem, pode ser ESTAÇÃO (parada, sons, outputs OnArrive/OnDepart)."
 [
 	order(integer) : "Ordem" : 1 : ""
+	stop(float) : "Parada do trem (s)" : "0" : "Se > 0, o trem para aqui esse tempo (só com train=1)."
+	arrive_sound(sound) : "Som ao chegar" : "" : "ambient_generic tocado quando o trem chega (ex: ambient/alarms/train_horn2.wav)."
+	depart_sound(sound) : "Som ao partir" : "" : "Tocado quando o trem sai (após a parada)."
+	output OnArrive(void) : "Trem chegou neste ponto (ligue aqui abrir porta, som, etc.)."
+	output OnDepart(void) : "Trem partiu deste ponto (dispara após a parada)."
 ]
 
 @PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_rope_end :
-	"FIM do cabo/trilho. Mesmo targetname."
+	"FIM do cabo/trilho. Mesmo targetname. Com trem, pode ser estação."
 [
+	stop(float) : "Parada do trem (s)" : "0" : "Se > 0, o trem para aqui esse tempo (só com train=1)."
+	arrive_sound(sound) : "Som ao chegar" : "" : "ambient_generic tocado quando o trem chega (ex: ambient/alarms/train_horn2.wav)."
+	depart_sound(sound) : "Som ao partir" : "" : "Tocado quando o trem sai (após a parada)."
+	output OnArrive(void) : "Trem chegou neste ponto (ligue aqui abrir porta, som, etc.)."
+	output OnDepart(void) : "Trem partiu deste ponto (dispara após a parada)."
 ]
 
 // ---------------------------------------------------------------- terreno

@@ -1503,10 +1503,17 @@ entity
 entity
 {
 	"id" "43"
+	"arrive_sound" "ambient/alarms/train_horn2.wav"
 	"classname" "ht_rope_node"
 	"order" "1"
 	"origin" "1400 -1300 300"
+	"stop" "5"
 	"targetname" "trilho1"
+	connections
+	{
+		"OnArrive" "porta1Open0-1"
+		"OnDepart" "porta1Close0-1"
+	}
 	editor
 	{
 		"color" "255 255 255"

@@ -140,3 +140,21 @@ def test_rail_train_auto(room, tmp_path):
     assert not _ents(built, "func_traincontrols")
     la = _ents(built, "logic_auto")[0]
     assert [(o.output, o.target, o.input) for o in la.outputs] == [("OnMapSpawn", "tr", "StartForward")]
+
+
+def test_train_station_io(room, tmp_path):
+    from srctools.vmf import Output
+    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", train="1", loop="1")
+    n1 = room.create_ent("ht_rope_node", origin="512 0 0", targetname="tr", order="1", stop="4", arrive_sound="ambient/alarms/train_horn2.wav")
+    n1.add_out(Output("OnArrive", "porta1", "Open"))
+    n1.add_out(Output("OnDepart", "porta1", "Close", delay=1.0))
+    room.create_ent("ht_rope_end", origin="512 512 0", targetname="tr")
+    built, _, warnings = _rt(room, tmp_path)
+    assert warnings == []
+    pt = {e["targetname"]: e for e in _ents(built, "path_track")}["tr_t1"]
+    outs = [(o.output, o.target, o.input, round(o.delay, 2)) for o in pt.outputs]
+    assert ("OnPass", "tr", "Stop", 0.0) in outs and ("OnPass", "tr", "StartForward", 4.0) in outs
+    assert ("OnPass", "porta1", "Open", 0.0) in outs and ("OnPass", "porta1", "Close", 5.0) in outs   # depart = delay + parada
+    assert ("OnPass", "tr_t1_snd_a", "PlaySound", 0.0) in outs
+    snd = _ents(built, "ambient_generic")[0]; assert snd["message"].endswith("train_horn2.wav")
+    assert not [o for o in {e["targetname"]: e for e in _ents(built, "path_track")}["tr_t0"].outputs]  # sem estação = sem I/O

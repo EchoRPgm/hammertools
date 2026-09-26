@@ -24,12 +24,17 @@ def _f(ent, k):
     return float(ent.get(k, DEFAULTS[k]))
 
 
-def _path(group: Group):
+def _markers(group: Group):
     start, end = group.by_role("start"), group.by_role("end")
     if start is None or end is None:
         return None
     nodes = sorted((e for e in group.ents if e["classname"].endswith("_node")), key=lambda e: float(e.get("order", 0)))
-    return [origin(start)] + [origin(n) for n in nodes] + [origin(end)]
+    return [start] + nodes + [end]
+
+
+def _path(group: Group):
+    ms = _markers(group)
+    return None if ms is None else [origin(m) for m in ms]
 
 
 @register("ht_rope")
@@ -87,6 +92,31 @@ def _rail(vmf, group, start, path, res):
     return res
 
 
+def _station(vmf, train_name, marker, pt, track_name, res):
+    """Estação: o marcador do ponto tem `stop` (s), sons e outputs OnArrive/OnDepart. Tudo vira I/O
+    no path_track: OnPass -> trem Stop; OnArrive do usuário; OnPass(+stop) -> trem StartForward + OnDepart."""
+    stop = float(marker.get("stop", 0) or 0)
+    arrive = [o for o in marker.outputs if o.output.lower() == "onarrive"]
+    depart = [o for o in marker.outputs if o.output.lower() == "ondepart"]
+    a_snd, d_snd = marker.get("arrive_sound", ""), marker.get("depart_sound", "")
+    if stop <= 0 and not (arrive or depart or a_snd or d_snd):
+        return
+    origin_ = Vec.from_str(pt["origin"])
+    if a_snd:
+        sa = vmf.create_ent("ambient_generic", origin=origin_ + Vec(0, 0, 32), targetname=f"{track_name}_snd_a", message=a_snd, health="10", radius="1250", spawnflags="48")
+        res.ents.append(sa); ents.out(pt, "OnPass", sa["targetname"], "PlaySound")
+    if d_snd:
+        sd = vmf.create_ent("ambient_generic", origin=origin_ + Vec(0, 0, 40), targetname=f"{track_name}_snd_d", message=d_snd, health="10", radius="1250", spawnflags="48")
+        res.ents.append(sd); ents.out(pt, "OnPass", sd["targetname"], "PlaySound", delay=max(stop, 0.0))
+    if stop > 0:
+        ents.out(pt, "OnPass", train_name, "Stop")
+        ents.out(pt, "OnPass", train_name, "StartForward", delay=stop)
+    for o in arrive:
+        ents.out(pt, "OnPass", o.target, o.input, o.params, o.delay, o.only_once)
+    for o in depart:
+        ents.out(pt, "OnPass", o.target, o.input, o.params, o.delay + max(stop, 0.0), o.only_once)
+
+
 def _train(vmf, group, start, path, rail_top, res):
     """Vagão func_tracktrain dirigível: path_track em cada ponto (na altura do topo do trilho),
     carroceria de brush no 1º ponto, func_traincontrols parentado (E dentro do vagão = dirigir)."""
@@ -95,13 +125,16 @@ def _train(vmf, group, start, path, rail_top, res):
     mat = start.get("material_train") or start.get("material") or DEFAULTS["material"]
     loop = start.get("loop", DEFAULTS["loop"]) == "1"
     tracks = [f"{name}_t{i}" for i in range(len(path))]
+    markers = _markers(group)
     for i, p in enumerate(path):
         kv = dict(origin=p + Vec(0, 0, rail_top), targetname=tracks[i])
         if i + 1 < len(path):
             kv["target"] = tracks[i + 1]
         elif loop:
             kv["target"] = tracks[0]
-        res.ents.append(vmf.create_ent("path_track", **kv))
+        pt = vmf.create_ent("path_track", **kv)
+        res.ents.append(pt)
+        _station(vmf, name, markers[i], pt, tracks[i], res)
     p0 = path[0] + Vec(0, 0, rail_top)
     d = path[1] - path[0]
     pitch, yaw = brush.direction_angles(d)

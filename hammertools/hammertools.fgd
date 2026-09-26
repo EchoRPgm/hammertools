@@ -267,3 +267,83 @@
 	"Canto OPOSTO do spawn room. Mesmo targetname."
 [
 ]
+
+// ---------------------------------------------------------------- cabo / trilho
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_rope :
+	"INÍCIO do cabo (move_rope + keyframe_rope encadeados) ou trilho de brush. ht_rope_node nos pontos intermediários (Ordem), ht_rope_end no fim, mesmo targetname."
+[
+	kind(choices) : "Tipo" : "rope" : "" = [ "rope" : "Cabo (move_rope/keyframe_rope)" "rail" : "Trilho (brush: 2 trilhos + dormentes)" ]
+	slack(float) : "Folga (cabo)" : "25" : "Quanto o cabo pende entre os pontos."
+	width(float) : "Espessura (cabo)" : "2" : ""
+	rope_material(material) : "Material do cabo" : "cable/cable.vmt" : ""
+	subdiv(integer) : "Subdivisões (cabo)" : 4 : ""
+	gauge(float) : "Bitola (trilho)" : "64" : "Distância entre os trilhos."
+	rail_size(float) : "Seção do trilho" : "4" : ""
+	tie_spacing(float) : "Espaçamento dos dormentes" : "48" : ""
+	tie_size(float) : "Espessura do dormente" : "8" : ""
+	tie_width(float) : "Largura do dormente" : "96" : ""
+	material(material) : "Textura (trilho)" : "dev/dev_measuregeneric01b" : ""
+	detail(choices) : "func_detail" : 1 : "" = [ 0 : "Mundo (sela)" 1 : "func_detail" ]
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_rope_node :
+	"Ponto intermediário do cabo/trilho. Mesmo targetname; a Ordem define a sequência."
+[
+	order(integer) : "Ordem" : 1 : ""
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_rope_end :
+	"FIM do cabo/trilho. Mesmo targetname."
+[
+]
+
+// ---------------------------------------------------------------- terreno
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_terrain :
+	"TERRENO: um canto do retângulo no nível BASE do topo; ht_terrain_end no canto oposto, mesmo targetname. " +
+	"Gera tiles de displacement (caixa com a face de cima deslocada) com ruído ou heightmap PNG. Brushes de mundo (a caixa embaixo sela)."
+[
+	tile(float) : "Tamanho do tile" : "512" : "Área dividida em tiles de até esse tamanho."
+	power(integer) : "Power do displacement" : 3 : "2, 3 ou 4 (4 = 17x17 vértices)."
+	thickness(float) : "Espessura da caixa" : "32" : "Abaixo do nível base."
+	amplitude(float) : "Amplitude do relevo" : "64" : "Altura máxima acima do nível base."
+	source(choices) : "Fonte de altura" : "noise" : "" = [ "noise" : "Ruído" "heightmap" : "Heightmap PNG (cinza 8 bits)" ]
+	heightmap(string) : "Caminho do PNG" : "" : "Absoluto ou relativo à pasta do ht. Preto = base, branco = base + amplitude."
+	seed(integer) : "Seed (ruído)" : 1 : ""
+	scale(float) : "Escala (ruído)" : "2" : "Repetições do padrão pela área."
+	octaves(integer) : "Oitavas (ruído)" : 3 : ""
+	material(material) : "Textura" : "nature/blendgrassdirt01" : ""
+	side_material(material) : "Textura das laterais" : "tools/toolsnodraw" : ""
+	detail(choices) : "func_detail" : 0 : "Terreno é chão: padrão mundo." = [ 0 : "Mundo (sela)" 1 : "func_detail" ]
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_terrain_end :
+	"Canto OPOSTO do terreno. Mesmo targetname."
+[
+]
+
+// ---------------------------------------------------------------- cubemaps
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_cubemaps :
+	"Grade de env_cubemap num retângulo (na altura dos marcadores). ht_cubemaps_end no canto oposto. Alternativa: ht build --cubemaps planta um sob cada luz."
+[
+	spacing(float) : "Espaçamento" : "256" : ""
+	margin(float) : "Margem" : "64" : ""
+	size(choices) : "Tamanho" : "0" : "" = [ "0" : "Padrão" "5" : "16x16" "6" : "32x32" "7" : "64x64" "8" : "128x128" ]
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_cubemaps_end :
+	"Canto OPOSTO da grade de cubemaps. Mesmo targetname."
+[
+]
+
+// ---------------------------------------------------------------- zonas (clip / nav / block_los)
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_zone :
+	"Volume utilitário: um canto no chão, ht_zone_end no canto oposto, mesmo targetname. Altura no marcador."
+[
+	kind(choices) : "Tipo" : "playerclip" : "" = [ "playerclip" : "playerclip" "npcclip" : "npcclip" "clip" : "clip (todos)" "block_los" : "block_los (bloqueia visão de NPC)" "invisible" : "invisible (sólido invisível)" "nav_blocker" : "func_nav_blocker" ]
+	height(float) : "Altura" : "128" : ""
+]
+
+@PointClass base(Targetname) iconsprite("editor/info_target.vmt") color(255 200 0) size(-8 -8 -8, 8 8 8) = ht_zone_end :
+	"Canto OPOSTO da zona. Mesmo targetname."
+[
+]

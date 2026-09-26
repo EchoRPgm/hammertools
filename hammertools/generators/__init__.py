@@ -32,4 +32,4 @@ def register(classname: str, single: bool = False):
     return deco
 
 
-from hammertools.generators import arch, door, elevator, fence, ladder, lights, pipe, railing, spawnroom, stairs, stairs_curve  # noqa: E402,F401  (registram ht_*)
+from hammertools.generators import arch, cubemaps, door, elevator, fence, ladder, lights, pipe, railing, rope, spawnroom, stairs, stairs_curve, terrain, zone  # noqa: E402,F401  (registram ht_*)

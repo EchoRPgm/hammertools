@@ -29,8 +29,8 @@ Legenda: ✅ pronto e verificado na VM · 🔧 implementado, em validação · �
 | ✅ | `ht_arch` + `_end` | Arco/abóbada: semi-elipse em N segmentos, espessura radial, profundidade; altura auto = semicírculo |
 | ✅ | `ht_pipe` + `_node` + `_end` | Tubo/duto por sequência de pontos: seção quadrada ou octogonal, sólido ou oco, cotovelos curvos tangentes em qualquer ângulo (horizontal ou vertical) |
 | ✅ | `ht_stairs_curve` + `_ctrl` + `_end` | Escada em curva: bezier quadrática em XY, degraus sólidos ou flutuantes; sem playerclip ainda |
-| ⬜ | `ht_rope` | Trilho de trem / cabo: caminho → `move_rope`/`keyframe_rope` encadeados ou brushes de trilho |
-| ⬜ | `ht_terrain` | Terreno: retângulo → displacements com ruído ou heightmap PNG |
+| 🔧 | `ht_rope` + `_node` + `_end` | Cabo (`move_rope` + `keyframe_rope` encadeados com folga) ou trilho de brush (2 trilhos + dormentes) por sequência de pontos |
+| 🔧 | `ht_terrain` + `_end` | Terreno: retângulo → tiles de displacement (power 2-4) com ruído determinístico ou heightmap PNG; bordas compartilhadas entre tiles |
 
 ### Fase 2 — Entidades e lógica
 | | Entidades | Item |
@@ -39,8 +39,8 @@ Legenda: ✅ pronto e verificado na VM · 🔧 implementado, em validação · �
 | ✅ | `ht_lights` + `_end` | Iluminação em fila: `light_spot` ou `light` a cada N, com luminária `prop_static` opcional |
 | ✅ | `ht_elevator` + `_end` | Elevador: plataforma `func_door` (lip negativo = curso), botão a bordo (Toggle) e de chamada por andar (Open/Close), I/O pronta |
 | ✅ | `ht_spawnroom` + `_end` | Spawn room por retângulo: grade de `info_player_start` (GMod) ou `info_player_teamspawn` + `func_respawnroom` + `func_regenerate` (TF2) |
-| ⬜ | `ht build --cubemaps` | Cubemaps automáticos por sala (flood-fill), sem marcador |
-| ⬜ | `ht_zone` | Nav hints / clip: `func_nav_blocker`, `playerclip` em beiradas, `block_los` |
+| 🔧 | `ht_cubemaps` + `ht build --cubemaps` | Grade de `env_cubemap` por retângulo, ou automático: um sob cada luz (sem repetir vizinhos a <128u) |
+| 🔧 | `ht_zone` + `_end` | Volume por retângulo+altura: playerclip, npcclip, clip, block_los, invisible ou `func_nav_blocker` |
 
 ### Fase 3 — Lint e manutenção (`ht lint`, sem marcadores)
 | | Item |
@@ -73,7 +73,7 @@ duto quadrado atravessando a parede de duas salas com cotovelo; duto quadrado e 
 | 2 | Cerca, corrimão, escada de mão, lint básico | ✅ 2026-09-26 |
 | 3 | Arco, tubo/duto, escada em curva | ✅ 2026-09-26 |
 | 4 | Porta, luzes em fila, elevador, spawn room | ✅ 2026-09-26 (validado no jogo) |
-| 5 | Trilho/cabo, terreno, cubemaps, nav/clip | ⬜ |
+| 5 | Trilho/cabo, terreno, cubemaps, nav/clip | 🔧 implementado 2026-09-26, validando na VM |
 | 6 | Auto detail, lightmap, rename, lint completo | ⬜ |
 | 7 | Diff/merge, retexture, pack | ⬜ |
 
@@ -102,6 +102,7 @@ duto quadrado atravessando a parede de duas salas com cotovelo; duto quadrado e 
 - **Eixos de textura**: `Side(planes=...)` do srctools sai com uaxis/vaxis padrão (`[0 1 0]`/`[0 0 -1]`), degenerado em faces com normal ±Y → o engine desenha a face VERMELHA. `brush.from_points` chama `reset_uv()` em cada face. Sintoma no jogo: face vermelha lisa (não é textura faltando, que seria xadrez rosa/preto).
 - **Modelos com origem no centro**: `props_c17/door01_left` tem origem no meio da altura (z −54..54) e largura 48 (y −1..47 a partir da dobradiça); `ht_door` lê o bbox e sobe a origem (`model_z=auto`). `light_cagelight01_on` pende pra baixo da origem (z −11..2).
 - **Elevador**: `func_door` spawnflags 256 (Use Opens); 1024 é Touch Opens e faz subir ao pisar. Plataforma nasce em cima do piso (z 0..t), não embutida (embutir precisaria de poço). Piso de cima = rise + t.
+- **Displacements** (`core/disp.py`): `Side(vmf, planes, mat, disp_power=N)` cria os vértices; `disp_pos` = canto inicial, vértice `[y*size+x]`, `normal`+`distance`. O topo do `make_prism` é substituído pelo Side de displacement. Heightmap PNG lido com PIL se houver, senão decoder PNG puro (8 bits, filtros 0-4).
 - **Entidades de brush**: `core/ents.brush_ent` cria `func_*`/`trigger_*` com os solids DENTRO da entidade (nunca no mundo); `ents.out` adiciona output. Elevador = `func_door` com `movedir -90 0 0`, `wait -1` e `lip = espessura − curso` (lip negativo estende o curso), botão a bordo com `parentname`.
 - **Ângulos**: `Vec @ Angle(pitch, yaw, roll)`; pitch negativo = pra cima; yaw 90 = +Y; roll 90 leva Y→Z.
 - **Hammer++**: `parms` das sequências não aceita aspas aninhadas → wrappers `.cmd` (`ht-build.cmd`, `ht-preview.cmd`, `ht-preview-clear.cmd` em `%USERPROFILE%\.local\bin`) recebem `$path\$file` e montam as aspas. Sequências e FGD são lidos só na abertura do Hammer++.

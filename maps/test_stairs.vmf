@@ -1425,6 +1425,171 @@ entity
 		"logicalpos" "[0 38]"
 	}
 }
+entity
+{
+	"id" "39"
+	"classname" "ht_rope"
+	"origin" "-1400 800 400"
+	"slack" "40"
+	"targetname" "cabo1"
+	editor
+	{
+		"color" "255 255 255"
+		"visgroupshown" "1"
+		"visgroupautoshown" "1"
+		"logicalpos" "[0 39]"
+	}
+}
+entity
+{
+	"id" "40"
+	"classname" "ht_rope_node"
+	"order" "1"
+	"origin" "-900 1000 440"
+	"targetname" "cabo1"
+	editor
+	{
+		"color" "255 255 255"
+		"visgroupshown" "1"
+		"visgroupautoshown" "1"
+		"logicalpos" "[0 40]"
+	}
+}
+entity
+{
+	"id" "41"
+	"classname" "ht_rope_end"
+	"origin" "-400 1300 400"
+	"targetname" "cabo1"
+	editor
+	{
+		"color" "255 255 255"
+		"visgroupshown" "1"
+		"visgroupautoshown" "1"
+		"logicalpos" "[0 41]"
+	}
+}
+entity
+{
+	"id" "42"
+	"classname" "ht_rope"
+	"kind" "rail"
+	"origin" "200 -1400 0"
+	"targetname" "trilho1"
+	editor
+	{
+		"color" "255 255 255"
+		"visgroupshown" "1"
+		"visgroupautoshown" "1"
+		"logicalpos" "[0 42]"
+	}
+}
+entity
+{
+	"id" "43"
+	"classname" "ht_rope_end"
+	"origin" "1200 -1400 0"
+	"targetname" "trilho1"
+	editor
+	{
+		"color" "255 255 255"
+		"visgroupshown" "1"
+		"visgroupautoshown" "1"
+		"logicalpos" "[0 43]"
+	}
+}
+entity
+{
+	"id" "44"
+	"amplitude" "48"
+	"classname" "ht_terrain"
+	"origin" "1024 -1536 0"
+	"power" "3"
+	"targetname" "terreno1"
+	"thickness" "16"
+	"tile" "512"
+	editor
+	{
+		"color" "255 255 255"
+		"visgroupshown" "1"
+		"visgroupautoshown" "1"
+		"logicalpos" "[0 44]"
+	}
+}
+entity
+{
+	"id" "45"
+	"classname" "ht_terrain_end"
+	"origin" "1536 -1024 0"
+	"targetname" "terreno1"
+	editor
+	{
+		"color" "255 255 255"
+		"visgroupshown" "1"
+		"visgroupautoshown" "1"
+		"logicalpos" "[0 45]"
+	}
+}
+entity
+{
+	"id" "46"
+	"classname" "ht_cubemaps"
+	"margin" "128"
+	"origin" "-1408 -1408 96"
+	"spacing" "512"
+	"targetname" "cubemaps1"
+	editor
+	{
+		"color" "255 255 255"
+		"visgroupshown" "1"
+		"visgroupautoshown" "1"
+		"logicalpos" "[0 46]"
+	}
+}
+entity
+{
+	"id" "47"
+	"classname" "ht_cubemaps_end"
+	"origin" "1408 1408 96"
+	"targetname" "cubemaps1"
+	editor
+	{
+		"color" "255 255 255"
+		"visgroupshown" "1"
+		"visgroupautoshown" "1"
+		"logicalpos" "[0 47]"
+	}
+}
+entity
+{
+	"id" "48"
+	"classname" "ht_zone"
+	"height" "96"
+	"kind" "block_los"
+	"origin" "-960 -1024 0"
+	"targetname" "zona1"
+	editor
+	{
+		"color" "255 255 255"
+		"visgroupshown" "1"
+		"visgroupautoshown" "1"
+		"logicalpos" "[0 48]"
+	}
+}
+entity
+{
+	"id" "49"
+	"classname" "ht_zone_end"
+	"origin" "-640 -960 0"
+	"targetname" "zona1"
+	editor
+	{
+		"color" "255 255 255"
+		"visgroupshown" "1"
+		"visgroupautoshown" "1"
+		"logicalpos" "[0 49]"
+	}
+}
 cameras
 {
 	"activecamera" "-1"

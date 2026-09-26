@@ -21,7 +21,7 @@ def cmd_list(args) -> int:
     return 0
 
 
-def build(src: Path, out: Path, game: str | None = None) -> tuple[int, int, list[str]]:
+def build(src: Path, out: Path, game: str | None = None, cubemaps: bool = False) -> tuple[int, int, list[str]]:
     """Retorna (grupos processados, solids gerados, warnings)."""
     from hammertools.core import models
     models.GAMEDIR = game
@@ -41,6 +41,11 @@ def build(src: Path, out: Path, game: str | None = None) -> tuple[int, int, list
         n_solids += len(res.solids)
         for e in g.ents:
             vmfio.park_marker(v, e)
+    if cubemaps:
+        from hammertools.generators.cubemaps import auto_cubemaps
+        n = auto_cubemaps(v)
+        vmfio.add_generated(v, "cubemaps_auto", [], [e for e in v.entities if e["classname"] == "env_cubemap" and not e.visgroup_ids], True)
+        warnings.append(f"cubemaps automáticos: {n} env_cubemap sob luzes")
     vmfio.save(v, out)
     return len(groups), n_solids, warnings
 
@@ -98,7 +103,7 @@ def cmd_build(args) -> int:
         return 2
     out = Path(args.out) if args.out else src.with_name(f"{src.stem}_built.vmf")
     out.parent.mkdir(parents=True, exist_ok=True)
-    n_groups, n_solids, warnings = build(src, out, args.game)
+    n_groups, n_solids, warnings = build(src, out, args.game, args.cubemaps)
     for w in warnings:
         print(f"aviso: {w}", file=sys.stderr)
     print(f"{out}: {n_groups} marcador(es), {n_solids} brush(es) gerados")
@@ -146,7 +151,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="ht", description="hammertools: marcadores ht_* -> geometria")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("build", help="gera geometria dos marcadores num novo VMF")
-    p.add_argument("vmf"); p.add_argument("-o", "--out"); p.add_argument("--game", help="pasta com gameinfo.txt (ou env HT_GAME) pra ler modelos"); p.set_defaults(fn=cmd_build)
+    p.add_argument("vmf"); p.add_argument("-o", "--out"); p.add_argument("--game", help="pasta com gameinfo.txt (ou env HT_GAME) pra ler modelos")
+    p.add_argument("--cubemaps", action="store_true", help="também planta um env_cubemap sob cada luz (sem repetir vizinhos)"); p.set_defaults(fn=cmd_build)
     p = sub.add_parser("preview", help="gera a geometria dentro do próprio VMF fonte (visgroup ht_preview) pra ver no Hammer++")
     p.add_argument("vmf"); p.add_argument("--game", help="pasta com gameinfo.txt (ou env HT_GAME)")
     p.add_argument("--clear", action="store_true", help="só remove o visgroup ht_preview do fonte"); p.set_defaults(fn=cmd_preview)

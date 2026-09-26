@@ -63,6 +63,18 @@ def build():
     box(v, (1096, 960, 248), (1400, 1088, 264))  # patamar de chegada ao lado (+X): piso em rise(256) + espessura(8)
     v.create_ent("ht_spawnroom", origin="-1408 -1408 0", targetname="spawn1", angles="0 45 0", spacing="64", margin="32")
     v.create_ent("ht_spawnroom_end", origin="-1152 -1216 0", targetname="spawn1")
+    # --- sprint 5
+    v.create_ent("ht_rope", origin="-1400 800 400", targetname="cabo1", slack="40")            # cabo pendurado entre 3 pontos
+    v.create_ent("ht_rope_node", origin="-900 1000 440", targetname="cabo1", order="1")
+    v.create_ent("ht_rope_end", origin="-400 1300 400", targetname="cabo1")
+    v.create_ent("ht_rope", origin="200 -1400 0", targetname="trilho1", kind="rail")            # trilho reto no chão
+    v.create_ent("ht_rope_end", origin="1200 -1400 0", targetname="trilho1")
+    v.create_ent("ht_terrain", origin="1024 -1536 0", targetname="terreno1", tile="512", power="3", amplitude="48", thickness="16")
+    v.create_ent("ht_terrain_end", origin="1536 -1024 0", targetname="terreno1")               # canto +X/-Y da sala, 512x512
+    v.create_ent("ht_cubemaps", origin="-1408 -1408 96", targetname="cubemaps1", spacing="512", margin="128")
+    v.create_ent("ht_cubemaps_end", origin="1408 1408 96", targetname="cubemaps1")
+    v.create_ent("ht_zone", origin="-960 -1024 0", targetname="zona1", kind="block_los", height="96")  # atrás do duto
+    v.create_ent("ht_zone_end", origin="-640 -960 0", targetname="zona1")
     return v
 
 

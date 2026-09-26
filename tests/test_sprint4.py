@@ -80,6 +80,7 @@ def test_elevator_io(room, tmp_path):
     assert warnings == [] and n == 1  # poste do botão a bordo
     lift = _ents(built, "func_door")[0]
     assert lift["targetname"] == "elev" and lift["movedir"].startswith("-90") and float(lift["lip"]) == 8 - 256 and lift["wait"] == "-1"
+    assert lift["spawnflags"] == "256"  # Use Opens; nunca 1024 (Touch Opens = sobe ao pisar)
     lo, hi = lift.solids[0].get_bbox()
     assert (lo.z, hi.z) == (0, 8) and (lo.x, hi.x, lo.y, hi.y) == (-64, 64, -64, 64)
     btns = {b["targetname"]: b for b in _ents(built, "func_button")}

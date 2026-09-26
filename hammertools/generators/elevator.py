@@ -51,7 +51,7 @@ def generate(vmf: VMF, group: Group) -> Result:
     plat = brush.box(vmf, Vec(-d / 2, -w / 2, 0), Vec(d / 2, w / 2, t), mat, nodraw=("bottom",))
     brush.place([plat], a, yaw)
     lift = ents.brush_ent(vmf, "func_door", [plat], targetname=name, origin=a, movedir=ents.angles_str(-90, 0, 0),
-                          speed=_f(start, "speed"), wait="-1", lip=str(t - rise), spawnflags="1024",  # 1024 = use opens
+                          speed=_f(start, "speed"), wait="-1", lip=str(t - rise), spawnflags="256",  # func_door: 256 = Use Opens (1024 seria Touch Opens: subiria ao pisar)
                           noise1=start.get("sound_move", DEFAULTS["sound_move"]), noise2=start.get("sound_stop", DEFAULTS["sound_stop"]),
                           forceclosed="1", dmg="0")
     ent_list.append(lift)

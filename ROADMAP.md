@@ -2,7 +2,7 @@
 
 Toolkit de "addons" pro Hammer++ (Garry's Mod) sem tocar no binário: marcadores `ht_*` no editor → CLI Python reescreve o VMF. Um pacote, um CLI, um FGD.
 
-Atualizado em 2026-09-26. Sprints 1, 2 e 3 concluídos e verificados na VM.
+Atualizado em 2026-09-26. Sprints 1 a 4 concluídos e validados no jogo.
 
 ## Status por item
 
@@ -35,10 +35,10 @@ Legenda: ✅ pronto e verificado na VM · 🔧 implementado, em validação · �
 ### Fase 2 — Entidades e lógica
 | | Entidades | Item |
 |---|---|---|
-| 🔧 | `ht_door` | Porta completa num marcador: `prop_door_rotating` ou `func_door` de brush, batente, trigger opcional de abrir/fechar, I/O |
-| 🔧 | `ht_lights` + `_end` | Iluminação em fila: `light_spot` ou `light` a cada N, com luminária `prop_static` opcional |
-| 🔧 | `ht_elevator` + `_end` | Elevador: plataforma `func_door` (lip negativo = curso), botão a bordo (Toggle) e de chamada por andar (Open/Close), I/O pronta |
-| 🔧 | `ht_spawnroom` + `_end` | Spawn room por retângulo: grade de `info_player_start` (GMod) ou `info_player_teamspawn` + `func_respawnroom` + `func_regenerate` (TF2) |
+| ✅ | `ht_door` | Porta completa num marcador: `prop_door_rotating` ou `func_door` de brush, batente, trigger opcional de abrir/fechar, I/O |
+| ✅ | `ht_lights` + `_end` | Iluminação em fila: `light_spot` ou `light` a cada N, com luminária `prop_static` opcional |
+| ✅ | `ht_elevator` + `_end` | Elevador: plataforma `func_door` (lip negativo = curso), botão a bordo (Toggle) e de chamada por andar (Open/Close), I/O pronta |
+| ✅ | `ht_spawnroom` + `_end` | Spawn room por retângulo: grade de `info_player_start` (GMod) ou `info_player_teamspawn` + `func_respawnroom` + `func_regenerate` (TF2) |
 | ⬜ | `ht build --cubemaps` | Cubemaps automáticos por sala (flood-fill), sem marcador |
 | ⬜ | `ht_zone` | Nav hints / clip: `func_nav_blocker`, `playerclip` em beiradas, `block_los` |
 
@@ -72,7 +72,7 @@ duto quadrado atravessando a parede de duas salas com cotovelo; duto quadrado e 
 | 1 | Fase 0 + escada reta | ✅ 2026-09-26 |
 | 2 | Cerca, corrimão, escada de mão, lint básico | ✅ 2026-09-26 |
 | 3 | Arco, tubo/duto, escada em curva | ✅ 2026-09-26 |
-| 4 | Porta, luzes em fila, elevador, spawn room | 🔧 implementado 2026-09-26, validando na VM |
+| 4 | Porta, luzes em fila, elevador, spawn room | ✅ 2026-09-26 (validado no jogo) |
 | 5 | Trilho/cabo, terreno, cubemaps, nav/clip | ⬜ |
 | 6 | Auto detail, lightmap, rename, lint completo | ⬜ |
 | 7 | Diff/merge, retexture, pack | ⬜ |

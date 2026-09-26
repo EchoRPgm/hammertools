@@ -63,7 +63,7 @@ Legenda: ✅ pronto e verificado na VM · 🔧 implementado, em validação · �
 
 ### Teste de leak (geometria gerada como fronteira do mapa)
 `tools/leaktest.sh` gera 5 mapas (`tools/leaktest.py`) onde o gerado É o selo, compila cada um na VM com `ht-vbsp` e reporta `ok`/`LEAK` (por `**** leaked ****` e `.lin`):
-duto quadrado atravessando a parede de duas salas com cotovelo; duto quadrado e octogonal tampados com o jogador dentro; escada sólida como piso entre dois níveis; arco numa divisória. Todos `ok` em 2026-09-26. Rodar sempre que mexer em `core/brush.py` ou nos geradores de geometria.
+duto quadrado atravessando a parede de duas salas com cotovelo; duto quadrado e octogonal tampados com o jogador dentro; escada sólida como ÚNICO fechamento entre dois níveis de piso (sem laje embaixo); arco numa divisória (só valida solids; arco não sela por natureza, os spandrels são do usuário). Todos `ok` em 2026-09-26. Rodar sempre que mexer em `core/brush.py` ou nos geradores de geometria.
 
 ## Sprints
 

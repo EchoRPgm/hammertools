@@ -77,12 +77,13 @@ def map_duct_capped(sides: int):
 
 
 def map_stairs_as_floor():
-    """Dois níveis de piso; a escada sólida gerada fecha o degrau entre eles (é parede do mapa)."""
+    """Dois níveis de piso; a escada sólida gerada é o ÚNICO fechamento entre eles (é parede do mapa).
+    Piso baixo: laje só em x -256..0. Bloco alto: x 128..512 (sólido de z=0 a 128). Entre x 0..128 não
+    há laje nenhuma: embaixo dos degraus é vazio, então os degraus (que descem até z=0 e encostam no
+    bloco alto em x=128) precisam selar. Qualquer fresta entre degraus vaza."""
     v = VMF(); base(v)
-    # caixa fechada de x -256..512, y -128..128, z 0..384, mas com o piso em dois níveis:
-    # piso baixo z=0 em x -256..0, piso alto z=128 em x 128..512; entre 0 e 128 só a escada sela
-    box(v, (-256 - T, -128 - T, -T), (512 + T, 128 + T, 0))            # laje de fundo geral (z -16..0)
-    box(v, (128, -128, 0), (512, 128, 128))                             # bloco do piso alto (sólido)
+    box(v, (-256 - T, -128 - T, -T), (0, 128 + T, 0))                   # laje do piso baixo (só até x=0)
+    box(v, (128, -128 - T, -T), (512 + T, 128 + T, 128))                # bloco do piso alto (sólido, de z=-16 a 128)
     for a, b in ((( -256 - T, -128 - T, -T), (-256, 128 + T, 384)), ((512, -128 - T, -T), (512 + T, 128 + T, 384)),
                  ((-256, -128 - T, -T), (512, -128, 384)), ((-256, 128, -T), (512, 128 + T, 384)),
                  ((-256 - T, -128 - T, 384), (512 + T, 128 + T, 384 + T))):
@@ -94,9 +95,10 @@ def map_stairs_as_floor():
 
 
 def map_arch_in_wall():
-    """Duas salas ligadas por um vão com arco gerado na divisória. As folgas entre o extradorso curvo
-    e a laje reta acima ligam sala com sala (não com o vazio), então NÃO é leak; o teste garante que
-    os solids do arco são válidos e não quebram o selo das salas."""
+    """Duas salas ligadas por um vão com arco gerado na divisória. O arco NÃO é peça de vedação:
+    acima do extradorso curvo sobram os spandrels, que sempre precisam de brush do usuário. Aqui as
+    folgas ligam sala com sala (não com o vazio), então não é leak; o teste garante só que os solids
+    do arco são válidos (sem volume ilimitado) e não quebram o selo das salas."""
     v = VMF(); base(v)
     span, H = 256, 128
     # duas salas lado a lado com a divisória em x=0 e o arco no meio (y -128..128)
@@ -113,6 +115,7 @@ def map_arch_in_wall():
     # laje reta z H-16..256 (encosta no topo do arco, mas as laterais curvas ficam abertas -> LEAK esperado)
     box(v, (0, -span / 2, H), (16, span / 2, 256))
     return v
+
 
 
 MAPS = {

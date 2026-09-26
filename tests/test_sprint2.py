@@ -96,22 +96,21 @@ def test_railing_follows_slope(room, tmp_path):
                 assert all(abs(c - round(c)) < 1e-6 for c in (p.x, p.y, p.z))
 
 
-def test_ladder_func_ladder_gmod(room, tmp_path):
-    room.create_ent("ht_ladder", origin="100 0 0", targetname="l", angles="0 0 0")  # parede em +X
+def test_ladder_useable_gm_construct_layout(room, tmp_path):
+    room.create_ent("ht_ladder", origin="100 0 0", targetname="l", angles="0 0 0")  # face em +X (x=100)
     room.create_ent("ht_ladder_end", origin="100 0 128", targetname="l")
     built, n, warnings = _rt(room, tmp_path)
     assert warnings == [] and n == 1
-    assert not [e for e in built.entities if e["classname"] in ("func_useableladder", "info_ladder_dismount")]
-    lad = next(e for e in built.entities if e["classname"] == "func_ladder")
-    assert lad.is_brush() and lad["targetname"] == "l"
-    lo, hi = lad.solids[0].get_bbox()
-    # visual de x=96..100; volume de 16 na frente: x=80..96, largura 32, do chão até 128+24
-    assert (lo.x, hi.x, lo.y, hi.y, lo.z, hi.z) == (80, 96, -16, 16, 0, 152)
-    assert all(side.mat == "tools/toolsinvisibleladder" for side in lad.solids[0].sides)
+    assert not [e for e in built.entities if e["classname"] == "func_ladder"]
+    lad = next(e for e in built.entities if e["classname"] == "func_useableladder")
+    assert Vec.from_str(lad["point0"]) == Vec(76, 0, -8) and Vec.from_str(lad["point1"]) == Vec(76, 0, 120)
+    assert Vec.from_str(lad["origin"]) == Vec(100, 0, 0)
+    dis = sorted((Vec.from_str(e["origin"]) for e in built.entities if e["classname"] == "info_ladder_dismount"), key=lambda v: (v.z, v.x, v.y))
+    assert dis == [Vec(36, 0, 0), Vec(76, -40, 0), Vec(120, 0, 129)]  # frente, lado, e em cima ALÉM da face
+    assert all(e["LadderName"] == "l" for e in built.entities if e["classname"] == "info_ladder_dismount")
     s = gen_solids(built)[0]
     lo, hi = s.get_bbox()
     assert (lo.x, hi.x, lo.y, hi.y, lo.z, hi.z) == (96, 100, -16, 16, 0, 128)
-    assert len(built.brushes) == 6 and len(all_solids(built)) == 6 + 1  # visual em func_detail; func_ladder fora do mundo
 
 
 def test_fence_last_panel_cut(room, tmp_path):

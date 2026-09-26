@@ -86,11 +86,10 @@
 @PointClass base(Targetname, Angles) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_ladder :
 	"BASE da escada de mão: no chão, encostada na face da parede, centro da largura. " +
 	"O ângulo (yaw) aponta PRA PAREDE. Coloque um ht_ladder_end no piso de cima, na mesma posição XY, com o mesmo targetname. " +
-	"Gera um volume func_ladder (estilo CS/GMod, toolsinvisibleladder) + brush visual."
+	"O piso de cima fica ALÉM da face (pro lado do yaw). Gera func_useableladder + 3 info_ladder_dismount + brush visual (números do gm_construct)."
 [
-	width(float) : "Largura" : "32" : "Largura da escada (visual e volume)."
-	ladder_depth(float) : "Espessura do volume climbável" : "16" : "Da face visual pra fora."
-	overshoot(float) : "Sobra acima do topo" : "24" : "O volume passa do piso de cima pra dar pra sair."
+	width(float) : "Largura" : "32" : "Largura do brush visual."
+	climb_offset(float) : "Distância da linha de subida à face" : "24" : "gm_construct usa 24."
 	visual(choices) : "Visual" : "brush" : "" = [ "brush" : "Brush fino na parede" "none" : "Nenhum (só lógica)" ]
 	visual_depth(float) : "Profundidade do brush visual" : "4" : ""
 	material(material) : "Textura do brush visual" : "dev/dev_measuregeneric01b" : ""

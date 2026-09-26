@@ -2,7 +2,7 @@ versioninfo
 {
 	"editorversion" "400"
 	"editorbuild" "5304"
-	"mapversion" "1"
+	"mapversion" "2"
 	"formatversion" "100"
 	"prefab" "0"
 }
@@ -21,7 +21,7 @@ world
 {
 	"id" "1"
 	"classname" "worldspawn"
-	"mapversion" "1"
+	"mapversion" "2"
 	solid
 	{
 		"id" "5"
@@ -956,35 +956,6 @@ entity
 }
 entity
 {
-	"id" "18"
-	"angles" "0 0 0"
-	"classname" "ht_ladder"
-	"origin" "1536 -640 0"
-	"targetname" "ladder1"
-	editor
-	{
-		"color" "255 255 255"
-		"visgroupshown" "1"
-		"visgroupautoshown" "1"
-		"logicalpos" "[0 18]"
-	}
-}
-entity
-{
-	"id" "19"
-	"classname" "ht_ladder_end"
-	"origin" "1536 -640 192"
-	"targetname" "ladder1"
-	editor
-	{
-		"color" "255 255 255"
-		"visgroupshown" "1"
-		"visgroupautoshown" "1"
-		"logicalpos" "[0 19]"
-	}
-}
-entity
-{
 	"id" "20"
 	"classname" "ht_arch"
 	"depth" "32"
@@ -1271,6 +1242,35 @@ entity
 		"visgroupshown" "1"
 		"visgroupautoshown" "1"
 		"logicalpos" "[0 38]"
+	}
+}
+entity
+{
+	"id" "18"
+	"angles" "0 0 0"
+	"classname" "ht_ladder"
+	"origin" "1408 -640 0"
+	"targetname" "ladder1"
+	editor
+	{
+		"color" "255 255 255"
+		"visgroupshown" "1"
+		"visgroupautoshown" "1"
+		"logicalpos" "[0 18]"
+	}
+}
+entity
+{
+	"id" "19"
+	"classname" "ht_ladder_end"
+	"origin" "1408 -640 176"
+	"targetname" "ladder1"
+	editor
+	{
+		"color" "255 255 255"
+		"visgroupshown" "1"
+		"visgroupautoshown" "1"
+		"logicalpos" "[0 19]"
 	}
 }
 cameras

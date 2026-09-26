@@ -3,9 +3,10 @@ from srctools import VMF, Vec
 
 
 def base_room(size: int = 1024, height: int = 512) -> VMF:
-    """Sala fechada (hollow), spawn e luz. Sem leaks."""
+    """Sala fechada (hollow), spawn e luz. Sem leaks. make_hollow põe as paredes POR FORA da caixa,
+    então o interior é exatamente a caixa: piso em z=0, paredes em ±size, teto em z=height."""
     v = VMF()
-    for s in v.make_hollow(Vec(-size, -size, -64), Vec(size, size, height), thick=64,
+    for s in v.make_hollow(Vec(-size, -size, 0), Vec(size, size, height), thick=64,
                            mat="tools/toolsnodraw", inner_mat="dev/dev_measuregeneric01b"):
         v.add_brush(s)
     v.create_ent("info_player_start", origin="0 0 8")

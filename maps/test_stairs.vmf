@@ -1487,7 +1487,7 @@ entity
 	"curve_radius" "384"
 	"kind" "rail"
 	"loop" "1"
-	"material" "dev/dev_measuregeneric01"
+	"material" "dev/graygrid"
 	"origin" "-1400 -1300 300"
 	"targetname" "trilho1"
 	"train" "1"

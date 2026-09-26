@@ -21,7 +21,7 @@ STATUS = {
     "escada1": "ok", "escada2": "ok", "corrimao1": "ok", "cerca1": "ok", "cerca2": "ok", "ladder1": "ok",
     "arco1": "ok", "tubo1": "ok", "duto1": "ok", "curva1": "ok",
     "porta1": "ok", "luzes1": "ok", "elev1": "ok", "spawn1": "ok",
-    "cabo1": "pending", "trilho1": "pending", "terreno1": "ok", "cubemaps1": "pending", "zona1": "pending",
+    "cabo1": "pending", "trilho1": "ok", "terreno1": "ok", "cubemaps1": "pending", "zona1": "pending",
 }
 
 

@@ -8,9 +8,12 @@ from pathlib import Path
 from srctools import Vec
 
 
+GAMEDIR: str | None = None  # definido pelo CLI (--game / -game do ht-vbsp)
+
+
 def game_dir(explicit: str | None = None) -> Path | None:
-    """Pasta do jogo (a que tem gameinfo.txt): argumento, env HT_GAME, ou None."""
-    for cand in (explicit, os.environ.get("HT_GAME")):
+    """Pasta do jogo (a que tem gameinfo.txt): argumento, models.GAMEDIR, env HT_GAME, ou None."""
+    for cand in (explicit, GAMEDIR, os.environ.get("HT_GAME")):
         if cand and (Path(cand) / "gameinfo.txt").exists():
             return Path(cand)
     return None

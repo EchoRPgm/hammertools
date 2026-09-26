@@ -46,8 +46,9 @@ def generate(vmf: VMF, group: Group) -> Result:
     name = group.name
     ent_list = []
 
-    # plataforma: topo no nível do piso de baixo
-    plat = brush.box(vmf, Vec(-d / 2, -w / 2, -t), Vec(d / 2, w / 2, 0), mat, nodraw=("bottom",))
+    # plataforma apoiada no piso de baixo (z 0..t). Embutir no piso exigiria um poço do usuário.
+    # No topo, a superfície fica em rise + t: o patamar de chegada deve ter o piso nessa altura.
+    plat = brush.box(vmf, Vec(-d / 2, -w / 2, 0), Vec(d / 2, w / 2, t), mat, nodraw=("bottom",))
     brush.place([plat], a, yaw)
     lift = ents.brush_ent(vmf, "func_door", [plat], targetname=name, origin=a, movedir=ents.angles_str(-90, 0, 0),
                           speed=_f(start, "speed"), wait="-1", lip=str(t - rise), spawnflags="1024",  # 1024 = use opens
@@ -57,8 +58,8 @@ def generate(vmf: VMF, group: Group) -> Result:
 
     # botão a bordo: pequeno poste na borda traseira (-X local), parentado à plataforma
     if start.get("onboard_button", DEFAULTS["onboard_button"]) == "1":
-        post = brush.box(vmf, Vec(-d / 2, -bs / 2, 0), Vec(-d / 2 + bs / 2, bs / 2, bh), mat)
-        bb = brush.box(vmf, Vec(-d / 2 + bs / 2, -bs / 4, bh - bs / 2), Vec(-d / 2 + bs, bs / 4, bh), matb)
+        post = brush.box(vmf, Vec(-d / 2, -bs / 2, t), Vec(-d / 2 + bs / 2, bs / 2, t + bh), mat)
+        bb = brush.box(vmf, Vec(-d / 2 + bs / 2, -bs / 4, t + bh - bs / 2), Vec(-d / 2 + bs, bs / 4, t + bh), matb)
         brush.place([post, bb], a, yaw)
         res.solids.append(post)
         onb = ents.brush_ent(vmf, "func_button", [bb], targetname=f"{name}_btn", origin=a, parentname=name,
@@ -69,7 +70,7 @@ def generate(vmf: VMF, group: Group) -> Result:
 
     # botões de chamada nos andares, do lado indicado pelo yaw (+X local), fora da plataforma
     if start.get("call_buttons", DEFAULTS["call_buttons"]) == "1":
-        for z, inp, suffix in ((0.0, "Close", "call_down"), (rise, "Open", "call_up")):
+        for z, inp, suffix in ((0.0, "Close", "call_down"), (rise + t, "Open", "call_up")):
             bx = d / 2 + 8
             cb = brush.box(vmf, Vec(bx, -bs / 2, z + bh - bs / 2), Vec(bx + bs / 2, bs / 2, z + bh), matb)
             brush.place([cb], a, yaw)

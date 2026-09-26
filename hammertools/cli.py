@@ -23,8 +23,8 @@ def cmd_list(args) -> int:
 
 def build(src: Path, out: Path, game: str | None = None) -> tuple[int, int, list[str]]:
     """Retorna (grupos processados, solids gerados, warnings)."""
-    from hammertools.generators import fence
-    fence.GAMEDIR = game
+    from hammertools.core import models
+    models.GAMEDIR = game
     v = vmfio.load(src)
     vmfio.strip_visgroup(v, vmfio.PREVIEW_VISGROUP)  # preview é descartável; o build regenera tudo
     groups = vmfio.group_markers(vmfio.markers(v))
@@ -48,8 +48,8 @@ def build(src: Path, out: Path, game: str | None = None) -> tuple[int, int, list
 def preview(src: Path, game: str | None = None) -> tuple[int, int, list[str]]:
     """Gera a geometria DENTRO do mapa fonte (visgroup ht_preview), sem esconder marcadores.
     Roda de novo = apaga o preview anterior e regenera. Retorna (grupos, solids, warnings)."""
-    from hammertools.generators import fence
-    fence.GAMEDIR = game
+    from hammertools.core import models
+    models.GAMEDIR = game
     v = vmfio.load(src)
     vmfio.strip_visgroup(v, vmfio.PREVIEW_VISGROUP)
     groups = vmfio.group_markers(vmfio.markers(v))

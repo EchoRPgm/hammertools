@@ -28,14 +28,13 @@ DEFAULTS = {
     "prop_at_end": "0",
 }
 
-GAMEDIR = None  # definido pelo CLI (--game / HT_GAME); sem ele, "auto" cai nos fallbacks
 
 
 def _auto_prop(start, model: str, res: Result) -> tuple[float, float, float]:
     """(spacing, yaw_extra, z_off) resolvendo os 'auto' pelo bbox do modelo."""
     sp, yaw, z = start.get("prop_spacing", DEFAULTS["prop_spacing"]), start.get("model_yaw", DEFAULTS["model_yaw"]), start.get("model_z", DEFAULTS["model_z"])
     need = "auto" in (sp, yaw, z)
-    bbox = models.model_bbox(models.game_dir(GAMEDIR), model) if need else None
+    bbox = models.model_bbox(models.game_dir(), model) if need else None
     if need and bbox is None:
         res.warnings.append(f"{start.get('targetname', '?')}: não li o bbox de {model} (sem --game/HT_GAME?); usando spacing=64, yaw=0, z=0")
     if bbox:

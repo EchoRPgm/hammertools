@@ -192,6 +192,7 @@
 	model(studio) : "Modelo (prop)" : "models/props_c17/door01_left.mdl" : ""
 	hinge(choices) : "Dobradiça" : "left" : "" = [ "left" : "Esquerda" "right" : "Direita" ]
 	model_yaw(float) : "Yaw extra do modelo" : "0" : ""
+	model_z(string) : "Deslocamento Z do modelo" : "auto" : "auto = lê o bbox do .mdl e apoia a porta no chão (portas do HL2 têm origem no meio da altura)."
 	slide(choices) : "Deslize (brush)" : "side" : "" = [ "side" : "Pro lado" "up" : "Pra cima" ]
 	speed(float) : "Velocidade" : "100" : ""
 	wait(float) : "Tempo aberta" : "4" : "Segundos até fechar sozinha."
@@ -227,7 +228,7 @@
 // ---------------------------------------------------------------- elevador
 @PointClass base(Targetname, Angles) iconsprite("editor/info_target.vmt") color(255 128 0) size(-8 -8 -8, 8 8 8) line(255 128 0, targetname, targetname) = ht_elevator :
 	"ELEVADOR, andar de baixo: centro da plataforma, nível do piso. ht_elevator_end no andar de cima (mesma XY), mesmo targetname. " +
-	"Yaw = lado dos botões de chamada. Gera plataforma func_door, botão a bordo (Toggle) e botões de chamada (Open/Close)."
+	"Yaw = lado dos botões de chamada. A plataforma nasce EM CIMA do piso de baixo (z 0..espessura) e no topo a superfície fica em (altura + espessura): faça o patamar de cima nessa cota. Gera func_door, botão a bordo (Toggle) e botões de chamada (Open/Close)."
 [
 	width(float) : "Largura (Y)" : "128" : ""
 	depth(float) : "Profundidade (X)" : "128" : ""

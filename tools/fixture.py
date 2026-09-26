@@ -60,7 +60,7 @@ def build():
     v.create_ent("ht_lights_end", origin="512 -256 560", targetname="luzes1")
     v.create_ent("ht_elevator", origin="1024 1024 0", targetname="elev1", angles="0 0 0", width="128", depth="128")
     v.create_ent("ht_elevator_end", origin="1024 1024 256", targetname="elev1")
-    box(v, (1096, 960, 240), (1400, 1088, 256))  # patamar de chegada ao lado (+X) da plataforma
+    box(v, (1096, 960, 248), (1400, 1088, 264))  # patamar de chegada ao lado (+X): piso em rise(256) + espessura(8)
     v.create_ent("ht_spawnroom", origin="-1408 -1408 0", targetname="spawn1", angles="0 45 0", spacing="64", margin="32")
     v.create_ent("ht_spawnroom_end", origin="-1152 -1216 0", targetname="spawn1")
     return v

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from srctools import VMF, Vec
 
-from hammertools.core import brush, ents
+from hammertools.core import brush, ents, models
 from hammertools.core.vmf import Group, origin
 from hammertools.generators import Result, register
 
@@ -17,7 +17,7 @@ DEFAULTS = {
     "width": 56.0, "height": 112.0, "thickness": 8.0,
     "frame": "1", "frame_size": 8.0, "frame_depth": 16.0,
     "material": "dev/dev_measuregeneric01b", "material_frame": "",
-    "model": "models/props_c17/door01_left.mdl", "hinge": "left", "model_yaw": 0.0,
+    "model": "models/props_c17/door01_left.mdl", "hinge": "left", "model_yaw": 0.0, "model_z": "auto",
     "slide": "side",                # brush: side (desliza pro lado) | up
     "speed": 100.0, "wait": 4.0, "auto_open": "0", "trigger_depth": 48.0,
     "locked": "0",
@@ -55,11 +55,20 @@ def generate(vmf: VMF, group: Group) -> Result:
     door_name = name
     if kind == "prop":
         hinge_y = -w / 2 if start.get("hinge", DEFAULTS["hinge"]) == "left" else w / 2
-        pos = brush.to_world(Vec(0, hinge_y, 0), a, yaw)
+        model = start.get("model") or DEFAULTS["model"]
+        mz = start.get("model_z", DEFAULTS["model_z"])
+        if mz == "auto":
+            bbox = models.model_bbox(models.game_dir(), model)
+            if bbox is None:
+                res.warnings.append(f"{name}: não li o bbox de {model} (sem --game/HT_GAME?); assumindo origem no meio da altura (54.25)")
+                mz = 54.25  # portas do HL2: origem no centro vertical
+            else:
+                mz = -bbox[0].z if bbox[0].z < 0 else 0.0
+        pos = brush.to_world(Vec(0, hinge_y, float(mz)), a, yaw)
         e = vmf.create_ent(
             "prop_door_rotating", origin=pos, targetname=door_name,
             angles=ents.angles_str(0, yaw + _f(start, "model_yaw") + (180 if hinge_y > 0 else 0)),
-            model=start.get("model") or DEFAULTS["model"], distance="90", speed=str(_f(start, "speed")),
+            model=model, distance="90", speed=str(_f(start, "speed")),
             returndelay=str(int(_f(start, "wait"))), spawnflags="0", hardware="1",
             opendir="0", forceclosed="0", spawnpos="0", ajarangles="0 0 0",
         )

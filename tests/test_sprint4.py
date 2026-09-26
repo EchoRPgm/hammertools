@@ -23,14 +23,16 @@ def _outs(e):
 
 
 # ---------------------------------------------------------------- porta
-def test_door_prop_with_frame_and_trigger(room, tmp_path):
+def test_door_prop_with_frame_and_trigger(room, tmp_path, monkeypatch):
+    from hammertools.core import models
+    monkeypatch.setattr(models, "model_bbox", lambda gamedir, model: (Vec(-6, -1.25, -54.25), Vec(6, 47.25, 54.25)))  # door01_left real
     room.create_ent("ht_door", origin="0 256 0", targetname="porta1", angles="0 90 0", auto_open="1")
     built, n, warnings = _rt(room, tmp_path)
     assert warnings == [] and n == 3  # 2 ombreiras + verga
     door = _ents(built, "prop_door_rotating")[0]
     assert door["targetname"] == "porta1" and door["model"].endswith("door01_left.mdl")
-    # dobradiça esquerda: local (0, -28, 0) com yaw 90 -> mundo (28, 256, 0)
-    assert Vec.from_str(door["origin"]) == Vec(28, 256, 0)
+    # dobradiça esquerda: local (0, -28, z) com yaw 90 -> mundo (28, 256, z); z = 54.25 (origem do modelo no meio)
+    o = Vec.from_str(door["origin"]); assert (o.x, o.y) == (28, 256) and abs(o.z - 54.25) < 0.01
     tr = _ents(built, "trigger_multiple")[0]
     assert tr.is_brush() and ("OnStartTouch", "porta1", "Open") in _outs(tr) and ("OnEndTouchAll", "porta1", "Close") in _outs(tr)
     lo, hi = tr.solids[0].get_bbox()
@@ -79,13 +81,13 @@ def test_elevator_io(room, tmp_path):
     lift = _ents(built, "func_door")[0]
     assert lift["targetname"] == "elev" and lift["movedir"].startswith("-90") and float(lift["lip"]) == 8 - 256 and lift["wait"] == "-1"
     lo, hi = lift.solids[0].get_bbox()
-    assert (lo.z, hi.z) == (-8, 0) and (lo.x, hi.x, lo.y, hi.y) == (-64, 64, -64, 64)
+    assert (lo.z, hi.z) == (0, 8) and (lo.x, hi.x, lo.y, hi.y) == (-64, 64, -64, 64)
     btns = {b["targetname"]: b for b in _ents(built, "func_button")}
     assert set(btns) == {"elev_btn", "elev_call_down", "elev_call_up"}
     assert btns["elev_btn"]["parentname"] == "elev" and ("OnPressed", "elev", "Toggle") in _outs(btns["elev_btn"])
     assert ("OnPressed", "elev", "Open") in _outs(btns["elev_call_up"]) and ("OnPressed", "elev", "Close") in _outs(btns["elev_call_down"])
     up_lo, up_hi = btns["elev_call_up"].solids[0].get_bbox()
-    assert up_lo.z == 256 + 48 - 8 and up_lo.x == 72  # do lado +X (yaw 0), fora da plataforma
+    assert up_lo.z == 256 + 8 + 48 - 8 and up_lo.x == 72  # piso de cima em rise + t; do lado +X (yaw 0), fora da plataforma
 
 
 # ---------------------------------------------------------------- spawn room
@@ -107,3 +109,12 @@ def test_spawnroom_tf2(room, tmp_path):
     assert warnings == []
     assert len(_ents(built, "info_player_teamspawn")) == 4 and all(e["TeamNum"] == "3" for e in _ents(built, "info_player_teamspawn"))
     assert _ents(built, "func_respawnroom")[0].is_brush() and _ents(built, "func_regenerate")
+
+
+def test_door_without_game_warns_and_uses_hl2_fallback(room, tmp_path, monkeypatch):
+    from hammertools.core import models
+    monkeypatch.setattr(models, "game_dir", lambda explicit=None: None)
+    room.create_ent("ht_door", origin="0 0 0", targetname="p", frame="0")
+    built, _, warnings = _rt(room, tmp_path)
+    assert any("bbox" in w for w in warnings)
+    assert abs(Vec.from_str(_ents(built, "prop_door_rotating")[0]["origin"]).z - 54.25) < 0.01

@@ -92,6 +92,9 @@ def build():
     v.create_ent("ht_rope_end", origin="-1400 1300 300", targetname="trilho1")
     v.create_ent("ht_terrain", origin="1024 -1536 0", targetname="terreno1", tile="512", power="3", amplitude="48", thickness="16", material=mat("terreno1"))
     v.create_ent("ht_terrain_end", origin="1536 -1024 0", targetname="terreno1")               # canto +X/-Y da sala, 512x512
+    # piso que REFLETE (usa $envmap env_cubemap), pra validar os cubemaps: placa de 512x512 no centro-sul
+    box(v, (-256, -768, 0), (256, -512, 2), "metal/citadel_tilefloor016a")
+    box(v, (256, -768, 0), (512, -512, 2), "tile/tilefloor019a")
     v.create_ent("ht_cubemaps", origin="-1408 -1408 96", targetname="cubemaps1", spacing="512", margin="128")
     v.create_ent("ht_cubemaps_end", origin="1408 1408 96", targetname="cubemaps1")
     v.create_ent("ht_zone", origin="-960 -1024 0", targetname="zona1", kind="block_los", height="96")  # atrás do duto

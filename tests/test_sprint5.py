@@ -75,13 +75,14 @@ def test_rope_chain(room, tmp_path):
 
 
 def test_rail_brushes(room, tmp_path):
-    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", gauge="64", tie_spacing="64")
+    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", gauge="64", tie_spacing="64", curve_radius="0")
     room.create_ent("ht_rope_end", origin="256 0 0", targetname="tr")
     built, n, warnings = _rt(room, tmp_path)
     assert warnings == [] and n == 2 + 4  # 2 trilhos + dormentes em 0,64,128,192
     gen = gen_solids(built)
     rails = [s for s in gen if s.get_bbox()[1].x - s.get_bbox()[0].x > 200]
     assert len(rails) == 2 and sorted(round((s.get_bbox()[0].y + s.get_bbox()[1].y) / 2) for s in rails) == [-32, 32]
+    assert all(abs((s.get_bbox()[1].y - s.get_bbox()[0].y) - 4) < 0.01 for s in rails)
 
 
 # ---------------------------------------------------------------- cubemaps
@@ -112,25 +113,28 @@ def test_zone_clip_and_nav(room, tmp_path):
 
 
 def test_rail_with_train(room, tmp_path):
-    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", train="1", train_mode="manual", loop="1", tie_spacing="64")
-    room.create_ent("ht_rope_node", origin="256 0 0", targetname="tr", order="1")
-    room.create_ent("ht_rope_end", origin="256 256 0", targetname="tr")
+    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", train="1", train_mode="manual", loop="1", tie_spacing="64", curve_radius="96")
+    room.create_ent("ht_rope_node", origin="768 0 0", targetname="tr", order="1")
+    room.create_ent("ht_rope_end", origin="768 768 0", targetname="tr")
     built, n, warnings = _rt(room, tmp_path)
     assert warnings == []
-    rails = [s for s in gen_solids(built) if max(s.get_bbox()[1].x - s.get_bbox()[0].x, s.get_bbox()[1].y - s.get_bbox()[0].y) > 200]
-    assert len(rails) == 6  # 3 trechos (o loop fecha o último) x 2 trilhos
+    gen = gen_solids(built)
+    assert any(s.point_inside(Vec(384, -32, 10)) for s in gen) and any(s.point_inside(Vec(384, 32, 10)) for s in gen)
+    pts_ = [p for s in gen for sd in s.sides for p in sd.planes]
+    assert all(s.point_inside(sum((p for sd in s.sides for p in sd.planes), Vec()) / (3 * len(s.sides))) for s in gen)  # todos válidos
     pts = {e["targetname"]: e for e in _ents(built, "path_track")}
-    assert set(pts) == {"tr_t0", "tr_t1", "tr_t2"}
-    assert pts["tr_t0"]["target"] == "tr_t1" and pts["tr_t1"]["target"] == "tr_t2" and pts["tr_t2"]["target"] == "tr_t0"  # loop
-    assert Vec.from_str(pts["tr_t0"]["origin"]) == Vec(0, 0, 12)  # topo do trilho: dormente 8 + trilho 4
+    n = len(pts)
+    assert n > 3  # arcos nos cantos (loop: os 3 vértices são cantos)
+    for i in range(n):  # cadeia fechada
+        assert pts[f"tr_t{i}"]["target"] == f"tr_t{(i + 1) % n}"
     train = _ents(built, "func_tracktrain")[0]
-    assert train.is_brush() and len(train.solids) == 5 and train["target"] == "tr_t0" and train["targetname"] == "tr"
+    assert train.is_brush() and len(train.solids) == 5 and train["target"] in pts and train["targetname"] == "tr"
     ctl = _ents(built, "func_traincontrols")[0]
     assert ctl.is_brush() and ctl["target"] == "tr" and ctl["parentname"] == "tr"
 
 
 def test_rail_train_auto(room, tmp_path):
-    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", train="1", loop="1", train_speed="150")
+    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", train="1", loop="1", train_speed="150", curve_radius="64")
     room.create_ent("ht_rope_node", origin="512 0 0", targetname="tr", order="1")
     room.create_ent("ht_rope_end", origin="512 512 0", targetname="tr")
     built, _, warnings = _rt(room, tmp_path)
@@ -144,17 +148,44 @@ def test_rail_train_auto(room, tmp_path):
 
 def test_train_station_io(room, tmp_path):
     from srctools.vmf import Output
-    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", train="1", loop="1")
+    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", train="1", loop="1", curve_radius="64")
     n1 = room.create_ent("ht_rope_node", origin="512 0 0", targetname="tr", order="1", stop="4", arrive_sound="ambient/alarms/train_horn2.wav")
     n1.add_out(Output("OnArrive", "porta1", "Open"))
     n1.add_out(Output("OnDepart", "porta1", "Close", delay=1.0))
     room.create_ent("ht_rope_end", origin="512 512 0", targetname="tr")
     built, _, warnings = _rt(room, tmp_path)
     assert warnings == []
-    pt = {e["targetname"]: e for e in _ents(built, "path_track")}["tr_t1"]
+    tracks = {e["targetname"]: e for e in _ents(built, "path_track")}
+    pt = next(e for e in tracks.values() if any(o.input == "Stop" for o in e.outputs))
     outs = [(o.output, o.target, o.input, round(o.delay, 2)) for o in pt.outputs]
     assert ("OnPass", "tr", "Stop", 0.0) in outs and ("OnPass", "tr", "StartForward", 4.0) in outs
     assert ("OnPass", "porta1", "Open", 0.0) in outs and ("OnPass", "porta1", "Close", 5.0) in outs   # depart = delay + parada
-    assert ("OnPass", "tr_t1_snd_a", "PlaySound", 0.0) in outs
+    assert any(o[1].endswith("_snd_a") and o[2] == "PlaySound" for o in outs)
     snd = _ents(built, "ambient_generic")[0]; assert snd["message"].endswith("train_horn2.wav")
-    assert not [o for o in {e["targetname"]: e for e in _ents(built, "path_track")}["tr_t0"].outputs]  # sem estação = sem I/O
+    assert sum(1 for e in tracks.values() if e.outputs) == 1  # só a estação tem I/O
+    # a estação fica no meio do arco do canto (512,0): perto do vértice, não nele
+    o = Vec.from_str(pt["origin"]); assert 10 < (Vec(o.x, o.y, 0) - Vec(512, 0, 0)).mag() < 200
+
+
+def test_rail_curve_continuous(room, tmp_path):
+    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", curve_radius="256", curve_segments="6", tie_spacing="48")
+    room.create_ent("ht_rope_node", origin="1024 0 0", targetname="tr", order="1")
+    room.create_ent("ht_rope_end", origin="1024 1024 0", targetname="tr")
+    built, n, warnings = _rt(room, tmp_path)
+    assert warnings == []
+    gen = gen_solids(built)
+    # centro do arco (768, 256), raio 256; trilhos a ±32 do eixo -> raios 224 e 288. Pontos a 45°, na altura do trilho (10):
+    import math
+    for r in (224, 288):
+        p = Vec(768 + r * math.sin(math.pi / 4), 256 - r * math.cos(math.pi / 4), 10)
+        assert any(s.point_inside(p) for s in gen), (r, p)
+    # canto vivo (1024, -32) não tem trilho
+    assert not any(s.point_inside(Vec(1020, -30, 10)) for s in gen)
+
+
+def test_rail_radius_clamped(room, tmp_path):
+    room.create_ent("ht_rope", origin="0 0 0", targetname="tr", kind="rail", curve_radius="16", gauge="64")
+    room.create_ent("ht_rope_node", origin="1024 0 0", targetname="tr", order="1")
+    room.create_ent("ht_rope_end", origin="1024 1024 0", targetname="tr")
+    _, _, warnings = _rt(room, tmp_path)
+    assert any("meia bitola" in w for w in warnings)

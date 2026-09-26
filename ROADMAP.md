@@ -29,7 +29,7 @@ Legenda: ✅ pronto e verificado na VM · 🔧 implementado, em validação · �
 | ✅ | `ht_arch` + `_end` | Arco/abóbada: semi-elipse em N segmentos, espessura radial, profundidade; altura auto = semicírculo |
 | ✅ | `ht_pipe` + `_node` + `_end` | Tubo/duto por sequência de pontos: seção quadrada ou octogonal, sólido ou oco, cotovelos curvos tangentes em qualquer ângulo (horizontal ou vertical) |
 | ✅ | `ht_stairs_curve` + `_ctrl` + `_end` | Escada em curva: bezier quadrática em XY, degraus sólidos ou flutuantes; sem playerclip ainda |
-| 🔧 | `ht_rope` + `_node` + `_end` | Cabo (`move_rope` + `keyframe_rope` encadeados com folga) ou trilho de brush (2 trilhos + dormentes), opcionalmente com vagão `func_tracktrain` automático ou dirigível (`path_track` por ponto, loop) e ESTAÇÕES: qualquer ponto com `stop`, sons de chegada/partida e outputs `OnArrive`/`OnDepart` ligados no próprio marcador, traduzidos pra I/O do `path_track` |
+| 🔧 | `ht_rope` + `_node` + `_end` | Cabo (`move_rope` + `keyframe_rope` encadeados com folga) ou trilho de brush (2 trilhos + dormentes), opcionalmente com vagão `func_tracktrain` automático ou dirigível (`path_track` por ponto, loop) com CURVAS (cada canto vira arco tangente de `curve_radius`; trilho é varredura contínua, dormentes seguem a curva, `path_track`s ao longo do arco, estação de canto fica no meio do arco) e ESTAÇÕES: qualquer ponto com `stop`, sons de chegada/partida e outputs `OnArrive`/`OnDepart` ligados no próprio marcador, traduzidos pra I/O do `path_track` |
 | ✅ | `ht_terrain` + `_end` | Terreno: retângulo → tiles de displacement (power 2-4) com ruído determinístico ou heightmap PNG; bordas compartilhadas entre tiles |
 
 ### Fase 2 — Entidades e lógica
@@ -47,7 +47,7 @@ Legenda: ✅ pronto e verificado na VM · 🔧 implementado, em validação · �
 |---|---|
 | ✅ | Pares de marcadores incompletos |
 | ✅ | Outputs mirando targetname inexistente (case-insensitive, como o Source) |
-| ✅ | Brushes fora do grid (mundo e entidades, um aviso por solid, displacements identificados) |
+| ✅ | Brushes fora do grid (mundo e entidades de brush; `func_detail` só com `--detail-grid`, porque não afeta selo nem BSP; um aviso por solid, displacements identificados) |
 | ⬜ | Textura inexistente (ler VPKs), `prop_static` com modelo não-static, leak provável |
 | ✅ | Auto `func_detail`: tudo que os geradores produzem vira um `func_detail` por marcador (keyvalue `detail=0` força brush de mundo; duto oco já é mundo por padrão). `ht detail` pra mapas prontos continua ⬜ |
 | ⬜ | Normalizador de lightmap scale por textura (`ht lightmap`) |
@@ -101,6 +101,7 @@ duto quadrado atravessando a parede de duas salas com cotovelo; duto quadrado e 
 - **Normais**: `Side.normal()` aponta PRA DENTRO do solid. `PrismFace` do `make_prism`: west = face -X, east = +X, north = -Y, south = +Y. `Side.from_plane` recebe normal pra dentro e inventa pontos fora do grid; por isso geometria inclinada/curva usa `brush.from_points` com 3 pontos explícitos (winding igual ao `make_prism`: cross(p2-p1, p3-p1) pra dentro). Se `point_inside` do centro der False, o winding está invertido.
 - **Eixos de textura**: `Side(planes=...)` do srctools sai com uaxis/vaxis padrão (`[0 1 0]`/`[0 0 -1]`), degenerado em faces com normal ±Y → o engine desenha a face VERMELHA. `brush.from_points` chama `reset_uv()` em cada face. Sintoma no jogo: face vermelha lisa (não é textura faltando, que seria xadrez rosa/preto).
 - **Modelos com origem no centro**: `props_c17/door01_left` tem origem no meio da altura (z −54..54) e largura 48 (y −1..47 a partir da dobradiça); `ht_door` lê o bbox e sobe a origem (`model_z=auto`). `light_cagelight01_on` pende pra baixo da origem (z −11..2).
+- **Trilho curvo**: offset da polilinha com miter pela BISSETRIZ exata das normais dos trechos (diferença central torce o anel na costura arco→reto); peças do trilho em grade 1/8 (grade 1 torce um trilho de 4u em curva apertada); pedaço degenerado é pulado religando no anel seguinte. Vagão nasce no trecho reto mais longo.
 - **Trem**: `func_tracktrain` precisa do spawnflag 512 (Is unblockable by player), senão para com "Blocked by player" ao encostar em alguém; automático = 512 + 2 (No User Control), `startspeed` = `speed`, `logic_auto` OnMapSpawn → StartForward.
 - **Elevador**: `func_door` spawnflags 256 (Use Opens); 1024 é Touch Opens e faz subir ao pisar. Plataforma nasce em cima do piso (z 0..t), não embutida (embutir precisaria de poço). Piso de cima = rise + t.
 - **Displacements** (`core/disp.py`): `Side(vmf, planes, mat, disp_power=N)` cria os vértices; `disp_pos` = canto inicial, vértice `[y*size+x]`, `normal`+`distance`. O topo do `make_prism` é substituído pelo Side de displacement. Heightmap PNG lido com PIL se houver, senão decoder PNG puro (8 bits, filtros 0-4).

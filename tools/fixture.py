@@ -82,7 +82,7 @@ def build():
     v.create_ent("ht_rope_node", origin="-900 1000 440", targetname="cabo1", order="1")
     v.create_ent("ht_rope_end", origin="-400 1300 400", targetname="cabo1")
     # circuito elevado de trem dando a volta na sala (z=300), automático
-    v.create_ent("ht_rope", origin="-1400 -1300 300", targetname="trilho1", kind="rail", train="1", train_mode="auto", loop="1", train_speed="250", material=mat("trilho1"))
+    v.create_ent("ht_rope", origin="-1400 -1300 300", targetname="trilho1", kind="rail", train="1", train_mode="auto", loop="1", train_speed="250", curve_radius="384", material=mat("trilho1"))
     # estação no 2º canto: para 5 s, buzina ao chegar, abre a porta1 ao chegar e fecha ao partir
     from srctools.vmf import Output
     st = v.create_ent("ht_rope_node", origin="1400 -1300 300", targetname="trilho1", order="1", stop="5", arrive_sound="ambient/alarms/train_horn2.wav")

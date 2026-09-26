@@ -1484,6 +1484,7 @@ entity
 {
 	"id" "42"
 	"classname" "ht_rope"
+	"curve_radius" "384"
 	"kind" "rail"
 	"loop" "1"
 	"material" "dev/dev_measuregeneric01"

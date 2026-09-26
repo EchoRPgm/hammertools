@@ -278,6 +278,8 @@
 	rope_material(material) : "Material do cabo" : "cable/cable.vmt" : ""
 	subdiv(integer) : "Subdivisões (cabo)" : 4 : ""
 	gauge(float) : "Bitola (trilho)" : "64" : "Distância entre os trilhos."
+	curve_radius(float) : "Raio das curvas (trilho)" : "256" : "Cada canto vira um arco tangente desse raio (reduzido se o trecho for curto; mínimo meia bitola + folga). 0 = cantos vivos."
+	curve_segments(integer) : "Segmentos por 90° (trilho)" : 6 : "Mais = curva mais suave (e mais path_track pro trem)."
 	rail_size(float) : "Seção do trilho" : "4" : ""
 	tie_spacing(float) : "Espaçamento dos dormentes" : "48" : ""
 	tie_size(float) : "Espessura do dormente" : "8" : ""

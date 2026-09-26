@@ -135,7 +135,8 @@ def cmd_lint(args) -> int:
             problems.append(f"{e['classname']} '{e.get('targetname', '?')}' -> output {out.output} mira '{t}' que não existe")
     # brushes fora do grid (mundo e entidades), um aviso por solid
     grid = args.grid
-    owners = [(s, "mundo") for s in v.brushes] + [(s, e["classname"]) for e in v.entities for s in e.solids]
+    owners = [(s, "mundo") for s in v.brushes] + [(s, e["classname"]) for e in v.entities for s in e.solids
+                                                if args.detail_grid or e["classname"] != "func_detail"]
     for s, owner in owners:
         bad = [side for side in s.sides if any(not vmfio.is_on_grid(c, grid) for p in side.planes for c in (p.x, p.y, p.z))]
         if bad:
@@ -159,7 +160,8 @@ def main(argv=None) -> int:
     p = sub.add_parser("list-markers", help="lista marcadores ht_* do mapa")
     p.add_argument("vmf"); p.set_defaults(fn=cmd_list)
     p = sub.add_parser("lint", help="checagens pré-compile")
-    p.add_argument("vmf"); p.add_argument("--grid", type=float, default=1.0); p.set_defaults(fn=cmd_lint)
+    p.add_argument("vmf"); p.add_argument("--grid", type=float, default=1.0)
+    p.add_argument("--detail-grid", action="store_true", help="também checa grade em func_detail (ignorado por padrão: não afeta selo nem BSP)"); p.set_defaults(fn=cmd_lint)
     args = ap.parse_args(argv)
     return args.fn(args)
 

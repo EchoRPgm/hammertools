@@ -61,6 +61,10 @@ Legenda: ✅ pronto e verificado na VM · 🔧 implementado, em validação · �
 | ⬜ | `ht retexture --map tabela.toml`: blockout (`dev/dev_measure*`) → texturas finais |
 | ⬜ | `ht pack mapa.bsp`: lista assets custom e injeta com `bspzip` |
 
+### Teste de leak (geometria gerada como fronteira do mapa)
+`tools/leaktest.sh` gera 5 mapas (`tools/leaktest.py`) onde o gerado É o selo, compila cada um na VM com `ht-vbsp` e reporta `ok`/`LEAK` (por `**** leaked ****` e `.lin`):
+duto quadrado atravessando a parede de duas salas com cotovelo; duto quadrado e octogonal tampados com o jogador dentro; escada sólida como piso entre dois níveis; arco numa divisória. Todos `ok` em 2026-09-26. Rodar sempre que mexer em `core/brush.py` ou nos geradores de geometria.
+
 ## Sprints
 
 | Sprint | Entrega | Status |
@@ -101,7 +105,7 @@ Legenda: ✅ pronto e verificado na VM · 🔧 implementado, em validação · �
 - **GMod**: escada é o brush `func_ladder` (estilo CS/HL2DM, textura `tools/toolsinvisibleladder`); `func_useableladder` do HL2 NÃO funciona no GMod (testado: jogador não sobe). Executável do jogo é `bin\win64\gmod.exe`.
 - **Playerclip da escada**: reta dos narizes (inclinação h/d) de (-d, 0) a (run-d, rise), depois plana até run. Flutuante: laje inclinada de espessura `tread` logo abaixo, pra não fechar o vão. Só jogadores (não é `npc_clip`).
 - **Prop fence**: `props_c17/fence01a` = 134u no eixo Y, origem no centro (z −54..54). Sem bbox o gerador avisa e usa 64/0/0.
-- **Cotovelos do tubo**: arco tangente aos dois trechos (raio `bend_radius`, tangente T = Rb·tan(θ/2) descontada dos retos), `bend_segments` pedaços por 90°. Cada pedaço é `brush.sweep_piece` (2 anéis correspondentes → caps + n planos laterais; quads não planares não importam porque face de VMF é plano de 3 pontos). Oco: `wall_piece` por lado. `from_points_auto` corrige winding pelo centróide. `radius` do tubo é o apótema (face plana), não o raio circunscrito.
+- **Cotovelos do tubo**: arco tangente aos dois trechos (raio `bend_radius`, tangente T = Rb·tan(θ/2) descontada dos retos), `bend_segments` pedaços por 90°. Cada pedaço é `brush.sweep_piece` (2 anéis correspondentes → caps + n planos laterais; quads não planares não importam porque face de VMF é plano de 3 pontos). Oco: `ring_wall_piece` por lado = fatia com laterais em planos RADIAIS (pelo centro do anel), compartilhados com as paredes vizinhas; hexaedro por pontos (`wall_piece`) deixava frestas na costura reto→cotovelo do octógono (leak confirmado por pointfile). `from_points_auto` corrige winding pelo centróide. `radius` do tubo é o apótema (face plana), não o raio circunscrito.
 - **Windows-MCP**: processa um comando por vez e trava em comandos longos (compile, COM). Pra isso existe `~/vms/qga.sh "<powershell>" [timeout]` (QEMU guest agent; roda como SYSTEM, usar caminhos `C:\Users\Quickemu\...`). Destravar: `schtasks /End` + kill python + `schtasks /Run /TN windows-mcp-server`. `~/vms/qga-get.sh` copia arquivo da VM pro host.
 - **vvis na VM**: usar sempre `vvis -fast` na fixture; o vvis completo com os cotovelos octogonais leva dezenas de minutos em software render e dois vvis simultâneos travam a VM.
 - **Deploy na VM**: copiar `hammertools/` + `pyproject.toml` pra `vm-share/hammertools_pkg/`, zipar (`shutil.make_archive`), servido em `http://10.0.2.2:8090`; na VM `uv tool install --force <pasta>` e copiar o FGD pra `bin\win64\hammerplusplus\`. Reiniciar o Hammer++ depois.

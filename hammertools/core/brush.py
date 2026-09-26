@@ -170,3 +170,45 @@ def rotate_about(v: Vec, axis: Vec, ang_rad: float) -> Vec:
     import math
     k = Vec(axis).norm()
     return v * math.cos(ang_rad) + Vec.cross(k, v) * math.sin(ang_rad) + k * (k.dot(v) * (1 - math.cos(ang_rad)))
+
+
+def from_points_oriented(vmf: VMF, faces: list[tuple], centroid: Vec | None = None) -> Solid:
+    """from_points orientando CADA face por um ponto interior (`centroid`; default = média dos pontos
+    das faces, que só serve se nenhum ponto auxiliar fora do solid aparecer nas faces).
+    cross(p2-p1, p3-p1) fica apontando pro ponto interior (convenção do srctools)."""
+    if centroid is None:
+        pts = [Vec(*p) for f in faces for p in f[:3]]
+        centroid = sum(pts, Vec()) / len(pts)
+    c = Vec(centroid)
+    fixed = []
+    for a, b, cc, m in faces:
+        a, b, cc = Vec(*a), Vec(*b), Vec(*cc)
+        n = Vec.cross(b - a, cc - a)
+        fixed.append((a, b, cc, m) if n.dot(c - a) > 0 else (a, cc, b, m))
+    return from_points(vmf, fixed)
+
+
+def ring_wall_piece(vmf: VMF, ring_a: list[Vec], ring_b: list[Vec], inner_a: list[Vec], inner_b: list[Vec],
+                    ca: Vec, cb: Vec, i: int, mat: str, mat_in: str | None = None, grid: float = 1.0) -> Solid:
+    """Parede i de uma seção oca entre os anéis A e B, construída como FATIA: as laterais são planos
+    radiais (pelo centro do anel) que passam pelo MEIO das arestas vizinhas, então cada parede sobrepõe
+    metade das duas ao lado. Em curvas os planos radiais ficam levemente inclinados e, sem sobreposição,
+    sobra uma fresta na aresta do canto (leak confirmado por pointfile); com sobreposição não há costura
+    fina. Brushes de mundo sobrepostos são legais (vbsp faz a união)."""
+    n = len(ring_a); j = (i + 1) % n; h = (i - 1) % n; k = (i + 2) % n
+    oa, ob, oc, od = (snap(ring_a[i], grid), snap(ring_a[j], grid), snap(ring_b[j], grid), snap(ring_b[i], grid))
+    ia, ib, ic, id_ = (snap(inner_a[i], grid), snap(inner_a[j], grid), snap(inner_b[j], grid), snap(inner_b[i], grid))
+    ca, cb = snap(ca, grid), snap(cb, grid)
+    m_lo = snap((ring_a[h] + ring_a[i]) / 2, grid)   # meio da aresta anterior (anel A)
+    m_hi = snap((ring_a[j] + ring_a[k]) / 2, grid)   # meio da aresta seguinte (anel A)
+    mi = mat_in or mat
+    faces = [
+        (oa, ob, oc, mat),      # externa
+        (ia, ib, ic, mi),       # interna
+        (oa, ob, ca, mat),      # cap anel A
+        (od, oc, cb, mat),      # cap anel B
+        (ca, m_lo, cb, mat),    # radial baixo: meio da aresta anterior (sobrepõe a parede i-1)
+        (ca, m_hi, cb, mat),    # radial alto: meio da aresta seguinte (sobrepõe a parede i+1)
+    ]
+    corners = (oa, ob, oc, od, ia, ib, ic, id_)
+    return from_points_oriented(vmf, faces, centroid=sum(corners, Vec()) / 8)  # os centros dos anéis NÃO entram

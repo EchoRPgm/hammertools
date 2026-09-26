@@ -115,9 +115,8 @@ def generate(vmf: VMF, group: Group) -> Result:
             ia = [ca + (p - ca) * inner_scale for p in ring_a]
             ib = [cb + (p - cb) * inner_scale for p in ring_b]
             for i in range(n):
-                j = (i + 1) % n
-                solids.append(brush.wall_piece(vmf, ring_a[i], ring_a[j], ring_b[j], ring_b[i],
-                                               ia[i], ia[j], ib[j], ib[i], mat, mat_in, grid))
+                # fatia com laterais radiais: paredes vizinhas compartilham o mesmo plano (sem frestas/leak)
+                solids.append(brush.ring_wall_piece(vmf, ring_a, ring_b, ia, ib, ca, cb, i, mat, mat_in, grid))
         else:
             solids.append(brush.sweep_piece(vmf, ring_a, ring_b, mat, grid=grid))
 

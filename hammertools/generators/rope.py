@@ -151,7 +151,8 @@ def _train(vmf, group, start, path, rail_top, res):
     speed = _f(start, "train_speed")
     train = ents.brush_ent(vmf, "func_tracktrain", car, targetname=name, origin=p0, target=tracks[0],
                            speed=speed, startspeed=(speed if auto else 0), wheels=str(L * 0.75), height="8",
-                           bank="0", dmg="0", volume="10", spawnflags=("2" if auto else "0"),  # 2 = No User Control
+                           bank="0", dmg="0", volume="10",
+                           spawnflags=("514" if auto else "512"),  # 512 = Is unblockable by player (senão "Blocked by player" e trava); 2 = No User Control
                            velocitytype="1", orientationtype="1",
                            MoveSound="plats/train_move.wav", StopSound="plats/train_stop.wav")
     res.ents.append(train)

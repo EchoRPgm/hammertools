@@ -136,7 +136,7 @@ def test_rail_train_auto(room, tmp_path):
     built, _, warnings = _rt(room, tmp_path)
     assert warnings == []
     train = _ents(built, "func_tracktrain")[0]
-    assert train["spawnflags"] == "2" and train["startspeed"] == "150.0"
+    assert train["spawnflags"] == "514" and train["startspeed"] == "150.0"  # No User Control + unblockable by player
     assert not _ents(built, "func_traincontrols")
     la = _ents(built, "logic_auto")[0]
     assert [(o.output, o.target, o.input) for o in la.outputs] == [("OnMapSpawn", "tr", "StartForward")]

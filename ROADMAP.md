@@ -120,6 +120,6 @@ duto quadrado atravessando a parede de duas salas com cotovelo; duto quadrado e 
 
 ## Ideias fora do roadmap
 
-- Escada afunilada (largura interpolada entre início e fim).
+- Escada afunilada (largura interpolada entre início e fim, crescendo ou estreitando; modos `stepped` e `smooth`).
 - Playerclip pra escada em curva (wedges por degrau).
 - Preview ao vivo é impossível sem plugin no binário; o ciclo é salvar → preview → reload.

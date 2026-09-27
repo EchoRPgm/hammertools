@@ -127,7 +127,7 @@ def world_face_problems(v: VMF, bsp_path: str | Path, min_area: float = 16.0) ->
                 if len(poly) < 3 or side.mat.lower().startswith("tools/"):
                     continue
                 n, p = geom.outward(side)
-                index[(round(n.x, 1), round(n.y, 1), round(n.z, 1))].append((poly, n, n.dot(p), side.mat.lower(), s, e is None))
+                index[(round(n.x, 1), round(n.y, 1), round(n.z, 1))].append((poly, n, n.dot(p), _norm_mat(side.mat), s, e is None))
     out = []
     for fi, mat, pts, n in _read_faces(bsp_path):
         t = _norm_mat(mat)

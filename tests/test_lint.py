@@ -530,3 +530,13 @@ def test_vmt_syntax_error_is_flagged():
     res.read = lambda p, limit=None: vmts.get(p.lower())
     hits = [i for i in _checks(lint.run(v, res, {"textures"}), "textures") if i.group == "vmt quebrado"]
     assert len(hits) == 1 and hits[0].name == "vidro/quebrado" and "line" in hits[0].msg.lower()
+
+
+def test_active_cordon_is_flagged():
+    from srctools.vmf import Cordon
+    v = _room()
+    assert lint.active_cordon(v) is None
+    v.cordon_enabled = True
+    v.cordons.append(Cordon(v, Vec(-10, -10, -10), Vec(10, 10, 10), is_active=True))
+    assert lint.active_cordon(v) == ((-10, -10, -10), (10, 10, 10))
+    assert any("cordon ativo" in i.msg for i in _checks(lint.run(v, checks={"markers"}), "markers"))

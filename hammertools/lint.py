@@ -273,6 +273,13 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
     if "logic" in checks:
         _logic(v, rep)
 
+    box = active_cordon(v)
+    if box:
+        lo, hi = box
+        rep.add("erro", "markers", f"cordon ativo: o vbsp só compila a caixa ({lo[0]:g} {lo[1]:g} {lo[2]:g})..({hi[0]:g} {hi[1]:g} {hi[2]:g}); "
+                f"o resto do mapa fica de fora e as bordas viram leak. Desligue em Map > Cordon (ou Ctrl+Shift+C) antes de compilar",
+                Vec((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2))
+
     all_solids = [(s, None) for s in v.brushes] + [(s, e) for e in v.entities for s in e.solids]
 
     if "textures" in checks:
@@ -1286,6 +1293,17 @@ def _bfs_out(labels, outside, start, origin, vs) -> list[Vec]:
         path.append(Vec(*(np.array(c) + 0.5) * vs + origin))
         c = prev[c]
     return list(reversed(path))
+
+
+def active_cordon(v: VMF):
+    """Caixa ((lo), (hi)) do cordon ativo, ou None. Com cordon ligado o vbsp compila só a caixa."""
+    if not getattr(v, "cordon_enabled", False):
+        return None
+    for c in getattr(v, "cordons", []) or []:
+        if c.active:
+            lo, hi = c.bounds_min, c.bounds_max
+            return (lo.x, lo.y, lo.z), (hi.x, hi.y, hi.z)
+    return None
 
 
 def apply_ignore(rep: Report, cfg: dict) -> int:

@@ -213,6 +213,47 @@ def cmd_content(args) -> int:
     return 0
 
 
+def cmd_optimize(args) -> int:
+    """Junta blocos retangulares fatiados (reduz t-junctions) num VMF novo."""
+    from hammertools import optimize
+    src = Path(args.vmf)
+    out = Path(args.out) if args.out else src.with_name(f"{src.stem}_opt.vmf")
+    if out.resolve() == src.resolve():
+        print("recuse: a saída não pode ser o próprio fonte", file=sys.stderr)
+        return 2
+    v = vmfio.load(src)
+    before = after = None
+    if not args.no_measure:
+        from hammertools import lint
+        before = lint.run(v, lint.Resources(), {"tjunctions"}).data.get("tjunctions_total", 0)
+    classify = optimize.default_classify
+    try:
+        from hammertools import lint as _lint
+        seals = _lint.Resources.from_game(args.game).material_seals
+        nonseal = _lint.NONSEAL_TOOLS
+        if seals is not None:
+            def classify(m: str) -> str:
+                if m in nonseal or (m.startswith("tools/") and m != _lint.NODRAW):
+                    return m
+                return "solid" if m.startswith("tools/") or seals(m) else "translucent"
+    except Exception as e:  # sem jogo: modo conservador
+        print(f"aviso: sem os materiais do jogo ({e}); só junta brushes com o mesmo conjunto de materiais", file=sys.stderr)
+    res = optimize.optimize(v, classify)
+    if not args.no_measure:
+        after = lint.run(v, lint.Resources(), {"tjunctions"}).data.get("tjunctions_total", 0)
+    n = sum(res.merged.values())
+    print(f"{res.boxes} caixas alinhadas de {res.solids} brushes; {n} junção(ões): "
+          + (", ".join(f"{k} {c}" for k, c in res.merged.most_common()) or "nenhuma"))
+    if before is not None:
+        pct = 100 * (before - after) / before if before else 0
+        print(f"t-junctions (índices estimados): {before} -> {after} ({pct:.0f}% a menos; limite do vbsp 65536)")
+    if args.dry_run:
+        return 0
+    vmfio.save(v, out)
+    print(f"gravado: {out}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="ht", description="hammertools: marcadores ht_* -> geometria")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -254,6 +295,12 @@ def main(argv=None) -> int:
     p.add_argument("--dry-run", action="store_true", help="só lista, não grava")
     p.add_argument("--max", type=int, default=30)
     p.set_defaults(fn=cmd_content)
+    p = sub.add_parser("optimize", help="junta blocos retangulares fatiados com a mesma textura (menos t-junctions) num VMF novo")
+    p.add_argument("vmf"); p.add_argument("-o", "--out", help="padrão: <mapa>_opt.vmf")
+    p.add_argument("--game", help="pasta com gameinfo.txt (padrão: HT_GAME ou a instalação do GMod): diz quais materiais são translúcidos/água")
+    p.add_argument("--dry-run", action="store_true", help="só mede, não grava")
+    p.add_argument("--no-measure", action="store_true", help="não calcula t-junctions antes/depois (mais rápido)")
+    p.set_defaults(fn=cmd_optimize)
     args = ap.parse_args(argv)
     return args.fn(args)
 

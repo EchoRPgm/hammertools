@@ -70,6 +70,7 @@ class Resources:
         from srctools.filesys import RawFileSystem
         from hammertools.core.gma import AddonIndex, find_addons
         fs = Game(gd).get_filesystem()
+        extra = list(extra)
         for d in extra:
             fs.add_sys(RawFileSystem(str(d)))
         mounted = []
@@ -139,7 +140,8 @@ class Resources:
                     model_cache[key] = {"static": True, "unknown": True}
             return model_cache[key]
 
-        src = str(gd) + (f" + jogos montados: {', '.join(mounted)}" if mounted else "") + (f" + {gmas.count} addons" if gmas else "") + (f" + BSP" if bsp else "")
+        extra = list(extra)
+        src = str(gd) + (f" + {len(extra)} pasta(s) extra(s)" if extra else "") + (f" + jogos montados: {', '.join(mounted)}" if mounted else "") + (f" + {gmas.count} addons" if gmas else "") + (f" + BSP" if bsp else "")
         return cls(lambda m: exists(f"materials/{m.lower()}.vmt"), material_seals, model_info, source=src)
 
 

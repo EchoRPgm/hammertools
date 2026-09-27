@@ -126,6 +126,13 @@ def cmd_lint(args) -> int:
     res = lint.Resources.from_game(args.game, args.bsp, args.extra or ()) if need_res else lint.Resources()
     rep = lint.run(v, res, checks, grid=args.grid, detail_grid=args.detail_grid, voxel=args.voxel)
     print(lint.format_report(rep, args.max))
+    if args.html is not None:
+        out = Path(args.html) if args.html else Path(args.vmf).with_suffix(".texturas.html")
+        lint.write_html(rep, out, Path(args.vmf).name)
+        print(f"relatório: {out}")
+        if not args.no_open:
+            import webbrowser
+            webbrowser.open(out.resolve().as_uri())
     if rep.leak_path and args.pointfile:
         pf = Path(args.vmf).with_suffix(".lin")
         lint.write_pointfile(pf, rep.leak_path)
@@ -156,6 +163,9 @@ def main(argv=None) -> int:
     p.add_argument("--voxel", type=float, help="resolução do teste de leak/nodraw (padrão automático)")
     p.add_argument("--pointfile", action="store_true", help="grava <mapa>.lin com o caminho do leak")
     p.add_argument("--max", type=int, default=15, help="máximo de itens listados por categoria")
+    p.add_argument("--html", nargs="?", const="", default=None, metavar="ARQUIVO",
+                   help="gera página com as texturas faltando (usos e até 5 localizações) e abre no navegador; padrão <mapa>.texturas.html")
+    p.add_argument("--no-open", action="store_true", help="com --html: só grava, não abre o navegador")
     p.set_defaults(fn=cmd_lint)
     args = ap.parse_args(argv)
     return args.fn(args)

@@ -30,6 +30,7 @@ from srctools.vmf import Entity, Solid
 from hammertools.core import geom
 from hammertools.core import vmf as vmfio
 
+MAX_EXAMPLES = 5
 ALL_CHECKS = ("markers", "outputs", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid")
 
 # texturas de ferramenta que NÃO selam o mapa (brush com qualquer face dessas não conta pro selo)
@@ -192,6 +193,9 @@ class Issue:
     msg: str
     pos: Vec | None = None
     group: str = ""     # pra resumo (ex.: pasta do material/modelo)
+    name: str = ""      # recurso (material/modelo) a que se refere
+    count: int = 0      # quantas vezes é usado
+    examples: list = field(default_factory=list)  # [(Vec, "descrição")], no máximo MAX_EXAMPLES
 
 
 @dataclass
@@ -201,8 +205,8 @@ class Report:
     leak_path: list[Vec] = field(default_factory=list)
     stats: dict[str, object] = field(default_factory=dict)
 
-    def add(self, level, check, msg, pos=None, group=""):
-        self.issues.append(Issue(level, check, msg, pos, group))
+    def add(self, level, check, msg, pos=None, group="", **kw):
+        self.issues.append(Issue(level, check, msg, pos, group, **kw))
 
     @property
     def errors(self):
@@ -244,20 +248,21 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
         if res.material_exists is None:
             rep.skipped["textures"] = "arquivos do jogo não encontrados (use --game)"
         else:
+            # uso = (solid, face, dono) ou (entidade, None, None) pra overlay/decal
             uses: dict[str, list] = defaultdict(list)
             for s, e in all_solids:
                 for side in s.sides:
-                    uses[side.mat.lower()].append(s)
+                    uses[side.mat.lower()].append((s, side, e))
             for e in v.entities:
                 if e["classname"] in ("info_overlay", "info_overlay_transition") and e.get("material"):
-                    uses[e["material"].lower()].append(e)
+                    uses[e["material"].lower()].append((e, None, None))
                 if e["classname"] == "infodecal" and e.get("texture"):
-                    uses[e["texture"].lower()].append(e)
+                    uses[e["texture"].lower()].append((e, None, None))
             for mat, users in sorted(uses.items()):
                 if mat and not res.material_exists(mat):
-                    u = users[0]
-                    pos = _center(u) if isinstance(u, Solid) else _origin(u)
-                    rep.add("erro", "textures", f"material inexistente '{mat}' ({len(users)} uso(s))", pos, group=_folder(mat))
+                    ex = _texture_examples(users)
+                    rep.add("erro", "textures", f"material inexistente '{mat}' ({len(users)} uso(s))",
+                            ex[0][0] if ex else None, group=_folder(mat), name=mat, count=len(users), examples=ex)
 
     if "models" in checks:
         if res.model_info is None:
@@ -306,6 +311,27 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
         else:
             _voxel_checks(v, res, rep, checks, voxel)
     return rep
+
+
+def _texture_examples(users: list) -> list:
+    """Até MAX_EXAMPLES localizações, uma por solid/entidade distinta: centro da FACE que usa o material."""
+    out, seen = [], set()
+    for obj, side, owner in users:
+        if id(obj) in seen:
+            continue
+        seen.add(id(obj))
+        if side is None:
+            p = _origin(obj)
+            desc = f"{obj['classname']} (id {obj.id})"
+        else:
+            poly = next((pl for sd, pl in geom.face_polys(obj) if sd is side), None)
+            p = geom.centroid(poly) if poly else _center(obj)
+            desc = f"{'mundo' if owner is None else owner['classname']} · solid {obj.id} · face {side.id}"
+        if p is not None:
+            out.append((p, desc))
+        if len(out) >= MAX_EXAMPLES:
+            break
+    return out
 
 
 def _folder(path: str, depth: int = 1) -> str:
@@ -605,3 +631,110 @@ def format_report(rep: Report, max_per: int = 15) -> str:
 def write_pointfile(path: Path, pts: list[Vec]) -> None:
     """Formato .lin do vbsp (Hammer: Map > Load Pointfile)."""
     path.write_text("".join(f"{p.x:.6f} {p.y:.6f} {p.z:.6f}\n" for p in pts))
+
+
+# --------------------------------------------------------------------------- relatório HTML
+def write_html(rep: Report, path: Path, map_name: str) -> Path:
+    """Página com as texturas faltando: uso, pasta e até MAX_EXAMPLES localizações (com botão de copiar
+    `setpos` pro console do jogo e as coordenadas pro Hammer: Ctrl+Shift+G)."""
+    from html import escape
+    from datetime import datetime
+    items = sorted((i for i in rep.issues if i.check == "textures"), key=lambda i: (-i.count, i.name))
+    folders = defaultdict(lambda: [0, 0])
+    for i in items:
+        folders[i.group][0] += 1
+        folders[i.group][1] += i.count
+    total_uses = sum(i.count for i in items)
+
+    def coord(p):
+        return f"{p.x:.0f} {p.y:.0f} {p.z:.0f}"
+
+    rows = []
+    for i in items:
+        ex = "".join(
+            f'<li><code>{escape(coord(p))}</code><span class="d">{escape(d)}</span>'
+            f'<button data-copy="setpos {escape(coord(p + Vec(0, 0, 64)))}" title="copiar setpos (64u acima)">setpos</button>'
+            f'<button data-copy="{escape(coord(p))}" title="copiar coordenadas (Hammer: Ctrl+Shift+G)">xyz</button></li>'
+            for p, d in i.examples)
+        more = f'<li class="more">+{i.count - len(i.examples)} uso(s)</li>' if i.count > len(i.examples) else ""
+        rows.append(
+            f'<tr data-folder="{escape(i.group)}" data-name="{escape(i.name)}">'
+            f'<td class="mat"><code>{escape(i.name)}</code></td><td class="folder">{escape(i.group)}</td>'
+            f'<td class="n">{i.count}</td><td><ul>{ex}{more}</ul></td></tr>')
+    chips = "".join(
+        f'<button class="chip" data-folder="{escape(f)}">{escape(f)} <b>{n}</b></button>'
+        for f, (n, u) in sorted(folders.items(), key=lambda kv: -kv[1][1]))
+    skipped = f'<p class="warn">Checagem pulada: {escape(rep.skipped["textures"])}</p>' if "textures" in rep.skipped else ""
+    body = (f'<table><thead><tr><th>Material</th><th>Pasta</th><th class="n">Usos</th><th>Onde (até {MAX_EXAMPLES})</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table>') if items else '<p class="ok">Nenhuma textura faltando.</p>'
+    html = f"""<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Texturas faltando</title>
+<style>
+:root {{ --bg:#f7f7f5; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#e3e2de; --accent:#c2410c; --chip:#efeeea; --code:#f1f0ec; }}
+@media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{ --bg:#161615; --fg:#ecebe7; --muted:#9a9993; --card:#1f1f1d; --line:#2e2e2b; --accent:#fb923c; --chip:#2a2a27; --code:#262624; }} }}
+:root[data-theme="dark"] {{ --bg:#161615; --fg:#ecebe7; --muted:#9a9993; --card:#1f1f1d; --line:#2e2e2b; --accent:#fb923c; --chip:#2a2a27; --code:#262624; }}
+* {{ box-sizing:border-box }}
+body {{ margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }}
+main {{ max-width:1200px; margin:0 auto; padding:24px 16px 48px; }}
+h1 {{ font-size:22px; margin:0 0 4px }} .sub {{ color:var(--muted); margin:0 0 20px }}
+.stats {{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px }}
+.stat {{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 14px }}
+.stat b {{ display:block; font-size:22px; color:var(--accent) }} .stat span {{ color:var(--muted); font-size:13px }}
+.tools {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:8px 0 14px }}
+input[type=search] {{ flex:1 1 240px; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); font:inherit }}
+.chips {{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px }}
+.chip {{ border:1px solid var(--line); background:var(--chip); color:var(--fg); border-radius:999px; padding:4px 10px; cursor:pointer; font:inherit; font-size:13px }}
+.chip.on {{ border-color:var(--accent); color:var(--accent) }}
+.tablewrap {{ overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:10px }}
+table {{ width:100%; border-collapse:collapse; min-width:720px }}
+th, td {{ text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top }}
+th {{ font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); position:sticky; top:0; background:var(--card) }}
+td.n, th.n {{ text-align:right; font-variant-numeric:tabular-nums; width:70px }}
+td.mat code {{ font-weight:600 }} td.folder {{ color:var(--muted); white-space:nowrap }}
+code {{ font-family:ui-monospace,"JetBrains Mono",monospace; font-size:13px; background:var(--code); padding:1px 5px; border-radius:4px }}
+ul {{ list-style:none; margin:0; padding:0; display:grid; gap:4px }}
+li {{ display:flex; gap:8px; align-items:center; flex-wrap:wrap }}
+li .d {{ color:var(--muted); font-size:12px }} li.more {{ color:var(--muted); font-size:12px }}
+li button {{ border:1px solid var(--line); background:transparent; color:var(--fg); border-radius:6px; padding:1px 7px; font-size:12px; cursor:pointer }}
+li button:hover {{ border-color:var(--accent); color:var(--accent) }}
+.ok {{ padding:16px }} .warn {{ color:var(--accent) }}
+#toast {{ position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:var(--fg); color:var(--bg); padding:6px 12px; border-radius:8px; opacity:0; transition:opacity .2s; font-size:13px }}
+</style></head><body><main>
+<h1>Texturas faltando</h1>
+<p class="sub"><code>{escape(map_name)}</code> · {escape(datetime.now().strftime("%d/%m/%Y %H:%M"))} · fontes: {escape(str(rep.stats.get("recursos", "")))}</p>
+{skipped}
+<div class="stats"><div class="stat"><b>{len(items)}</b><span>materiais faltando</span></div>
+<div class="stat"><b>{total_uses}</b><span>usos (faces, overlays, decals)</span></div>
+<div class="stat"><b>{len(folders)}</b><span>pastas</span></div></div>
+<div class="tools"><input type="search" id="q" placeholder="Filtrar por nome ou pasta"></div>
+<div class="chips">{chips}</div>
+<div class="tablewrap">{body}</div>
+<p class="sub" style="margin-top:14px">Em cada localização: <b>setpos</b> copia um comando pro console do jogo (64u acima da face); <b>xyz</b> copia as coordenadas pro Hammer++ (Ctrl+Shift+G, "Go to coordinates").</p>
+</main><div id="toast">copiado</div>
+<script>
+const q = document.getElementById('q'), rows = [...document.querySelectorAll('tbody tr')];
+let folder = '';
+function apply() {{
+  const t = q.value.toLowerCase();
+  rows.forEach(r => r.hidden = !((!folder || r.dataset.folder === folder) && (!t || r.dataset.name.includes(t) || r.dataset.folder.includes(t))));
+}}
+q.addEventListener('input', apply);
+document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {{
+  folder = folder === c.dataset.folder ? '' : c.dataset.folder;
+  document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x.dataset.folder === folder)); apply();
+}}));
+const toast = document.getElementById('toast');
+document.addEventListener('click', e => {{
+  const b = e.target.closest('button[data-copy]'); if (!b) return;
+  const txt = b.dataset.copy;
+  const done = () => {{ toast.textContent = 'copiado: ' + txt; toast.style.opacity = 1; setTimeout(() => toast.style.opacity = 0, 1400); }};
+  (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(done).catch(() => {{
+    const a = document.createElement('textarea'); a.value = txt; document.body.appendChild(a); a.select();
+    try {{ document.execCommand('copy'); done(); }} catch (_) {{}} a.remove();
+  }});
+}});
+</script></body></html>"""
+    path = Path(path)
+    path.write_text(html, encoding="utf-8")
+    return path

@@ -195,3 +195,27 @@ def test_cli_exit_codes(tmp_path):
     assert main(["lint", str(bad), "--only", "leak", "--pointfile"]) == 1
     assert (tmp_path / "bad.lin").exists()
     assert main(["lint", str(ok), "--only", "banana"]) == 2
+
+
+def test_texture_examples_and_html(tmp_path):
+    v = _room()
+    for k in range(7):  # 7 brushes com o material faltando -> 5 exemplos
+        v.add_brush(v.make_prism(Vec(k * 80, 0, 0), Vec(k * 80 + 64, 64, 64), "custom/sumiu").solid)
+    v.create_ent("infodecal", origin="10 20 30", texture="decals/sumiu_decal")
+    res = FakeRes(materials={"dev/dev_measuregeneric01b", "tools/toolsnodraw"})
+    rep = lint.run(v, res, {"textures"})
+    tex = {i.name: i for i in _checks(rep, "textures")}
+    assert tex["custom/sumiu"].count == 7 * 6 and len(tex["custom/sumiu"].examples) == 5
+    assert tex["decals/sumiu_decal"].count == 1 and tex["decals/sumiu_decal"].examples[0][0] == Vec(10, 20, 30)
+    p = lint.write_html(rep, tmp_path / "r.html", "m.vmf")
+    html = p.read_text()
+    assert "custom/sumiu" in html and "decals/sumiu_decal" in html and "+37 uso(s)" in html
+    assert html.count('title="copiar setpos') == 6 and "setpos 10 20 94" in html
+
+
+def test_cli_html(tmp_path):
+    from hammertools.cli import main
+    from hammertools.core import vmf as vmfio
+    p = tmp_path / "m.vmf"; vmfio.save(_room(), p)
+    assert main(["lint", str(p), "--only", "textures", "--html", "--no-open"]) in (0, 1)
+    assert (tmp_path / "m.texturas.html").exists()

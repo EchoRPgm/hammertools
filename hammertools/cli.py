@@ -140,6 +140,79 @@ def cmd_lint(args) -> int:
     return 1 if rep.errors else 0
 
 
+def cmd_content(args) -> int:
+    """Monta a pasta de conteúdo do mapa (dependências que o jogo ainda não enxerga)."""
+    import logging, shutil
+    logging.getLogger("srctools").setLevel(logging.ERROR)
+    from hammertools import content, lint
+    from hammertools.core.gma import find_addons
+    gd = lint._find_game(args.game)
+    if gd is None:
+        print("pasta do jogo não encontrada (use --game)", file=sys.stderr)
+        return 2
+    vmf_path = Path(args.vmf)
+    v = vmfio.load(vmf_path)
+    stem = vmf_path.stem.removesuffix("_built")
+    out = Path(args.out) if args.out else gd / "addons" / f"{stem}_content"
+    # o que o jogo já enxerga (VPKs + jogos montados + addons), SEM a própria pasta de saída
+    res_game = lint.Resources.from_game(gd, None, (), addons=True)
+    from srctools.game import Game
+    fs = Game(gd).get_filesystem()
+    for mdir in lint._mountable_games(gd):
+        for sub in Game(mdir).get_filesystem().systems:
+            fs.add_sys(sub[0] if isinstance(sub, tuple) else sub)
+    from hammertools.core.gma import AddonIndex
+    gmas = find_addons(gd)
+    idx = AddonIndex(gmas)
+    out_prefix = str(out.resolve())
+
+    def game_has(p):
+        p = content.norm(p)
+        if p in idx:
+            return True
+        try:
+            f = fs[p]
+            return not str(getattr(f, "path", "")).startswith(out_prefix) and out_prefix not in str(getattr(f.sys, "path", ""))
+        except FileNotFoundError:
+            return False
+
+    def game_read(p):
+        p = content.norm(p)
+        try:
+            with fs[p].open_bin() as f:
+                return f.read()
+        except FileNotFoundError:
+            return idx.read(p) if p in idx else None
+
+    sources: list = []
+    for b in args.bsp or []:
+        sources.append(content.source_bsp(Path(b)))
+    for d in args.extra or []:
+        sources.append(content.source_dir(Path(d)))
+    for g in args.gma or []:
+        sources.append(content.source_gma(Path(g)))
+    auto = [] if args.no_auto else content.map_bsps_in_addons(gmas, stem, args.all_map_paks)
+    sources += auto
+    print("fontes:", *(f"  - {s.name}" for s in sources) or ["  (nenhuma)"], sep="\n")
+    res = content.resolve(v, game_has, game_read, sources)
+    print(f"{res.roots} recursos citados pelo mapa; {len(res.in_game)} arquivos o jogo já tem; {len(res.copy)} a copiar; {len(res.missing)} faltando")
+    if args.dry_run:
+        for p, src in sorted(res.copy.items())[: args.max]:
+            print(f"  + {p}  ({src})")
+    else:
+        if out.exists() and args.clean:
+            shutil.rmtree(out)
+        n = content.write(res, sources, out, f"{stem} content")
+        print(f"gravados {n} arquivos em {out}")
+    if res.missing:
+        print("faltando (em nenhuma fonte):")
+        for m in sorted(res.missing)[: args.max]:
+            print(f"  - {m}")
+        if len(res.missing) > args.max:
+            print(f"  ... +{len(res.missing) - args.max}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="ht", description="hammertools: marcadores ht_* -> geometria")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -168,6 +241,19 @@ def main(argv=None) -> int:
     p.add_argument("--no-open", action="store_true", help="com --html: só grava, não abre o navegador")
     p.add_argument("--cluster-radius", type=float, default=256.0, help="com --html: distância máxima (u) pra juntar ocorrências na aba 'Por região'")
     p.set_defaults(fn=cmd_lint)
+    p = sub.add_parser("content", help="monta a pasta de conteúdo do mapa (dependências que o jogo não tem) em garrysmod/addons/<mapa>_content")
+    p.add_argument("vmf")
+    p.add_argument("-o", "--out", help="pasta de saída (padrão: <jogo>/addons/<mapa>_content)")
+    p.add_argument("--game", help="pasta com gameinfo.txt (padrão: HT_GAME ou a instalação do GMod)")
+    p.add_argument("--bsp", action="append", help="BSP com conteúdo embutido (repetível)")
+    p.add_argument("--extra", action="append", help="pasta com materials/ models/ sound/ (repetível)")
+    p.add_argument("--gma", action="append", help="addon .gma como fonte (repetível)")
+    p.add_argument("--no-auto", action="store_true", help="não usar automaticamente BSPs de mapa com nome parecido dentro dos addons")
+    p.add_argument("--all-map-paks", action="store_true", help="usar o conteúdo embutido de TODOS os mapas dos addons")
+    p.add_argument("--clean", action="store_true", help="apaga a pasta de saída antes de gravar")
+    p.add_argument("--dry-run", action="store_true", help="só lista, não grava")
+    p.add_argument("--max", type=int, default=30)
+    p.set_defaults(fn=cmd_content)
     args = ap.parse_args(argv)
     return args.fn(args)
 
@@ -197,6 +283,17 @@ def _find_real_vbsp(gamedir: Path | None) -> Path | None:
             if cand.exists():
                 return cand
     return None
+
+
+def _run_streaming(cmd: list[str]) -> tuple[int, str]:
+    """Roda repassando a saída em tempo real (janela de compilação do Hammer) e devolve (rc, texto)."""
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1)
+    lines = []
+    for line in p.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        lines.append(line)
+    return p.wait(), "".join(lines)
 
 
 def vbsp_main(argv=None) -> int:
@@ -233,7 +330,13 @@ def vbsp_main(argv=None) -> int:
     if prev.exists():
         shutil.copy2(prev, out.with_suffix(".bsp"))
 
-    rc = subprocess.call([str(real), *args[:-1], str(out.with_suffix(""))])
+    cmd = [str(real), *args[:-1], str(out.with_suffix(""))]
+    rc, text = _run_streaming(cmd)
+    if "too many t-junctions" in text.lower() and "-notjunc" not in (a.lower() for a in args):
+        print("\nht-vbsp: estourou o limite de índices de t-junction do vbsp (65536); recompilando com -notjunc.\n"
+              "ht-vbsp: efeito colateral possível: brilhos finos nas emendas; pra evitar, simplifique as faces do\n"
+              "ht-vbsp: ranking `ht lint mapa.vmf --only tjunctions` e compile de novo.\n", flush=True)
+        rc, _ = _run_streaming([str(real), *args[:-1], "-notjunc", str(out.with_suffix(""))])
     for ext in (".bsp", ".prt", ".lin", ".log"):
         f = out.with_suffix(ext)
         if f.exists():

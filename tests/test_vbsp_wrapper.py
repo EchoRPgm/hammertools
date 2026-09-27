@@ -40,3 +40,19 @@ def test_wrapper_clears_preview_from_source(room, tmp_path, monkeypatch):
     v = vmfio.load(src)
     assert len(all_solids(v)) == 6 and all(vg.name != "ht_preview" for vg in v.vis_tree)   # fonte limpo
     assert len(all_solids(vmfio.load(tmp_path / "mapsrc" / "build" / "m.vmf"))) == 6 + 8    # build com a escada
+
+
+def test_wrapper_retries_with_notjunc(room, tmp_path, monkeypatch, capsys):
+    src = tmp_path / "mapsrc" / "m.vmf"; src.parent.mkdir()
+    vmfio.save(room, src)
+    fake = tmp_path / "vbsp.py"
+    fake.write_text(
+        "import sys, pathlib\n"
+        "p = pathlib.Path(sys.argv[-1])\n"
+        "if '-notjunc' not in sys.argv:\n"
+        "    print('FixTjuncs...'); print('Too many t-junctions to fix up! (3382 prims, max 32768 :: 65556 indices, max 65536)'); sys.exit(1)\n"
+        "p.with_suffix('.bsp').write_text('ok')\n")
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    rc = vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))])
+    out = capsys.readouterr().out
+    assert rc == 0 and "recompilando com -notjunc" in out and src.with_suffix(".bsp").read_text() == "ok"

@@ -11,6 +11,8 @@ Checagens (nome usado em --only / --skip):
   duplicates  brushes idênticos                                          (aviso)
   overlaps    brushes de mundo se sobrepondo                             (aviso)
   grid        vértices fora do grid                                      (aviso)
+  tjunctions  ranking das faces com mais t-junctions (as que mais gastam índices quando o vbsp corrige;
+              limite 65536 -> "Too many t-junctions to fix up!")                    (aviso)
 
 Recursos do jogo (materiais/modelos) vêm de `Resources`: ou dos VPKs do jogo (`--game`, HT_GAME, ou a
 instalação padrão do GMod), ou injetados nos testes.
@@ -31,7 +33,7 @@ from hammertools.core import geom
 from hammertools.core import vmf as vmfio
 
 MAX_EXAMPLES = 5
-ALL_CHECKS = ("markers", "outputs", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid")
+ALL_CHECKS = ("markers", "outputs", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid", "tjunctions")
 
 # texturas de ferramenta que NÃO selam o mapa (brush com qualquer face dessas não conta pro selo)
 NONSEAL_TOOLS = {
@@ -302,6 +304,9 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
                 kind = "displacement" if any(side.is_disp for side in s.sides) else "brush"
                 rep.add("aviso", "grid", f"{owner} solid {s.id} ({kind}): {len(bad)} face(s) fora do grid {grid}", _center(s))
 
+    if "tjunctions" in checks:
+        _tjunctions(v, rep)
+
     if "leak" in checks or "nodraw" in checks:
         try:
             import numpy  # noqa: F401
@@ -489,6 +494,73 @@ def _overlaps(v: VMF, rep: Report, min_depth: float) -> None:
     rep.stats["sobreposições mundo x mundo (inofensivas)"] = world_pairs
 
 
+# --------------------------------------------------------------------------- t-junctions
+MAX_PRIMINDICES = 65536
+
+
+def _tjunctions(v: VMF, rep: Report, top: int = 40, eps: float = 0.1) -> None:
+    """Estimativa: vértice de uma face que cai no MEIO da aresta de outra face é uma t-junction; o vbsp
+    divide essa face em triângulos (primitivas) e gasta (n_vértices - 2) * 3 índices. Soma o total e lista
+    as faces que mais gastam. É uma aproximação (o vbsp faz CSG antes), mas a ordem das piores é o que
+    importa pra decidir onde simplificar."""
+    faces = []   # (solid, side, poly, dono)
+    for s in v.brushes:
+        if any(sd.is_disp for sd in s.sides):
+            continue
+        for side, poly in geom.face_polys(s):
+            if len(poly) >= 3 and not side.mat.lower().startswith("tools/"):
+                faces.append((s, side, poly, "mundo"))
+    for e in v.entities:
+        if e["classname"] != "func_detail":
+            continue
+        for s in e.solids:
+            for side, poly in geom.face_polys(s):
+                if len(poly) >= 3 and not side.mat.lower().startswith("tools/"):
+                    faces.append((s, side, poly, "func_detail"))
+    C = 64.0
+    cells: dict[tuple, set] = defaultdict(set)
+    for _, _, poly, _ in faces:
+        for p in poly:
+            q = (round(p.x, 1), round(p.y, 1), round(p.z, 1))
+            cells[(int(q[0] // C), int(q[1] // C), int(q[2] // C))].add(q)
+    total = 0
+    scored = []
+    for s, side, poly, owner in faces:
+        corners = {(round(p.x, 1), round(p.y, 1), round(p.z, 1)) for p in poly}
+        extra = 0
+        for k in range(len(poly)):
+            a, b = poly[k], poly[(k + 1) % len(poly)]
+            d = b - a
+            L = d.mag()
+            if L < 1:
+                continue
+            u = d / L
+            lo = (min(a.x, b.x), min(a.y, b.y), min(a.z, b.z))
+            hi = (max(a.x, b.x), max(a.y, b.y), max(a.z, b.z))
+            for cx in range(int(lo[0] // C), int(hi[0] // C) + 1):
+                for cy in range(int(lo[1] // C), int(hi[1] // C) + 1):
+                    for cz in range(int(lo[2] // C), int(hi[2] // C) + 1):
+                        for q in cells.get((cx, cy, cz), ()):
+                            if q in corners:
+                                continue
+                            w = Vec(*q) - a
+                            t = w.dot(u)
+                            if eps < t < L - eps and (w - u * t).mag() < eps:
+                                extra += 1
+        if extra:
+            idx = (len(poly) + extra - 2) * 3
+            total += idx
+            scored.append((idx, extra, s, side, poly, owner))
+    scored.sort(key=lambda t: -t[0])
+    # a soma superestima (~2x no rp_surdonoso: o vbsp faz CSG e só triangula o que não fecha em leque),
+    # então vale como ranking, não como veredito; o número real está no log do vbsp
+    rep.stats["t-junctions: índices estimados (teto)"] = f"{total} (limite do vbsp {MAX_PRIMINDICES})"
+    rep.stats["faces com t-junction"] = len(scored)
+    for idx, extra, s, side, poly, owner in scored[:top]:
+        rep.add("aviso", "tjunctions", f"{owner} solid {s.id} face {side.id} ({side.mat}): {extra} vértice(s) de vizinhos nas arestas, ~{idx} índices",
+                geom.centroid(poly), group=owner)
+
+
 # --------------------------------------------------------------------------- voxel: leak e nodraw
 def _seals(s: Solid, res: Resources) -> bool:
     if any(side.is_disp for side in s.sides):
@@ -660,7 +732,7 @@ def _bfs_out(labels, outside, start, origin, vs) -> list[Vec]:
 LABELS = {
     "markers": "marcadores incompletos", "outputs": "outputs órfãos", "textures": "texturas inexistentes",
     "models": "modelos", "leak": "leak", "nodraw": "nodraw visível", "duplicates": "brushes duplicados",
-    "overlaps": "brushes sobrepostos", "grid": "fora do grid",
+    "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions",
 }
 
 

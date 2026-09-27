@@ -169,3 +169,53 @@ def test_tjfix_predicted_models_skip_compile(room, tmp_path, monkeypatch):
     rc, fix, bsp, calls = _run_counts(room, tmp_path, monkeypatch, "10", MAX_MODELS=2)
     assert rc == 0 and fix["result"] == "notjunc" and bsp == {"notjunc": 1}
     assert calls.read_text() == "xx"  # só a compilação original e a -notjunc: nenhuma tentativa de conversão
+
+
+def _phantom(area=5000.0):
+    from srctools import Vec
+    pts = [Vec(64, -32, 0), Vec(64, 32, 0), Vec(64, 32, 96), Vec(64, -32, 96)]
+    return {"face": 1, "material": "concrete/x", "area": area, "center": Vec(64, 0, 48), "normal": Vec(1, 0, 0), "points": pts}
+
+
+def test_wrapper_covers_phantom_faces_with_hint(room, tmp_path, monkeypatch, capsys):
+    import json
+    from hammertools import bspcheck
+    calls = {"n": 0}
+    def fake_phantoms(v, bsp, min_area=16.0):
+        calls["n"] += 1
+        # antes do hint: uma face fantasma; depois (build com hint): nenhuma
+        return [] if any(all(x.mat.lower() == "tools/toolshint" for x in s.sides) for s in v.brushes) else [_phantom()]
+    monkeypatch.setattr(bspcheck, "phantom_faces", fake_phantoms)
+    src = tmp_path / "mapsrc" / "m.vmf"; src.parent.mkdir()
+    vmfio.save(room, src)
+    fake = tmp_path / "vbsp.py"
+    fake.write_text("import sys, pathlib; pathlib.Path(sys.argv[-1]).with_suffix('.bsp').write_text('ok')")
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    monkeypatch.delenv("HT_NO_PHANTOM", raising=False)
+    assert vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]) == 0
+    built = vmfio.load(tmp_path / "mapsrc" / "build" / "m.vmf")
+    hints = [s for s in built.brushes if all(x.mat.lower() == "tools/toolshint" for x in s.sides)]
+    assert len(hints) == 1
+    lo, hi = hints[0].get_bbox()
+    assert (lo.x, hi.x) == (56, 64) and (lo.y, hi.y) == (-32, 32)  # 8u pra trás da face (normal +x)
+    fix = json.loads(src.with_suffix(".tjfix.json").read_text())["phantom"]
+    assert fix["found"] == 1 and fix["left"] == 0 and len(fix["hints"]) == 1
+    assert not any(all(x.mat.lower() == "tools/toolshint" for x in s.sides) for s in vmfio.load(src).brushes)  # fonte intocado
+
+
+def test_wrapper_phantom_fix_reverts_when_recompile_fails(room, tmp_path, monkeypatch):
+    import json
+    from hammertools import bspcheck
+    monkeypatch.setattr(bspcheck, "phantom_faces", lambda v, bsp, min_area=16.0: [_phantom()])
+    src = tmp_path / "mapsrc" / "m.vmf"; src.parent.mkdir()
+    vmfio.save(room, src)
+    fake = tmp_path / "vbsp.py"
+    # compila limpo sem hint; com hint no vmf, "estoura"
+    fake.write_text("import sys, pathlib\np = pathlib.Path(sys.argv[-1])\n"
+                    "if 'toolshint' in p.with_suffix('.vmf').read_text().lower(): print('Too many t-junctions to fix up!'); sys.exit(1)\n"
+                    "p.with_suffix('.bsp').write_text('bom')\n")
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    assert vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]) == 0
+    assert src.with_suffix(".bsp").read_text() == "bom"
+    assert "toolshint" not in (tmp_path / "mapsrc" / "build" / "m.vmf").read_text().lower()  # build restaurado
+    assert json.loads(src.with_suffix(".tjfix.json").read_text())["phantom"]["hints"] == []

@@ -387,6 +387,57 @@ def _run_streaming(cmd: list[str]) -> tuple[int, str]:
     return p.wait(), "".join(lines)
 
 
+PHANTOM_MIN_AREA = 256.0   # lasca menor que isso fica só no lint (não vale recompilar por ela)
+PHANTOM_ROUNDS = 2
+
+
+def _fix_phantoms(real: Path, opts: list[str], out: Path) -> tuple[int, dict]:
+    """Faces fantasma (superfície que o vbsp desenhou sem existir no VMF): cobre cada uma com um brush de hint
+    (hint nas 6 faces, força o vbsp a cortar ali) no VMF do build/ e recompila com as mesmas opções. Até 2
+    rodadas; se a recompilação falhar, volta pro resultado anterior. Nunca mexe no fonte."""
+    from hammertools import bspcheck
+    saved = [".bsp", ".prt", ".lin", ".log", ".vmf"]
+    rep = {"found": 0, "hints": [], "left": 0}
+    try:
+        found = [f for f in bspcheck.phantom_faces(vmfio.load(out), out.with_suffix(".bsp")) if f["area"] >= PHANTOM_MIN_AREA]
+    except Exception as e:  # BSP ilegível: não arrisca
+        return 0, {"erro": str(e)}
+    rep["found"] = rep["left"] = len(found)
+    for _ in range(PHANTOM_ROUNDS):
+        if not found:
+            break
+        for f in found:
+            c = f["center"]
+            print(f"ht-vbsp: face fantasma {f['material']} (~{f['area']:.0f}u²) em setpos {c.x:.0f} {c.y:.0f} {c.z + 64:.0f}", flush=True)
+        for ext in saved:  # guarda o resultado bom atual
+            if out.with_suffix(ext).exists():
+                shutil.copy2(out.with_suffix(ext), out.with_name(out.stem + "_ok" + ext))
+        v = vmfio.load(out)
+        boxes = bspcheck.hint_boxes(found)
+        bspcheck.add_hints(v, boxes)
+        vmfio.save(v, out)
+        print(f"ht-vbsp: {len(boxes)} hint(s) cobrindo as faces fantasma; recompilando.", flush=True)
+        rc, text = _run_streaming([str(real), *opts, str(out.with_suffix(""))])
+        low = text.lower()
+        if rc != 0 or not out.with_suffix(".bsp").exists() or "too many" in low or "leaked" in low:
+            print("ht-vbsp: a recompilação com hint falhou; fico com a compilação anterior.", flush=True)
+            for ext in saved:
+                f = out.with_name(out.stem + "_ok" + ext)
+                if f.exists():
+                    shutil.move(f, out.with_suffix(ext))
+            return 0, rep
+        rep["hints"] += [[list(lo), list(hi)] for lo, hi in boxes]
+        found = [f for f in bspcheck.phantom_faces(vmfio.load(out), out.with_suffix(".bsp")) if f["area"] >= PHANTOM_MIN_AREA]
+        rep["left"] = len(found)
+    for ext in saved:
+        f = out.with_name(out.stem + "_ok" + ext)
+        if f.exists():
+            f.unlink()
+    if rep["found"]:
+        print(f"ht-vbsp: faces fantasma: {rep['found']} achada(s), {rep['left']} restante(s) (hints só no build/).", flush=True)
+    return 0, rep
+
+
 TJ_STEPS = (100, 200, 400, 800, 1600, 3200)
 LIMIT = 65536            # índices de t-junction e vértices únicos (vbsp)
 MAX_MODELS = 1024        # MAX_MAP_MODELS
@@ -513,6 +564,9 @@ def vbsp_main(argv=None) -> int:
     info = {"result": "notjunc" if notjunc else "direto"}
     if "too many t-junctions" in text.lower() and not notjunc:
         rc, info = _fix_tjunctions(real, args, out)
+    if rc == 0 and "-onlyents" not in (a.lower() for a in args) and os.environ.get("HT_NO_PHANTOM") != "1":
+        extra = ["-notjunc"] if info.get("result") == "notjunc" and not notjunc else []
+        rc, info["phantom"] = _fix_phantoms(real, [*args[:-1], *extra], out)
     # registro pro `ht lint` marcar quais t-junctions a compilação resolveu (<mapa>.tjfix.json ao lado do fonte)
     if rc == 0 and "-onlyents" not in (a.lower() for a in args):
         import json, time

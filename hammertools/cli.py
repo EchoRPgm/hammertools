@@ -127,7 +127,7 @@ def cmd_lint(args) -> int:
     rep = lint.run(v, res, checks, grid=args.grid, detail_grid=args.detail_grid, voxel=args.voxel)
     print(lint.format_report(rep, args.max))
     if args.html is not None:
-        out = Path(args.html) if args.html else Path(args.vmf).with_suffix(".texturas.html")
+        out = Path(args.html) if args.html else Path(args.vmf).with_suffix(".lint.html")
         lint.write_html(rep, out, Path(args.vmf).name, args.cluster_radius)
         print(f"relatório: {out}")
         if not args.no_open:
@@ -237,7 +237,7 @@ def main(argv=None) -> int:
     p.add_argument("--pointfile", action="store_true", help="grava <mapa>.lin com o caminho do leak")
     p.add_argument("--max", type=int, default=15, help="máximo de itens listados por categoria")
     p.add_argument("--html", nargs="?", const="", default=None, metavar="ARQUIVO",
-                   help="gera página com as texturas faltando (usos e até 5 localizações) e abre no navegador; padrão <mapa>.texturas.html")
+                   help="gera o relatório geral (painel de prioridades + abas por checagem) e abre no navegador; padrão <mapa>.lint.html")
     p.add_argument("--no-open", action="store_true", help="com --html: só grava, não abre o navegador")
     p.add_argument("--cluster-radius", type=float, default=256.0, help="com --html: distância máxima (u) pra juntar ocorrências na aba 'Por região'")
     p.set_defaults(fn=cmd_lint)

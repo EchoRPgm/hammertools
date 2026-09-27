@@ -210,7 +210,7 @@ def test_texture_examples_and_html(tmp_path):
     p = lint.write_html(rep, tmp_path / "r.html", "m.vmf")
     html = p.read_text()
     assert "custom/sumiu" in html and "decals/sumiu_decal" in html and "+37 uso(s)" in html
-    by_mat = html.split('id="p-reg"')[0]
+    by_mat = html.split('id="p-tex"')[1].split('id="p-reg"')[0]
     assert by_mat.count('title="copiar setpos') == 6 and "setpos 10 20 94" in html
 
 
@@ -219,7 +219,7 @@ def test_cli_html(tmp_path):
     from hammertools.core import vmf as vmfio
     p = tmp_path / "m.vmf"; vmfio.save(_room(), p)
     assert main(["lint", str(p), "--only", "textures", "--html", "--no-open"]) in (0, 1)
-    assert (tmp_path / "m.texturas.html").exists()
+    assert (tmp_path / "m.lint.html").exists()
 
 
 def test_cluster_regions_mix_materials():
@@ -241,4 +241,20 @@ def test_html_has_region_tab(tmp_path):
     rep = lint.run(v, FakeRes(materials={"dev/dev_measuregeneric01b", "tools/toolsnodraw"}), {"textures"})
     assert sum(len(i.locations) for i in rep.issues) == 3 * 6 + 6
     html = lint.write_html(rep, tmp_path / "r.html", "m.vmf", 256).read_text()
-    assert 'data-tab="reg"' in html and "Por região <b>1</b>" in html  # tudo perto: uma região só, com os 2 materiais
+    assert 'data-tab="reg"' in html and "Texturas por região <b>1</b>" in html  # tudo perto: uma região só, com os 2 materiais
+
+
+def test_full_report_dashboard(tmp_path):
+    v = _room(hole=True)
+    v.add_brush(v.make_prism(Vec(0, 0, 0), Vec(64, 64, 64), "custom/sumiu").solid)
+    v.add_brush(v.make_prism(Vec(0, 0, 0), Vec(64, 64, 64), "custom/sumiu").solid)  # duplicado
+    v.create_ent("prop_static", origin="100 0 0", model="models/sumiu.mdl")
+    rep = lint.run(v, FakeRes(materials={"dev/dev_measuregeneric01b", "tools/toolsnodraw"}), lint.ALL_CHECKS)
+    html = lint.write_html(rep, tmp_path / "r.html", "m.vmf").read_text()
+    for tab in ("dash", "tex", "reg", "mdl", "tj", "leak", "geo", "ent"):
+        assert f'id="p-{tab}"' in html
+    dash = html.split('id="p-dash"')[1].split('id="p-tex"')[0]
+    # ordem de prioridade: leak antes de texturas antes de modelos antes de duplicados
+    pos = [dash.find(t) for t in ("Leak: o mapa vaza", "Texturas faltando", "Modelos faltando", "Brushes duplicados")]
+    assert all(p > 0 for p in pos) and pos == sorted(pos)
+    assert "Onde concentrar esforço" in dash and "Caminho do leak" in html

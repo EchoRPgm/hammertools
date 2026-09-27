@@ -207,6 +207,8 @@ class Report:
     skipped: dict[str, str] = field(default_factory=dict)   # checagem -> motivo
     leak_path: list[Vec] = field(default_factory=list)
     stats: dict[str, object] = field(default_factory=dict)
+    data: dict[str, object] = field(default_factory=dict)      # dados estruturados pro relatório HTML
+    ran: set = field(default_factory=set)                      # checagens que rodaram
 
     def add(self, level, check, msg, pos=None, group="", **kw):
         self.issues.append(Issue(level, check, msg, pos, group, **kw))
@@ -224,6 +226,7 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
     checks = set(checks)
     rep = Report()
     rep.stats["recursos"] = res.source
+    rep.ran = set(checks)
 
     if "markers" in checks:
         for g in vmfio.group_markers(vmfio.markers(v)).values():
@@ -278,9 +281,9 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
                     continue
                 info = res.model_info(mdl)
                 if info is None:
-                    rep.add("erro", "models", f"{e['classname']}: modelo inexistente '{mdl}'", _origin(e), group=_folder(mdl.lower().removeprefix("models/"), 2))
+                    rep.add("erro", "models", f"{e['classname']}: modelo inexistente '{mdl}'", _origin(e), group=_folder(mdl.lower().removeprefix("models/"), 2), name=mdl.lower())
                 elif e["classname"] == "prop_static" and not info.get("static", True):
-                    rep.add("aviso", "models", f"prop_static com modelo que não é static prop '{mdl}' (vira prop_dynamic ou some)", _origin(e))
+                    rep.add("aviso", "models", f"prop_static com modelo que não é static prop '{mdl}' (vira prop_dynamic ou some)", _origin(e), name=mdl.lower())
 
     if "duplicates" in checks:
         seen: dict[frozenset, Solid] = {}
@@ -518,16 +521,17 @@ def _tjunctions(v: VMF, rep: Report, top: int = 40, eps: float = 0.1) -> None:
                 if len(poly) >= 3 and not side.mat.lower().startswith("tools/"):
                     faces.append((s, side, poly, "func_detail"))
     C = 64.0
-    cells: dict[tuple, set] = defaultdict(set)
-    for _, _, poly, _ in faces:
+    cells: dict[tuple, dict] = defaultdict(dict)   # célula -> {vértice: (solid id, dono)}
+    for s, _, poly, owner in faces:
         for p in poly:
             q = (round(p.x, 1), round(p.y, 1), round(p.z, 1))
-            cells[(int(q[0] // C), int(q[1] // C), int(q[2] // C))].add(q)
+            cells[(int(q[0] // C), int(q[1] // C), int(q[2] // C))].setdefault(q, (s.id, owner))
     total = 0
     scored = []
     for s, side, poly, owner in faces:
         corners = {(round(p.x, 1), round(p.y, 1), round(p.z, 1)) for p in poly}
         extra = 0
+        points = []
         for k in range(len(poly)):
             a, b = poly[k], poly[(k + 1) % len(poly)]
             d = b - a
@@ -540,23 +544,28 @@ def _tjunctions(v: VMF, rep: Report, top: int = 40, eps: float = 0.1) -> None:
             for cx in range(int(lo[0] // C), int(hi[0] // C) + 1):
                 for cy in range(int(lo[1] // C), int(hi[1] // C) + 1):
                     for cz in range(int(lo[2] // C), int(hi[2] // C) + 1):
-                        for q in cells.get((cx, cy, cz), ()):
+                        for q, (sid, own) in cells.get((cx, cy, cz), {}).items():
                             if q in corners:
                                 continue
                             w = Vec(*q) - a
                             t = w.dot(u)
                             if eps < t < L - eps and (w - u * t).mag() < eps:
                                 extra += 1
+                                if len(points) < MAX_EXAMPLES:
+                                    points.append((Vec(*q), f"vértice do {own} solid {sid}"))
         if extra:
             idx = (len(poly) + extra - 2) * 3
             total += idx
-            scored.append((idx, extra, s, side, poly, owner))
+            scored.append((idx, extra, s, side, poly, owner, points))
     scored.sort(key=lambda t: -t[0])
     # a soma superestima (~2x no rp_surdonoso: o vbsp faz CSG e só triangula o que não fecha em leque),
     # então vale como ranking, não como veredito; o número real está no log do vbsp
     rep.stats["t-junctions: índices estimados (teto)"] = f"{total} (limite do vbsp {MAX_PRIMINDICES})"
     rep.stats["faces com t-junction"] = len(scored)
-    for idx, extra, s, side, poly, owner in scored[:top]:
+    rep.data["tjunctions"] = [{"idx": idx, "extra": extra, "solid": s.id, "face": side.id, "mat": side.mat, "owner": owner,
+                               "center": geom.centroid(poly), "points": pts} for idx, extra, s, side, poly, owner, pts in scored]
+    rep.data["tjunctions_total"] = total
+    for idx, extra, s, side, poly, owner, _ in scored[:top]:
         rep.add("aviso", "tjunctions", f"{owner} solid {s.id} face {side.id} ({side.mat}): {extra} vértice(s) de vizinhos nas arestas, ~{idx} índices",
                 geom.centroid(poly), group=owner)
 
@@ -778,142 +787,6 @@ def write_pointfile(path: Path, pts: list[Vec]) -> None:
 
 # --------------------------------------------------------------------------- relatório HTML
 def write_html(rep: Report, path: Path, map_name: str, cluster_radius: float = 256.0) -> Path:
-    """Página com as texturas faltando: uso, pasta e até MAX_EXAMPLES localizações (com botão de copiar
-    `setpos` pro console do jogo e as coordenadas pro Hammer: Ctrl+Shift+G)."""
-    from html import escape
-    from datetime import datetime
-    items = sorted((i for i in rep.issues if i.check == "textures"), key=lambda i: (-i.count, i.name))
-    folders = defaultdict(lambda: [0, 0])
-    for i in items:
-        folders[i.group][0] += 1
-        folders[i.group][1] += i.count
-    total_uses = sum(i.count for i in items)
-
-    def coord(p):
-        return f"{p.x:.0f} {p.y:.0f} {p.z:.0f}"
-
-    def loc_li(p, d):
-        return (f'<li><code>{escape(coord(p))}</code><span class="d">{escape(d)}</span>'
-                f'<button data-copy="setpos {escape(coord(p + Vec(0, 0, 64)))}" title="copiar setpos (64u acima)">setpos</button>'
-                f'<button data-copy="{escape(coord(p))}" title="copiar coordenadas (Hammer: Ctrl+Shift+G)">xyz</button></li>')
-
-    clusters = cluster_locations([(i.name, p, d) for i in items for p, d in i.locations], cluster_radius)
-    crow = []
-    for k, g in enumerate(clusters, 1):
-        size = g["hi"] - g["lo"]
-        mats = "".join(f'<li><code>{escape(m)}</code><span class="d">{c}×</span></li>' for m, c in g["materials"][:8])
-        if len(g["materials"]) > 8:
-            mats += f'<li class="more">+{len(g["materials"]) - 8} material(is)</li>'
-        ex = "".join(loc_li(p, d) for p, d in g["examples"])
-        more = f'<li class="more">+{g["count"] - len(g["examples"])} ocorrência(s)</li>' if g["count"] > len(g["examples"]) else ""
-        names = " ".join(m for m, _ in g["materials"])
-        crow.append(
-            f'<tr data-name="{escape(names)}" data-folder=""><td class="n">{k}</td>'
-            f'<td><code>{escape(coord(g["center"]))}</code><div class="d">área ~{size.x:.0f}×{size.y:.0f}×{size.z:.0f}u</div>'
-            f'<button class="go" data-copy="setpos {escape(coord(g["center"] + Vec(0, 0, 64)))}">setpos no centro</button></td>'
-            f'<td class="n">{g["count"]}</td><td><ul>{mats}</ul></td><td><ul>{ex}{more}</ul></td></tr>')
-    cbody = (f'<table><thead><tr><th class="n">#</th><th>Centro</th><th class="n">Ocorr.</th><th>Materiais</th>'
-             f'<th>Onde (até {MAX_EXAMPLES}, mais perto do centro)</th></tr></thead><tbody>{"".join(crow)}</tbody></table>'
-             ) if clusters else '<p class="ok">Nenhuma ocorrência.</p>'
-
-    rows = []
-    for i in items:
-        ex = "".join(loc_li(p, d) for p, d in i.examples)
-        more = f'<li class="more">+{i.count - len(i.examples)} uso(s)</li>' if i.count > len(i.examples) else ""
-        rows.append(
-            f'<tr data-folder="{escape(i.group)}" data-name="{escape(i.name)}">'
-            f'<td class="mat"><code>{escape(i.name)}</code></td><td class="folder">{escape(i.group)}</td>'
-            f'<td class="n">{i.count}</td><td><ul>{ex}{more}</ul></td></tr>')
-    chips = "".join(
-        f'<button class="chip" data-folder="{escape(f)}">{escape(f)} <b>{n}</b></button>'
-        for f, (n, u) in sorted(folders.items(), key=lambda kv: -kv[1][1]))
-    skipped = f'<p class="warn">Checagem pulada: {escape(rep.skipped["textures"])}</p>' if "textures" in rep.skipped else ""
-    body = (f'<table><thead><tr><th>Material</th><th>Pasta</th><th class="n">Usos</th><th>Onde (até {MAX_EXAMPLES})</th></tr></thead>'
-            f'<tbody>{"".join(rows)}</tbody></table>') if items else '<p class="ok">Nenhuma textura faltando.</p>'
-    html = f"""<!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Texturas faltando</title>
-<style>
-:root {{ --bg:#f7f7f5; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#e3e2de; --accent:#c2410c; --chip:#efeeea; --code:#f1f0ec; }}
-@media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{ --bg:#161615; --fg:#ecebe7; --muted:#9a9993; --card:#1f1f1d; --line:#2e2e2b; --accent:#fb923c; --chip:#2a2a27; --code:#262624; }} }}
-:root[data-theme="dark"] {{ --bg:#161615; --fg:#ecebe7; --muted:#9a9993; --card:#1f1f1d; --line:#2e2e2b; --accent:#fb923c; --chip:#2a2a27; --code:#262624; }}
-* {{ box-sizing:border-box }}
-body {{ margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }}
-main {{ max-width:1200px; margin:0 auto; padding:24px 16px 48px; }}
-h1 {{ font-size:22px; margin:0 0 4px }} .sub {{ color:var(--muted); margin:0 0 20px }}
-.stats {{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px }}
-.stat {{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 14px }}
-.stat b {{ display:block; font-size:22px; color:var(--accent) }} .stat span {{ color:var(--muted); font-size:13px }}
-.tools {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:8px 0 14px }}
-input[type=search] {{ flex:1 1 240px; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); font:inherit }}
-.chips {{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px }}
-.chip {{ border:1px solid var(--line); background:var(--chip); color:var(--fg); border-radius:999px; padding:4px 10px; cursor:pointer; font:inherit; font-size:13px }}
-.chip.on {{ border-color:var(--accent); color:var(--accent) }}
-.tablewrap {{ overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:10px }}
-table {{ width:100%; border-collapse:collapse; min-width:720px }}
-th, td {{ text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top }}
-th {{ font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); position:sticky; top:0; background:var(--card) }}
-td.n, th.n {{ text-align:right; font-variant-numeric:tabular-nums; width:70px }}
-td.mat code {{ font-weight:600 }} td.folder {{ color:var(--muted); white-space:nowrap }}
-code {{ font-family:ui-monospace,"JetBrains Mono",monospace; font-size:13px; background:var(--code); padding:1px 5px; border-radius:4px }}
-ul {{ list-style:none; margin:0; padding:0; display:grid; gap:4px }}
-li {{ display:flex; gap:8px; align-items:center; flex-wrap:wrap }}
-li .d {{ color:var(--muted); font-size:12px }} li.more {{ color:var(--muted); font-size:12px }}
-li button {{ border:1px solid var(--line); background:transparent; color:var(--fg); border-radius:6px; padding:1px 7px; font-size:12px; cursor:pointer }}
-li button:hover {{ border-color:var(--accent); color:var(--accent) }}
-.ok {{ padding:16px }} .warn {{ color:var(--accent) }}
-.tabs {{ display:flex; gap:4px; border-bottom:1px solid var(--line); margin:0 0 14px }}
-.tab {{ border:0; background:transparent; color:var(--muted); font:inherit; padding:8px 14px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px }}
-.tab.on {{ color:var(--fg); border-bottom-color:var(--accent); font-weight:600 }}
-.panel[hidden] {{ display:none }} .d {{ color:var(--muted); font-size:12px }}
-button.go {{ margin-top:6px; border:1px solid var(--line); background:transparent; color:var(--fg); border-radius:6px; padding:2px 8px; font-size:12px; cursor:pointer }}
-button.go:hover {{ border-color:var(--accent); color:var(--accent) }}
-#toast {{ position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:var(--fg); color:var(--bg); padding:6px 12px; border-radius:8px; opacity:0; transition:opacity .2s; font-size:13px }}
-</style></head><body><main>
-<h1>Texturas faltando</h1>
-<p class="sub"><code>{escape(map_name)}</code> · {escape(datetime.now().strftime("%d/%m/%Y %H:%M"))} · fontes: {escape(str(rep.stats.get("recursos", "")))}</p>
-{skipped}
-<div class="stats"><div class="stat"><b>{len(items)}</b><span>materiais faltando</span></div>
-<div class="stat"><b>{total_uses}</b><span>usos (faces, overlays, decals)</span></div>
-<div class="stat"><b>{len(folders)}</b><span>pastas</span></div></div>
-<div class="tabs"><button class="tab on" data-tab="mat">Por textura <b>{len(items)}</b></button>
-<button class="tab" data-tab="reg">Por região <b>{len(clusters)}</b></button></div>
-<div class="tools"><input type="search" id="q" placeholder="Filtrar por nome ou pasta"></div>
-<section class="panel" id="p-mat"><div class="chips">{chips}</div><div class="tablewrap">{body}</div></section>
-<section class="panel" id="p-reg" hidden><p class="sub">Ocorrências a até {cluster_radius:.0f}u umas das outras viram uma região, mesmo com materiais diferentes. Ordenado pela quantidade.</p>
-<div class="tablewrap">{cbody}</div></section>
-<p class="sub" style="margin-top:14px">Em cada localização: <b>setpos</b> copia um comando pro console do jogo (64u acima da face); <b>xyz</b> copia as coordenadas pro Hammer++ (Ctrl+Shift+G, "Go to coordinates").</p>
-</main><div id="toast">copiado</div>
-<script>
-const q = document.getElementById('q'), rows = [...document.querySelectorAll('tbody tr')];
-document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {{
-  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t));
-  document.getElementById('p-mat').hidden = t.dataset.tab !== 'mat';
-  document.getElementById('p-reg').hidden = t.dataset.tab !== 'reg';
-  try {{ localStorage.setItem('ht-tab', t.dataset.tab); }} catch (_) {{}}
-}}));
-try {{ const saved = localStorage.getItem('ht-tab'); if (saved) document.querySelector(`.tab[data-tab="${{saved}}"]`)?.click(); }} catch (_) {{}}
-let folder = '';
-function apply() {{
-  const t = q.value.toLowerCase();
-  rows.forEach(r => r.hidden = !((!folder || !r.dataset.folder || r.dataset.folder === folder) && (!t || r.dataset.name.includes(t) || r.dataset.folder.includes(t))));
-}}
-q.addEventListener('input', apply);
-document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {{
-  folder = folder === c.dataset.folder ? '' : c.dataset.folder;
-  document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x.dataset.folder === folder)); apply();
-}}));
-const toast = document.getElementById('toast');
-document.addEventListener('click', e => {{
-  const b = e.target.closest('button[data-copy]'); if (!b) return;
-  const txt = b.dataset.copy;
-  const done = () => {{ toast.textContent = 'copiado: ' + txt; toast.style.opacity = 1; setTimeout(() => toast.style.opacity = 0, 1400); }};
-  (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(done).catch(() => {{
-    const a = document.createElement('textarea'); a.value = txt; document.body.appendChild(a); a.select();
-    try {{ document.execCommand('copy'); done(); }} catch (_) {{}} a.remove();
-  }});
-}});
-</script></body></html>"""
-    path = Path(path)
-    path.write_text(html, encoding="utf-8")
-    return path
+    """Relatório geral (hammertools.report): painel de prioridades + uma aba por área."""
+    from hammertools import report
+    return report.write(rep, path, map_name, cluster_radius)

@@ -298,6 +298,93 @@ def cmd_pack(args) -> int:
     return 0
 
 
+def _out_path(args, suffix: str) -> Path:
+    src = Path(args.vmf)
+    out = Path(args.out) if args.out else src.with_name(f"{src.stem}_{suffix}.vmf")
+    if out.resolve() == src.resolve():
+        raise SystemExit("recuse: a saída não pode ser o próprio fonte")
+    return out
+
+
+def cmd_rename(args) -> int:
+    from hammertools import rename
+    v = vmfio.load(args.vmf)
+    r = rename.rename(v, args.pattern, args.replacement)
+    for old, new in sorted(r.mapping.items()):
+        print(f"  {old} -> {new}")
+    print(f"{len(r.mapping)} nome(s); {r.entities} entidade(s), {r.keyvalues} keyvalue(s), {r.outputs} output(s) atualizados")
+    for line in r.review:
+        print(f"  revisar (curinga): {line}")
+    if r.mapping and not args.dry_run:
+        out = _out_path(args, "renomeado")
+        vmfio.save(v, out)
+        print(f"gravado: {out}")
+    return 0
+
+
+def cmd_retexture(args) -> int:
+    from hammertools import retexture
+    table = retexture.load_table(args.table) if args.table else []
+    table += [tuple(x.split("=", 1)) for x in (args.set or [])]
+    table = [(a.lower().replace("\\", "/"), b) for a, b in table]
+    if not table:
+        print("nada a trocar: use --table arquivo.toml ([materiais] \"origem\" = \"destino\") ou --set origem=destino", file=sys.stderr)
+        return 2
+    size_of = None
+    if args.rescale:
+        from hammertools import lint
+        res = lint.Resources.from_game(args.game, args.bsp)
+        size_of = lambda m: lint.texture_size(res, m)
+    v = vmfio.load(args.vmf)
+    r = retexture.retexture(v, table, size_of)
+    for src, n in r.used.items():
+        print(f"  {src}: {n}")
+    print(f"{r.faces} face(s) e {r.entities} entidade(s) trocadas")
+    if not args.dry_run:
+        out = _out_path(args, "retex")
+        vmfio.save(v, out)
+        print(f"gravado: {out}")
+    return 0
+
+
+def cmd_lightmap(args) -> int:
+    from hammertools import lightmap
+    v = vmfio.load(args.vmf)
+    mixed = lightmap.report(v)
+    print(f"{len(mixed)} material(is) com escalas de lightmap misturadas (emendas de luz visíveis):")
+    for m, c in sorted(mixed.items(), key=lambda kv: -sum(kv[1].values()))[: args.max]:
+        print(f"  {m}: " + ", ".join(f"{k} ({n} faces)" for k, n in c.most_common()))
+    rules = [(a, int(b)) for a, b in (x.split("=", 1) for x in (args.set or []))]
+    if not rules and not args.uniform:
+        return 0
+    n = lightmap.normalize(v, rules, uniform=args.uniform)
+    print(f"{n} face(s) mudaram de escala")
+    if not args.dry_run:
+        out = _out_path(args, "lightmap")
+        vmfio.save(v, out)
+        print(f"gravado: {out}")
+    return 0
+
+
+def cmd_detail(args) -> int:
+    from hammertools import fix, lint
+    v = vmfio.load(args.vmf)
+    n = fix.fix_small_world(v, lint.Resources.from_game(args.game))
+    print(f"{n} brush(es) de mundo pequenos/finos longe do vazio -> func_detail")
+    if n and not args.dry_run:
+        out = _out_path(args, "detail")
+        vmfio.save(v, out)
+        print(f"gravado: {out}  (compile e confira leak: o ht-vbsp avisa)")
+    return 0
+
+
+def cmd_diff(args) -> int:
+    from hammertools import diffvmf
+    lines = diffvmf.diff(vmfio.load(args.a), vmfio.load(args.b))
+    print("\n".join(lines) if lines else "sem diferenças")
+    return 0
+
+
 def cmd_fix(args) -> int:
     """Consertos automáticos seguros num VMF novo (hoje: material de modelo em brush -> cópia LightmappedGeneric)."""
     from hammertools import fix, lint
@@ -371,6 +458,27 @@ def main(argv=None) -> int:
     p.add_argument("--dry-run", action="store_true", help="só lista, não grava")
     p.add_argument("--max", type=int, default=30)
     p.set_defaults(fn=cmd_content)
+    p = sub.add_parser("rename", help="renomeia entidades por regex e atualiza outputs e keyvalues que apontam pra elas")
+    p.add_argument("vmf"); p.add_argument("pattern", help="regex do nome inteiro, ex.: 'porta_(\\d+)'")
+    p.add_argument("replacement", help="ex.: 'door_\\1'"); p.add_argument("-o", "--out"); p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(fn=cmd_rename)
+    p = sub.add_parser("retexture", help="troca materiais por tabela (blockout -> final)")
+    p.add_argument("vmf"); p.add_argument("--table", help="TOML com [materiais] \"origem\" = \"destino\" (curinga permitido)")
+    p.add_argument("--set", action="append", help="origem=destino (repetível)"); p.add_argument("-o", "--out")
+    p.add_argument("--rescale", action="store_true", help="ajusta a escala pra textura nova ocupar o mesmo espaço (lê o tamanho dos .vtf)")
+    p.add_argument("--game"); p.add_argument("--bsp"); p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(fn=cmd_retexture)
+    p = sub.add_parser("lightmap", help="relatório e padronização da escala de lightmap por material")
+    p.add_argument("vmf"); p.add_argument("--set", action="append", help="material=escala (curinga permitido), ex.: 'nature/*=32'")
+    p.add_argument("--uniform", action="store_true", help="material sem regra usa a escala mais comum dele no mapa")
+    p.add_argument("-o", "--out"); p.add_argument("--dry-run", action="store_true"); p.add_argument("--max", type=int, default=20)
+    p.set_defaults(fn=cmd_lightmap)
+    p = sub.add_parser("detail", help="mapa pronto: brushes de mundo pequenos/finos longe do vazio -> func_detail")
+    p.add_argument("vmf"); p.add_argument("--game"); p.add_argument("-o", "--out"); p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(fn=cmd_detail)
+    p = sub.add_parser("diff", help="diferenças legíveis entre dois VMFs por ID (entidades, keyvalues, outputs, brushes, materiais)")
+    p.add_argument("a"); p.add_argument("b")
+    p.set_defaults(fn=cmd_diff)
     p = sub.add_parser("pack", help="embute no BSP compilado o conteúdo que o mapa usa e o GMod base não tem (pakfile)")
     p.add_argument("vmf"); p.add_argument("--bsp", help="BSP compilado (padrão: <mapa>.bsp)")
     p.add_argument("-o", "--out", help="padrão: <bsp>_packed.bsp")

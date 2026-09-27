@@ -832,6 +832,22 @@ def _small_world(v: VMF, rep: Report, labels, outside, idx, vs: float) -> None:
 MODEL_SHADERS = {"vertexlitgeneric", "vertexlitgeneric_dx6", "eyerefract", "eyes", "teeth", "character"}
 
 
+def texture_size(res: Resources, mat: str) -> tuple[int, int] | None:
+    """(largura, altura) da $basetexture do material, lendo o cabeçalho do .vtf; None se não der."""
+    import struct as _st
+    data = res.read(f"materials/{mat}.vmt", 4096) if res.read else None
+    if not data:
+        return None
+    m = re.search(r'"?\$basetexture"?\s+"?([^"\s]+)', data.decode("utf-8", "replace"), re.I)
+    if not m:
+        return None
+    tex = m.group(1).replace("\\", "/").lower().removesuffix(".vtf")
+    head = res.read(f"materials/{tex}.vtf", 32)
+    if not head or head[:4] != b"VTF\0":
+        return None
+    return _st.unpack_from("<HH", head, 16)
+
+
 def _vmt_syntax_error(res: Resources, mat: str) -> str:
     """Erro de sintaxe do .vmt (aspas sem fechar, chave sem valor...), ou '' se estiver bom ou não der pra ler."""
     from srctools import Keyvalues

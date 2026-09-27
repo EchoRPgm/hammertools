@@ -399,7 +399,7 @@ def _run_streaming(cmd: list[str]) -> tuple[int, str]:
     return p.wait(), "".join(lines)
 
 
-PHANTOM_MIN_AREA = 256.0   # lasca menor que isso fica só no lint (não vale recompilar por ela)
+PHANTOM_MIN_AREA = 16.0     # o laço confere e desfaz se vazar; lasca sem brush de outra textura no plano fica pro lint
 PHANTOM_ROUNDS = 2
 
 

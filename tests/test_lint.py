@@ -520,3 +520,13 @@ def test_lintignore_regions():
     assert _checks(rep, "nodraw")
     n = lint.apply_ignore(rep, {"regions": [{"box": [[-600, -600, -100], [600, 600, 100]], "checks": ["nodraw"], "motivo": "teste"}]})
     assert n >= 1 and not _checks(rep, "nodraw") and rep.stats["ignorados (lintignore)"] == n
+
+
+def test_vmt_syntax_error_is_flagged():
+    v = _room()
+    v.add_brush(v.make_prism(Vec(-64, -64, 0), Vec(64, 64, 8), "vidro/quebrado").solid)
+    vmts = {"materials/vidro/quebrado.vmt": b'"UnlitGeneric"\r\n{\r\n\t"$basetexture" "x"\r\n\t"$surfaceprop" "glass\r\n}'}
+    res = FakeRes(materials={"vidro/quebrado", "dev/dev_measuregeneric01b", "tools/toolsnodraw"})
+    res.read = lambda p, limit=None: vmts.get(p.lower())
+    hits = [i for i in _checks(lint.run(v, res, {"textures"}), "textures") if i.group == "vmt quebrado"]
+    assert len(hits) == 1 and hits[0].name == "vidro/quebrado" and "line" in hits[0].msg.lower()

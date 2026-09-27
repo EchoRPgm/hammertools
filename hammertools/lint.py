@@ -295,6 +295,11 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
                     rep.add("erro", "textures", f"material inexistente '{mat}' ({len(users)} uso(s))",
                             ex[0][0] if ex else None, group=_folder(mat), name=mat, count=len(users), examples=ex,
                             locations=_texture_locations(users))
+                elif mat and res.read is not None and (err := _vmt_syntax_error(res, mat)):
+                    ex = _texture_examples(users)
+                    rep.add("aviso", "textures", f"'{mat}.vmt' com erro de sintaxe ({err}): o vbsp avisa 'KeyValues Error' e o "
+                            f"jogo pode ignorar parâmetros do material", ex[0][0] if ex else None, group="vmt quebrado", name=mat,
+                            count=len(users), examples=ex)
                 elif mat and res.read is not None:
                     # shader de modelo numa face de brush: sem lightmap, a luz sai errada e muda com a distância
                     brush_users = [u for u in users if u[1] is not None]
@@ -825,6 +830,19 @@ def _small_world(v: VMF, rep: Report, labels, outside, idx, vs: float) -> None:
 
 
 MODEL_SHADERS = {"vertexlitgeneric", "vertexlitgeneric_dx6", "eyerefract", "eyes", "teeth", "character"}
+
+
+def _vmt_syntax_error(res: Resources, mat: str) -> str:
+    """Erro de sintaxe do .vmt (aspas sem fechar, chave sem valor...), ou '' se estiver bom ou não der pra ler."""
+    from srctools import Keyvalues
+    data = res.read(f"materials/{mat}.vmt") if res.read else None
+    if not data:
+        return ""
+    try:
+        Keyvalues.parse(data.decode("utf-8", "replace"), f"{mat}.vmt")
+    except Exception as e:  # srctools levanta KeyValError com a linha
+        return str(e).replace("\n", " ").strip()[:160]
+    return ""
 
 
 def _shader(res: Resources, mat: str) -> str:

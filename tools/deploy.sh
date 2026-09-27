@@ -32,6 +32,13 @@ if ($c -notmatch "`"ht lint`"") {
 $seq = "`t`"ht lint`"`r`n`t{`r`n`t`t`"1`"`r`n`t`t{`r`n`t`t`t`"enable`"`t`t`"1`"`r`n`t`t`t`"specialcmd`"`t`t`"0`"`r`n`t`t`t`"run`"`t`t`"$bin\ht-lint.cmd`"`r`n`t`t`t`"parms`"`t`t`"`$path\`$file`"`r`n`t`t}`r`n`t}`r`n"
 $c = $c -replace "^(`"Command Sequences`"\s*\r?\n\{\r?\n)", ("`$1" + ($seq -replace "\`$", "`$`$`$`$"))
 Set-Content $f $c -NoNewline }
+# sequência "ht final": ht-vbsp (t-junctions e faces fantasma automáticos) + vvis completo + vrad final com luz por vértice nos props (como o gm_fork) + cópia pro maps
+$c = Get-Content $f -Raw
+if ($c -notmatch "`"ht final`"") {
+function St($i, $sc, $run, $parms) { $r = if ($run) { "`t`t`t`"run`"`t`t`"$run`"`r`n" } else { "" }; "`t`t`"$i`"`r`n`t`t{`r`n`t`t`t`"enable`"`t`t`"1`"`r`n`t`t`t`"specialcmd`"`t`t`"$sc`"`r`n$r`t`t`t`"parms`"`t`t`"$parms`"`r`n`t`t}`r`n" }
+$seq = "`t`"ht final`"`r`n`t{`r`n" + (St 0 0 "`$bsp_exe" "-game `$gamedir `$path\`$file") + (St 1 0 "`$vis_exe" "-game `$gamedir `$path\`$file") + (St 2 0 "`$light_exe" "-final -StaticPropLighting -StaticPropPolys -TextureShadows -game `$gamedir `$path\`$file") + (St 3 257 "" "`$path\`$file.bsp `$bspdir\`$file.bsp") + "`t}`r`n"
+$c = $c -replace "^(`"Command Sequences`"\s*\r?\n\{\r?\n)", ("`$1" + ($seq -replace "\`$", "`$`$`$`$"))
+Set-Content $f $c -NoNewline }
 "instalado; fgd " + (Get-Item "$g\bin\win64\hammerplusplus\hammertools.fgd").LastWriteTime.ToString("HH:mm:ss")'
 if [ $COMPILE = 1 ]; then PS="$PS"'
 $o = & "$bin\ht-vbsp.exe" -game "$g\garrysmod" "$m\test_stairs" 2>&1 | Out-String; ($o -split "`n" | ? { $_ -match "ht-vbsp:|leaked|unbounded|aviso" } | % { $_.Trim() })

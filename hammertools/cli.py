@@ -350,19 +350,36 @@ def _run_streaming(cmd: list[str]) -> tuple[int, str]:
     return p.wait(), "".join(lines)
 
 
-TJ_STEPS = (100, 200, 400, 800, 1600)
+TJ_STEPS = (100, 200, 400, 800, 1600, 3200)
+LIMIT = 65536            # índices de t-junction e vértices únicos (vbsp)
+MAX_MODELS = 1024        # MAX_MAP_MODELS
+TJ_INDEX_GOAL = 0.90     # meta: sobrar 10% de índices pra editar o mapa sem estourar de novo
+TJ_VERT_CAP = 0.97       # trava: não passar de 97% dos vértices
+TJ_MODEL_CAP = 0.90      # trava: não passar de 90% dos modelos
+
+
+def _brush_models(v) -> int:
+    """Modelos que o BSP vai ter: o mundo + cada entidade de brush (func_detail vira mundo, não conta)."""
+    return 1 + sum(1 for e in v.entities if e.solids and e["classname"] != "func_detail")
 
 
 def _fix_tjunctions(real: Path, args: list[str], out: Path) -> tuple[int, dict]:
     """Estourou o teto de t-junctions: converte os func_detail que mais custam em func_brush (a BSP do modelo corta
-    as faces e a t-junction some), dobrando a quantidade até o vbsp passar. Se estourar outro teto (vértices,
-    modelos) ou acabar o detail, recompila com -notjunc. Mexe só no VMF gerado em build/, nunca no fonte."""
+    as faces e a t-junction some), dobrando a quantidade. Não para no primeiro que compila: segue até sobrar 10% de
+    índices, respeitando as travas de vértices (97%) e modelos (90%, previsto antes de compilar e conferido no BSP).
+    Fica com a melhor tentativa que compilou; nenhuma = -notjunc. Mexe só no build/, nunca no fonte."""
     from hammertools import optimize
+    from hammertools.lint import bsp_counts
     base = out.with_name(out.stem + "_base.vmf")
     shutil.copy2(out, base)
-    ranked = optimize.rank_detail_tjunctions(vmfio.load(base))
-    print(f"\nht-vbsp: estourou o teto de t-junctions do vbsp (65536 índices). {len(ranked)} func_detail causam t-junctions;\n"
-          "ht-vbsp: convertendo os piores em func_brush (a BSP do modelo corta as faces) e recompilando.\n", flush=True)
+    v0 = vmfio.load(base)
+    ranked = optimize.rank_detail_tjunctions(v0)
+    models0 = _brush_models(v0)
+    print(f"\nht-vbsp: estourou o teto de t-junctions do vbsp ({LIMIT} índices). {len(ranked)} func_detail causam t-junctions;\n"
+          "ht-vbsp: convertendo os piores em func_brush (a BSP do modelo corta as faces) e recompilando.\n"
+          f"ht-vbsp: meta: índices <= {TJ_INDEX_GOAL:.0%}; travas: vértices <= {TJ_VERT_CAP:.0%}, modelos <= {TJ_MODEL_CAP:.0%} de {MAX_MODELS}.\n", flush=True)
+    best = None   # (k, n, contagens)
+    saved = [".bsp", ".prt", ".lin", ".log"]
     tried = 0
     for k in TJ_STEPS + (len(ranked),):
         k = min(k, len(ranked))
@@ -371,24 +388,52 @@ def _fix_tjunctions(real: Path, args: list[str], out: Path) -> tuple[int, dict]:
         tried = k
         v = vmfio.load(base)
         n = optimize.detail_to_brush(v, ranked[:k])
+        predicted = models0 + n
+        if predicted > TJ_MODEL_CAP * MAX_MODELS:
+            print(f"ht-vbsp: {k} func_detail daria {predicted} modelos (trava {int(TJ_MODEL_CAP * MAX_MODELS)}); paro aqui.", flush=True)
+            break
         vmfio.save(v, out)
-        print(f"ht-vbsp: tentativa: {k} func_detail -> {n} func_brush", flush=True)
+        print(f"ht-vbsp: tentativa: {k} func_detail -> {n} func_brush (~{predicted} modelos)", flush=True)
         rc, text = _run_streaming([str(real), *args[:-1], str(out.with_suffix(""))])
         low = text.lower()
         if "too many t-junctions" in low:
             continue
-        if rc == 0 and out.with_suffix(".bsp").exists() and "too many" not in low and "max_map" not in low:
-            print(f"\nht-vbsp: compilou com as t-junctions consertadas: {k} func_detail viraram {n} func_brush "
-                  "(só no build/, o fonte continua com func_detail).\n", flush=True)
-            chosen = set(ranked[:k])
-            solids = [s.id for e in vmfio.load(base).by_class["func_detail"] if e.id in chosen for s in e.solids]
-            return rc, {"result": "convertido", "func_detail": k, "func_brush": n, "solids": solids}
-        break  # outro teto (vértices, modelos): mais conversão só piora
-    shutil.copy2(base, out)
-    print("\nht-vbsp: não coube nos tetos do vbsp convertendo detail; recompilando com -notjunc.\n"
-          "ht-vbsp: efeito colateral possível: brilhos finos nas emendas (veja a aba T-junctions do `ht lint --html`).\n", flush=True)
-    rc, _ = _run_streaming([str(real), *args[:-1], "-notjunc", str(out.with_suffix(""))])
-    return rc, {"result": "notjunc"}
+        if not (rc == 0 and out.with_suffix(".bsp").exists() and "too many" not in low and "max_map" not in low):
+            print("ht-vbsp: estourou outro teto do vbsp; mais conversão só piora.", flush=True)
+            break
+        try:
+            c = bsp_counts(out.with_suffix(".bsp"))
+        except Exception:
+            c = {}
+        if c and (c["vertices"] > TJ_VERT_CAP * LIMIT or c["models"] > TJ_MODEL_CAP * MAX_MODELS):
+            print(f"ht-vbsp: compilou mas passou das travas (vértices {c['vertices']}, modelos {c['models']}); fico com a anterior.", flush=True)
+            break
+        best = (k, n, c)
+        for ext in saved:  # guarda esta, a próxima tentativa sobrescreve
+            f = out.with_suffix(ext)
+            if f.exists():
+                shutil.copy2(f, out.with_name(out.stem + "_best" + ext))
+        shutil.copy2(out, out.with_name(out.stem + "_best.vmf"))
+        if not c or c["indices"] <= TJ_INDEX_GOAL * LIMIT:
+            break
+        print(f"ht-vbsp: compilou com {c['indices']} índices ({c['indices'] / LIMIT:.0%}); buscando mais folga.", flush=True)
+    if best is None:
+        shutil.copy2(base, out)
+        print("\nht-vbsp: não coube nos tetos do vbsp convertendo detail; recompilando com -notjunc.\n"
+              "ht-vbsp: efeito colateral possível: brilhos finos nas emendas (veja a aba T-junctions do `ht lint --html`).\n", flush=True)
+        rc, _ = _run_streaming([str(real), *args[:-1], "-notjunc", str(out.with_suffix(""))])
+        return rc, {"result": "notjunc"}
+    k, n, c = best
+    for ext in saved + [".vmf"]:
+        f = out.with_name(out.stem + "_best" + ext)
+        if f.exists():
+            shutil.move(f, out.with_suffix(ext))
+    folga = (f": índices {c['indices']}/{LIMIT}, vértices {c['vertices']}/{LIMIT}, modelos {c['models']}/{MAX_MODELS}" if c else "")
+    print(f"\nht-vbsp: t-junctions consertadas com {k} func_detail -> {n} func_brush{folga} "
+          "(só no build/, o fonte continua com func_detail).\n", flush=True)
+    chosen = set(ranked[:k])
+    solids = [s.id for e in v0.by_class["func_detail"] if e.id in chosen for s in e.solids]
+    return 0, {"result": "convertido", "func_detail": k, "func_brush": n, "solids": solids}
 
 
 def vbsp_main(argv=None) -> int:

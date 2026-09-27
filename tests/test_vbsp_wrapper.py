@@ -122,3 +122,50 @@ def test_rank_and_convert_detail():
     # blocos com centro em x < 0 caem no bloco de área vizinho: 2 func_brush, todos os solids preservados
     assert n == len(v.by_class["func_brush"]) == 2 and sum(len(e.solids) for e in v.by_class["func_brush"]) == len(ranked)
     assert not v.by_class["func_detail"]
+
+
+FAKE_COUNTS = (
+    "import sys, json, pathlib\n"
+    "p = pathlib.Path(sys.argv[-1]); txt = p.with_suffix('.vmf').read_text()\n"
+    "log = p.with_name('calls.txt'); log.write_text(log.read_text() + 'x' if log.exists() else 'x')\n"
+    "if '-notjunc' in sys.argv: p.with_suffix('.bsp').write_text(json.dumps({'notjunc': 1})); sys.exit(0)\n"
+    "conv = 4 - txt.count('\"func_detail\"')\n"
+    "idx = 70000 - 5000 * conv\n"
+    "if idx > 65536: print('Too many t-junctions to fix up! (1 prims, max 32768 :: 65550 indices, max 65536)'); sys.exit(1)\n"
+    "p.with_suffix('.bsp').write_text(json.dumps({'conv': conv, 'indices': idx, 'vertices': 50000, 'models': {models}, 'prims': 1, 'faces': 1}))\n")
+
+
+def _run_counts(room, tmp_path, monkeypatch, models_expr, **patch):
+    import json
+    from hammertools import cli, lint
+    monkeypatch.setattr(cli, "TJ_STEPS", (1, 2, 3))
+    for k, val in patch.items():
+        monkeypatch.setattr(cli, k, val)
+    monkeypatch.setattr(lint, "bsp_counts", lambda p: json.loads(Path(p).read_text()))
+    src = tmp_path / "mapsrc" / "m.vmf"; src.parent.mkdir()
+    vmfio.save(_room_with_detail_tjunctions(room), src)
+    fake = tmp_path / "vbsp.py"
+    fake.write_text(FAKE_COUNTS.replace("{models}", models_expr))
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    rc = vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))])
+    return rc, json.loads(src.with_suffix(".tjfix.json").read_text()), json.loads(src.with_suffix(".bsp").read_text()), tmp_path / "mapsrc" / "build" / "calls.txt"
+
+
+def test_tjfix_keeps_converting_until_index_margin(room, tmp_path, monkeypatch):
+    # 1 convertido: 65000 índices (passa, mas 99%); 2: 60000 (92%); 3: 55000 (84%) -> para no 3
+    rc, fix, bsp, _ = _run_counts(room, tmp_path, monkeypatch, "10")
+    assert rc == 0 and fix["func_detail"] == 3 and bsp["conv"] == 3 and bsp["indices"] == 55000
+
+
+def test_tjfix_model_cap_keeps_best_previous(room, tmp_path, monkeypatch):
+    # modelos crescem 100 por conversão: 1 -> 900 (<= 921), 2 -> 1000 (passa da trava) => fica com a de 1, arquivos restaurados
+    rc, fix, bsp, _ = _run_counts(room, tmp_path, monkeypatch, "800 + 100 * conv")
+    assert rc == 0 and fix["func_detail"] == 1 and bsp["conv"] == 1
+    assert "func_brush" in (tmp_path / "mapsrc" / "build" / "m.vmf").read_text()  # build = a tentativa escolhida
+
+
+def test_tjfix_predicted_models_skip_compile(room, tmp_path, monkeypatch):
+    # teto de modelos minúsculo: a previsão (mundo + 1 func_brush = 2 > 90% de 2) barra antes de compilar -> -notjunc
+    rc, fix, bsp, calls = _run_counts(room, tmp_path, monkeypatch, "10", MAX_MODELS=2)
+    assert rc == 0 and fix["result"] == "notjunc" and bsp == {"notjunc": 1}
+    assert calls.read_text() == "xx"  # só a compilação original e a -notjunc: nenhuma tentativa de conversão

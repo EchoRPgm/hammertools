@@ -147,7 +147,10 @@ def _tab_tjunctions(rep: L.Report, radius: float) -> tuple[str, int]:
         return nr, 0
     faces = rep.data.get("tjunctions", [])
     total = rep.data.get("tjunctions_total", 0)
-    pts = [(f["mat"], f["center"], "") for f in faces for _ in range(f["extra"])]  # peso = vértices extras da face
+    fix = rep.data.get("tjfix")
+    # com registro de compilação: a densidade mostra o que AINDA gasta índice (resolvidas pela conversão saem)
+    weight = (lambda f: f["rem"]) if fix else (lambda f: f["extra"])
+    pts = [(f["mat"], f["center"], "") for f in faces for _ in range(max(0, weight(f)))]
     clusters = hotspots(pts)[:20]
     crow = []
     for k, g in enumerate(clusters, 1):
@@ -158,18 +161,45 @@ def _tab_tjunctions(rep: L.Report, radius: float) -> tuple[str, int]:
                     f'<td class="n">{g["count"]}</td><td><ul>{"".join(f"<li><code>{escape(m)}</code><span class=d>{c}×</span></li>" for m, c in g["materials"][:5])}</ul></td></tr>')
     rows = []
     for k, f in enumerate(faces[:300], 1):
-        rows.append(f'<tr data-name="{escape(f["mat"].lower())}" data-folder="{escape(f["owner"])}"><td class="n">{k}</td>'
+        st = f.get("status")
+        left = f.get("left", f["idx"])
+        rest = f'<div class="d">resta ~{left} índices</div>' if st == "vbsp" and left != f["idx"] else ""
+        stcell = f'<td><span class="st {st}">{escape(L.TJ_STATUS[st].split(" (")[0])}</span>{rest}</td>' if st else ""
+        rows.append(f'<tr data-name="{escape(f["mat"].lower())}" data-folder="{escape(L.TJ_STATUS[st].split(" (")[0] if st else f["owner"])}"><td class="n">{k}</td>'
                     f'<td>{escape(f["owner"])} solid {f["solid"]} · face {f["face"]}<div class="d"><code>{escape(f["mat"])}</code></div></td>'
-                    f'<td class="n">{f["extra"]}</td><td class="n">{f["idx"]}</td>'
+                    f'{stcell}<td class="n">{f["extra"]}</td><td class="n">{f["idx"]}</td>'
                     f'<td><ul>{_loc(f["center"], "centro da face")}{"".join(_loc(p, d) for p, d in f["points"])}</ul></td></tr>')
-    head = (f'<div class="stats"><div class="stat"><b>{len(faces)}</b><span>faces com t-junction</span></div>'
-            f'<div class="stat"><b>{total}</b><span>índices estimados (teto: não desconta o que o vbsp remove)</span></div>'
-            f'<div class="stat"><b>65536</b><span>limite do vbsp</span></div></div>'
-            '<p class="sub">Como resolver à mão: nas regiões abaixo, junte blocos vizinhos que formam uma peça só '
-            '(piso, parede, rodapé fatiados), alinhe emendas pra coincidirem com os vértices vizinhos, ou transforme acabamentos em prop. '
-            '<code>ht optimize</code> junta sozinho blocos retangulares fatiados com a mesma textura (ajuda quando há piso/parede em fatias; vizinhos de tamanhos diferentes só à mão). Na compilação o ht-vbsp conserta sozinho: converte os func_detail que mais custam em func_brush (a BSP do modelo corta as faces e a t-junction some), só no build/; <code>-notjunc</code> só se não couber nos tetos do vbsp.</p>')
-    return (head + "<h3>Onde mais tem t-junction (blocos de 512u)</h3>" + _table(["#", "Centro", "Vértices", "Materiais"], crow, "Nenhuma.")
-            + f"<h3>Faces que mais gastam índices (até 300)</h3>" + _table(["#", "Face", "Vértices", "Índices", "Onde (centro + pontos exatos)"], rows, "Nenhuma.")), len(faces)
+    stats = [f'<div class="stat"><b>{len(faces)}</b><span>faces com t-junction</span></div>',
+             f'<div class="stat"><b>{total}</b><span>índices estimados (teto: não desconta o que o vbsp remove)</span></div>']
+    note, chips = "", ""
+    if fix:
+        from collections import Counter
+        cnt = Counter(f.get("status") for f in faces)
+        res = fix.get("result")
+        if "indices" in fix:
+            stats.append(f'<div class="stat"><b class="{"g" if res != "notjunc" else "e"}">{fix["indices"]}</b><span>índices reais no BSP compilado (limite 65536)</span></div>')
+        stats.append(f'<div class="stat"><b class="g">{cnt["conv"]}</b><span>resolvidas pela conversão em func_brush</span></div>')
+        if res == "notjunc":
+            stats.append(f'<div class="stat"><b class="e">{cnt["pend"]}</b><span>pendentes (compilado com -notjunc)</span></div>')
+        else:
+            stats.append(f'<div class="stat"><b>{cnt["vbsp"]}</b><span>consertadas pelo vbsp (~{fix["left"]} índices estimados)</span></div>')
+        what = {"convertido": f'o ht-vbsp converteu {fix.get("func_detail")} func_detail em {fix.get("func_brush")} func_brush e o vbsp consertou o resto',
+                "direto": "o vbsp consertou todas sem precisar converter nada",
+                "notjunc": "compilado com -notjunc: nenhuma t-junction foi consertada (brilhos possíveis nas emendas)"}.get(res, res)
+        note = (f'<p class="{"warn" if res == "notjunc" or fix.get("stale") else "sub"}">Última compilação ({escape(fix.get("quando", "?"))}): {escape(what)}.'
+                + (" <b>O VMF foi salvo depois dessa compilação: compile de novo pra atualizar.</b>" if fix.get("stale") else "") + "</p>")
+        chips = '<div class="chips">' + "".join(f'<button class="chip" data-folder="{escape(L.TJ_STATUS[k].split(" (")[0])}">{escape(L.TJ_STATUS[k].split(" (")[0])} <b>{cnt[k]}</b></button>'
+                                               for k in ("conv", "vbsp", "pend") if cnt[k]) + "</div>"
+    head = (f'<div class="stats">{"".join(stats)}</div>' + note +
+            '<p class="sub">Por que acontece: faces de <b>func_detail</b> não são cortadas pela árvore BSP; vértice de vizinho no meio da aresta vira '
+            'triangulação extra (índices, teto de 65536 no vbsp). Mundo e func_brush são cortados pela BSP e não gastam índice. '
+            'Na compilação o ht-vbsp conserta sozinho: converte os func_detail que mais custam em func_brush (só no build/) e registra em '
+            '<code>&lt;mapa&gt;.tjfix.json</code>, que este relatório lê. <code>-notjunc</code> só se não couber nos tetos do vbsp. '
+            'À mão: nas regiões abaixo, alinhe emendas pra coincidirem com os vértices vizinhos ou junte peças fatiadas (<code>ht optimize</code>).</p>')
+    title = "Onde ainda gasta índices (blocos de 512u)" if fix else "Onde mais tem t-junction (blocos de 512u)"
+    cols = ["#", "Face"] + (["Status"] if fix else []) + ["Vértices", "Índices", "Onde (centro + pontos exatos)"]
+    return (head + f"<h3>{title}</h3>" + _table(["#", "Centro", "Vértices", "Materiais"], crow, "Nenhuma.")
+            + "<h3>Faces que mais gastam índices (até 300)</h3>" + chips + _table(cols, rows, "Nenhuma.")), len(faces)
 
 
 def _tab_generic(rep: L.Report, checks: list[str]) -> tuple[str, int]:
@@ -215,8 +245,23 @@ def _dashboard(rep: L.Report, radius: float) -> str:
             if not faces:
                 continue
             risk = total > L.MAX_PRIMINDICES
-            top = [(f"{f['owner']} solid {f['solid']} ({f['mat']})", f"~{f['idx']} índices", f["center"]) for f in faces[:3]]
-            cards.append((("aviso" if not risk else "risco"), title, f"{len(faces)} faces · ~{total} índices estimados (limite 65536)", what, top, "tj"))
+            fix = rep.data.get("tjfix")
+            summary = f"{len(faces)} faces · ~{total} índices estimados (limite 65536)"
+            level_tj = "aviso" if not risk else "risco"
+            if fix:
+                res = fix.get("result")
+                done = sum(1 for f in faces if f.get("status") == "conv")
+                real = f" · real no BSP {fix['indices']}/65536" if "indices" in fix else ""
+                if res == "notjunc":
+                    summary = f"compilado com -notjunc: {len(faces)} faces sem conserto{real}"
+                else:
+                    summary = f"consertadas na compilação: {done} pela conversão em func_brush, {len(faces) - done} pelo vbsp{real}"
+                    level_tj = "aviso" if not fix.get("stale") else "risco"
+                if fix.get("stale"):
+                    summary += " · VMF mais novo que a compilação"
+            pend = [f for f in faces if f.get("status") != "conv"] if fix else faces
+            top = [(f"{f['owner']} solid {f['solid']} ({f['mat']})", f"~{f.get('left', f['idx'])} índices", f["center"]) for f in pend[:3]]
+            cards.append((level_tj, title, summary, what, top, "tj"))
             continue
         if not items:
             continue
@@ -312,6 +357,7 @@ main { max-width:1240px; margin:0 auto; padding:24px 16px 48px; } h1 { font-size
 select { padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); font:inherit; max-width:100% }
 label.tg { display:flex; gap:6px; align-items:center; color:var(--muted); font-size:14px; cursor:pointer; white-space:nowrap }
 tr.grp td { background:var(--chip); font-size:13px; padding:6px 12px } tr.grp b { color:var(--accent) }
+.st { font-size:12px; font-weight:600; white-space:nowrap } .st.conv { color:var(--ok) } .st.vbsp { color:var(--warn) } .st.pend { color:var(--err) }
 .areanote { color:var(--accent); font-size:13px; margin:0 0 10px }
 input[type=search] { flex:1 1 240px; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); font:inherit }
 .chips { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px } .chip { border:1px solid var(--line); background:var(--chip); color:var(--fg); border-radius:999px; padding:4px 10px; cursor:pointer; font:inherit; font-size:13px } .chip.on { border-color:var(--accent); color:var(--accent) }

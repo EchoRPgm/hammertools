@@ -416,3 +416,23 @@ def test_nodraw_ramp_under_stair_steps_is_hidden():
         if e.solids and e.solids[0] is steps[0]:
             v.remove_ent(e)
     assert [i for i in _checks(lint.run(v, checks={"nodraw"}), "nodraw") if "solid %d," % wedge.id in i.msg]
+
+
+def test_tjfix_marks_resolved_faces(tmp_path):
+    from srctools.vmf import Entity
+    v = VMF()
+    slab = v.make_prism(Vec(-256, -64, 0), Vec(256, 64, 16), "dev/dev_measuregeneric01b").solid
+    v.add_ent(Entity(v, {"classname": "func_detail"}, solids=[slab]))
+    blocks = [v.make_prism(Vec(x, 64, 0), Vec(x + 48, 96, 40), "dev/dev_measuregeneric01b").solid for x in (-160, -32, 96)]
+    v.add_ent(Entity(v, {"classname": "func_detail"}, solids=blocks))
+    rep = lint.run(v, FakeRes(), {"tjunctions"})
+    slab_faces = [f for f in rep.data["tjunctions"] if f["solid"] == slab.id]
+    assert slab_faces
+    # só os blocos viraram func_brush: a laje fica sem vértices alheios -> resolvida
+    lint.apply_tjfix(rep, {"result": "convertido", "func_detail": 1, "func_brush": 1, "solids": [b.id for b in blocks], "indices": 42})
+    assert all(f["status"] == "conv" and f["left"] == 0 for f in slab_faces)
+    html = lint.write_html(rep, tmp_path / "r.html", "m.vmf").read_text()
+    assert "resolvida na compilação" in html and "índices reais no BSP" in html and "consertadas na compilação" in html
+    # compilado com -notjunc: tudo pendente
+    lint.apply_tjfix(rep, {"result": "notjunc"})
+    assert all(f["status"] == "pend" for f in rep.data["tjunctions"])

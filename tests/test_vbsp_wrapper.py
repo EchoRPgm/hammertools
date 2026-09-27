@@ -92,6 +92,9 @@ def test_wrapper_fixes_tjunctions_by_converting_detail(room, tmp_path, monkeypat
     built = vmfio.load(tmp_path / "mapsrc" / "build" / "m.vmf")
     assert built.by_class["func_brush"] and all(e["vrad_brush_cast_shadows"] == "1" for e in built.by_class["func_brush"])
     assert not vmfio.load(src).by_class["func_brush"]  # fonte intocado
+    import json
+    fix = json.loads(src.with_suffix(".tjfix.json").read_text())
+    assert fix["result"] == "convertido" and fix["solids"] and fix["func_brush"] >= 1
 
 
 def test_wrapper_falls_back_to_notjunc_when_vertices_overflow(room, tmp_path, monkeypatch, capsys):
@@ -104,6 +107,8 @@ def test_wrapper_falls_back_to_notjunc_when_vertices_overflow(room, tmp_path, mo
     out = capsys.readouterr().out
     assert rc == 0 and src.with_suffix(".bsp").read_text() == "notjunc" and "recompilando com -notjunc" in out
     assert not vmfio.load(tmp_path / "mapsrc" / "build" / "m.vmf").by_class["func_brush"]  # build volta ao original
+    import json
+    assert json.loads(src.with_suffix(".tjfix.json").read_text())["result"] == "notjunc"
 
 
 def test_rank_and_convert_detail():

@@ -934,6 +934,46 @@ def _bfs_out(labels, outside, start, origin, vs) -> list[Vec]:
     return list(reversed(path))
 
 
+def bsp_counts(path) -> dict:
+    """Contagens reais de um BSP compilado: primitivas/índices de t-junction, vértices, faces, modelos."""
+    from srctools.bsp import BSP, BSP_LUMPS
+    b = BSP(str(path))
+    n = lambda lump, size: len(b.get_lump(lump)) // size
+    return {"prims": n(BSP_LUMPS.PRIMITIVES, 10), "indices": n(BSP_LUMPS.PRIMINDICES, 2), "vertices": n(BSP_LUMPS.VERTEXES, 12),
+            "faces": n(BSP_LUMPS.FACES, 56), "models": n(BSP_LUMPS.MODELS, 48)}
+
+
+TJ_STATUS = {"conv": "resolvida na compilação (virou func_brush)", "vbsp": "consertada pelo vbsp (triangulada, gasta índices)",
+             "pend": "pendente (compilado com -notjunc)"}
+
+
+def apply_tjfix(rep: Report, fix: dict, stale: bool = False) -> None:
+    """Marca cada face de t-junction com o que a última compilação (ht-vbsp, <mapa>.tjfix.json) fez com ela.
+    Compilou sem -notjunc = o vbsp consertou TODAS: as das peças convertidas em func_brush somem (a BSP corta as
+    faces), as outras ele triangula (gastam índices). Com -notjunc nenhuma é consertada."""
+    faces = rep.data.get("tjunctions", [])
+    result = fix.get("result")
+    conv = set(fix.get("solids", []))
+    left = 0
+    for f in faces:
+        if result == "notjunc":
+            f["status"], f["left"], f["rem"] = "pend", f["idx"], f["extra"]
+        elif f["solid"] in conv:
+            f["status"], f["left"], f["rem"] = "conv", 0, 0
+        else:
+            rem = max(0, f["extra"] - sum(n for sid, n in f.get("sources", {}).items() if int(sid) in conv))
+            n_poly = f["idx"] // 3 - f["extra"] + 2
+            f["status"] = "conv" if rem == 0 else "vbsp"
+            f["left"], f["rem"] = (0 if rem == 0 else (n_poly + rem - 2) * 3), rem
+        left += f["left"]
+    rep.data["tjfix"] = dict(fix, stale=stale, left=left)
+    done = sum(1 for f in faces if f["status"] == "conv")
+    rep.stats["t-junctions na compilação"] = (
+        f"{result}" + (f": {fix.get('func_detail')} func_detail -> {fix.get('func_brush')} func_brush, {done} face(s) resolvidas" if result == "convertido" else "")
+        + (f", real no BSP {fix['indices']}/{MAX_PRIMINDICES} índices" if "indices" in fix else "")
+        + (" (registro mais antigo que o VMF)" if stale else ""))
+
+
 # --------------------------------------------------------------------------- saída
 LABELS = {
     "markers": "marcadores incompletos", "outputs": "outputs órfãos", "textures": "texturas inexistentes",

@@ -125,6 +125,11 @@ def cmd_lint(args) -> int:
     need_res = checks & {"textures", "models", "leak", "nodraw"}
     res = lint.Resources.from_game(args.game, args.bsp, args.extra or ()) if need_res else lint.Resources()
     rep = lint.run(v, res, checks, grid=args.grid, detail_grid=args.detail_grid, voxel=args.voxel)
+    if "tjunctions" in rep.ran:
+        fixp = Path(args.tjfix) if args.tjfix else Path(args.vmf).with_suffix(".tjfix.json")
+        if fixp.exists():
+            import json
+            lint.apply_tjfix(rep, json.loads(fixp.read_text()), stale=fixp.stat().st_mtime < Path(args.vmf).stat().st_mtime)
     print(lint.format_report(rep, args.max))
     if args.html is not None:
         out = Path(args.html) if args.html else Path(args.vmf).with_suffix(".lint.html")
@@ -281,6 +286,7 @@ def main(argv=None) -> int:
                    help="gera o relatório geral (painel de prioridades + abas por checagem) e abre no navegador; padrão <mapa>.lint.html")
     p.add_argument("--no-open", action="store_true", help="com --html: só grava, não abre o navegador")
     p.add_argument("--cluster-radius", type=float, default=256.0, help="com --html: distância máxima (u) pra juntar ocorrências na aba 'Por região'")
+    p.add_argument("--tjfix", help="registro da compilação (padrão <mapa>.tjfix.json, gravado pelo ht-vbsp): marca as t-junctions resolvidas")
     p.add_argument("--area-size", type=float, default=1024.0, help="com --html: tamanho (u) do bloco de área do filtro/agrupamento por área")
     p.set_defaults(fn=cmd_lint)
     p = sub.add_parser("content", help="monta a pasta de conteúdo do mapa (dependências que o jogo não tem) em garrysmod/addons/<mapa>_content")
@@ -347,7 +353,7 @@ def _run_streaming(cmd: list[str]) -> tuple[int, str]:
 TJ_STEPS = (100, 200, 400, 800, 1600)
 
 
-def _fix_tjunctions(real: Path, args: list[str], out: Path) -> int:
+def _fix_tjunctions(real: Path, args: list[str], out: Path) -> tuple[int, dict]:
     """Estourou o teto de t-junctions: converte os func_detail que mais custam em func_brush (a BSP do modelo corta
     as faces e a t-junction some), dobrando a quantidade até o vbsp passar. Se estourar outro teto (vértices,
     modelos) ou acabar o detail, recompila com -notjunc. Mexe só no VMF gerado em build/, nunca no fonte."""
@@ -374,13 +380,15 @@ def _fix_tjunctions(real: Path, args: list[str], out: Path) -> int:
         if rc == 0 and out.with_suffix(".bsp").exists() and "too many" not in low and "max_map" not in low:
             print(f"\nht-vbsp: compilou com as t-junctions consertadas: {k} func_detail viraram {n} func_brush "
                   "(só no build/, o fonte continua com func_detail).\n", flush=True)
-            return rc
+            chosen = set(ranked[:k])
+            solids = [s.id for e in vmfio.load(base).by_class["func_detail"] if e.id in chosen for s in e.solids]
+            return rc, {"result": "convertido", "func_detail": k, "func_brush": n, "solids": solids}
         break  # outro teto (vértices, modelos): mais conversão só piora
     shutil.copy2(base, out)
     print("\nht-vbsp: não coube nos tetos do vbsp convertendo detail; recompilando com -notjunc.\n"
           "ht-vbsp: efeito colateral possível: brilhos finos nas emendas (veja a aba T-junctions do `ht lint --html`).\n", flush=True)
     rc, _ = _run_streaming([str(real), *args[:-1], "-notjunc", str(out.with_suffix(""))])
-    return rc
+    return rc, {"result": "notjunc"}
 
 
 def vbsp_main(argv=None) -> int:
@@ -419,8 +427,20 @@ def vbsp_main(argv=None) -> int:
 
     cmd = [str(real), *args[:-1], str(out.with_suffix(""))]
     rc, text = _run_streaming(cmd)
-    if "too many t-junctions" in text.lower() and "-notjunc" not in (a.lower() for a in args):
-        rc = _fix_tjunctions(real, args, out)
+    notjunc = "-notjunc" in (a.lower() for a in args)
+    info = {"result": "notjunc" if notjunc else "direto"}
+    if "too many t-junctions" in text.lower() and not notjunc:
+        rc, info = _fix_tjunctions(real, args, out)
+    # registro pro `ht lint` marcar quais t-junctions a compilação resolveu (<mapa>.tjfix.json ao lado do fonte)
+    if rc == 0 and "-onlyents" not in (a.lower() for a in args):
+        import json, time
+        info["quando"] = time.strftime("%Y-%m-%d %H:%M")
+        try:
+            from hammertools.lint import bsp_counts
+            info.update(bsp_counts(out.with_suffix(".bsp")))
+        except Exception as e:  # BSP ilegível não impede o registro
+            info["erro_bsp"] = str(e)
+        src.with_suffix(".tjfix.json").write_text(json.dumps(info))
     for ext in (".bsp", ".prt", ".lin", ".log"):
         f = out.with_suffix(ext)
         if f.exists():

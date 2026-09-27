@@ -111,41 +111,26 @@ def cmd_build(args) -> int:
 
 
 def cmd_lint(args) -> int:
+    from hammertools import lint
     v = vmfio.load(args.vmf)
-    problems: list[str] = []
-    # marcadores incompletos
-    for g in vmfio.group_markers(vmfio.markers(v)).values():
-        if g.classname not in REGISTRY:
-            continue
-        if g.classname in SINGLE:
-            if g.by_role("start") is None:
-                problems.append(f"marcador {g.name} ({g.classname}) sem o marcador principal")
-        elif g.by_role("start") is None or g.by_role("end") is None:
-            problems.append(f"marcador {g.name} ({g.classname}) sem par start/end")
-    # outputs apontando pra targetname inexistente (targetnames são case-insensitive no Source)
-    names = {e["targetname"].lower() for e in v.entities if e.get("targetname")}
-    classnames = {e["classname"].lower() for e in v.entities}
-    for e in v.entities:
-        for out in e.outputs:
-            t = out.target
-            if not t or t.startswith("!") or "*" in t:
-                continue
-            if t.lower() in names or t.lower() in classnames:
-                continue
-            problems.append(f"{e['classname']} '{e.get('targetname', '?')}' -> output {out.output} mira '{t}' que não existe")
-    # brushes fora do grid (mundo e entidades), um aviso por solid
-    grid = args.grid
-    owners = [(s, "mundo") for s in v.brushes] + [(s, e["classname"]) for e in v.entities for s in e.solids
-                                                if args.detail_grid or e["classname"] != "func_detail"]
-    for s, owner in owners:
-        bad = [side for side in s.sides if any(not vmfio.is_on_grid(c, grid) for p in side.planes for c in (p.x, p.y, p.z))]
-        if bad:
-            kind = "displacement" if any(side.is_disp for side in s.sides) else "brush"
-            problems.append(f"{owner} solid {s.id} ({kind}): {len(bad)} face(s) fora do grid {grid}")
-    for p in problems:
-        print(p)
-    print(f"{len(problems)} problema(s)")
-    return 1 if problems else 0
+    checks = set(lint.ALL_CHECKS)
+    if args.only:
+        checks = {c.strip() for c in args.only.split(",")}
+    if args.skip:
+        checks -= {c.strip() for c in args.skip.split(",")}
+    bad = checks - set(lint.ALL_CHECKS)
+    if bad:
+        print(f"checagem desconhecida: {', '.join(sorted(bad))} (válidas: {', '.join(lint.ALL_CHECKS)})", file=sys.stderr)
+        return 2
+    need_res = checks & {"textures", "models", "leak", "nodraw"}
+    res = lint.Resources.from_game(args.game, args.bsp, args.extra or ()) if need_res else lint.Resources()
+    rep = lint.run(v, res, checks, grid=args.grid, detail_grid=args.detail_grid, voxel=args.voxel)
+    print(lint.format_report(rep, args.max))
+    if rep.leak_path and args.pointfile:
+        pf = Path(args.vmf).with_suffix(".lin")
+        lint.write_pointfile(pf, rep.leak_path)
+        print(f"pointfile do leak: {pf} (Hammer++: Map > Load Pointfile)")
+    return 1 if rep.errors else 0
 
 
 def main(argv=None) -> int:
@@ -159,9 +144,19 @@ def main(argv=None) -> int:
     p.add_argument("--clear", action="store_true", help="só remove o visgroup ht_preview do fonte"); p.set_defaults(fn=cmd_preview)
     p = sub.add_parser("list-markers", help="lista marcadores ht_* do mapa")
     p.add_argument("vmf"); p.set_defaults(fn=cmd_list)
-    p = sub.add_parser("lint", help="checagens pré-compile")
-    p.add_argument("vmf"); p.add_argument("--grid", type=float, default=1.0)
-    p.add_argument("--detail-grid", action="store_true", help="também checa grade em func_detail (ignorado por padrão: não afeta selo nem BSP)"); p.set_defaults(fn=cmd_lint)
+    p = sub.add_parser("lint", help="checagens pré-compile (texturas, modelos, leak, nodraw, duplicados, sobreposição, grid, I/O)")
+    p.add_argument("vmf")
+    p.add_argument("--game", help="pasta com gameinfo.txt (padrão: HT_GAME ou a instalação do GMod)")
+    p.add_argument("--bsp", help="BSP compilado do mapa: conta os arquivos embutidos (pakfile) como existentes")
+    p.add_argument("--extra", action="append", help="pasta extra com materials/ e models/ (repetível)")
+    p.add_argument("--only", help="só estas checagens, separadas por vírgula")
+    p.add_argument("--skip", help="pular estas checagens")
+    p.add_argument("--grid", type=float, default=1.0)
+    p.add_argument("--detail-grid", action="store_true", help="também checa grade em func_detail")
+    p.add_argument("--voxel", type=float, help="resolução do teste de leak/nodraw (padrão automático)")
+    p.add_argument("--pointfile", action="store_true", help="grava <mapa>.lin com o caminho do leak")
+    p.add_argument("--max", type=int, default=15, help="máximo de itens listados por categoria")
+    p.set_defaults(fn=cmd_lint)
     args = ap.parse_args(argv)
     return args.fn(args)
 

@@ -21,9 +21,17 @@ PS='$h="http://10.0.2.2:8090"; $g="C:\Program Files (x86)\Steam\steamapps\common
 Invoke-WebRequest "$h/hammertools_pkg.zip" -OutFile "$w\hammertools_pkg.zip" -UseBasicParsing; Remove-Item "$w\hammertools_pkg" -Recurse -Force -ErrorAction SilentlyContinue; Expand-Archive "$w\hammertools_pkg.zip" -DestinationPath $w -Force
 $env:UV_TOOL_DIR="C:\Users\Quickemu\AppData\Roaming\uv\tools"; $env:UV_TOOL_BIN_DIR=$bin; $env:UV_CACHE_DIR="C:\Users\Quickemu\AppData\Local\uv\cache"
 $uv = Get-ChildItem "C:\Users\Quickemu\AppData\Local\Microsoft\WinGet\Packages" -Recurse -Filter uv.exe | Select -First 1 -Expand FullName
-& $uv tool install --force --python 3.12 "$w\hammertools_pkg" 2>&1 | Out-Null
+& $uv tool install --force --python 3.12 --with numpy --with scipy "$w\hammertools_pkg" 2>&1 | Out-Null
 Copy-Item "$w\hammertools_pkg\hammertools\hammertools.fgd" "$g\bin\win64\hammerplusplus\hammertools.fgd" -Force
 Invoke-WebRequest "$h/test_stairs.vmf" -OutFile "$m\test_stairs.vmf" -UseBasicParsing
+# sequência "ht lint" no Hammer++ (grava <mapa>.lin se houver leak: Map > Load Pointfile)
+$cmd = "@echo off`r`nsetlocal`r`nset `"in=%*`"`r`nset `"in=%in:`"=%`"`r`n:trim`r`nif `"%in:~-1%`"==`" `" (set `"in=%in:~0,-1%`" & goto trim)`r`n`"%~dp0ht.exe`" lint `"%in%.vmf`" --pointfile --game `"$g\garrysmod`"`r`n"
+[IO.File]::WriteAllText("$bin\ht-lint.cmd", $cmd, [Text.Encoding]::ASCII)
+$f="$g\bin\win64\hammerplusplus\hammerplusplus_sequences.cfg"; $c = Get-Content $f -Raw
+if ($c -notmatch "`"ht lint`"") {
+$seq = "`t`"ht lint`"`r`n`t{`r`n`t`t`"1`"`r`n`t`t{`r`n`t`t`t`"enable`"`t`t`"1`"`r`n`t`t`t`"specialcmd`"`t`t`"0`"`r`n`t`t`t`"run`"`t`t`"$bin\ht-lint.cmd`"`r`n`t`t`t`"parms`"`t`t`"`$path\`$file`"`r`n`t`t}`r`n`t}`r`n"
+$c = $c -replace "^(`"Command Sequences`"\s*\r?\n\{\r?\n)", ("`$1" + ($seq -replace "\`$", "`$`$`$`$"))
+Set-Content $f $c -NoNewline }
 "instalado; fgd " + (Get-Item "$g\bin\win64\hammerplusplus\hammertools.fgd").LastWriteTime.ToString("HH:mm:ss")'
 if [ $COMPILE = 1 ]; then PS="$PS"'
 $o = & "$bin\ht-vbsp.exe" -game "$g\garrysmod" "$m\test_stairs" 2>&1 | Out-String; ($o -split "`n" | ? { $_ -match "ht-vbsp:|leaked|unbounded|aviso" } | % { $_.Trim() })

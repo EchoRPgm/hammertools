@@ -5,6 +5,9 @@ description = "Geradores e lint de VMF para Hammer++ (marcadores ht_* -> geometr
 requires-python = ">=3.10"
 dependencies = ["srctools>=2.7"]
 
+[project.optional-dependencies]
+lint = ["numpy", "scipy"]  # teste de leak e nodraw do `ht lint`
+
 [project.scripts]
 ht = "hammertools.cli:main"
 ht-vbsp = "hammertools.cli:vbsp_main"

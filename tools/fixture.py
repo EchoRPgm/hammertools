@@ -21,7 +21,7 @@ STATUS = {
     "escada1": "ok", "escada2": "ok", "corrimao1": "ok", "cerca1": "ok", "cerca2": "ok", "ladder1": "ok",
     "arco1": "ok", "tubo1": "ok", "duto1": "ok", "curva1": "ok",
     "porta1": "ok", "luzes1": "ok", "elev1": "ok", "spawn1": "ok",
-    "cabo1": "ok", "trilho1": "ok", "terreno1": "ok", "cubemaps1": "ok", "zona1": "pending",
+    "cabo1": "ok", "trilho1": "ok", "terreno1": "ok", "zona1": "ok",
 }
 
 
@@ -47,7 +47,7 @@ def build():
     v.create_ent("ht_fence", origin="640 -512 0", targetname="cerca2", mode="prop")
     v.create_ent("ht_fence_end", origin="640 300 0", targetname="cerca2")
     # escada de mão: sobe a face frontal (x=1408) de uma plataforma encostada na parede +X
-    box(v, (1408, -704, 176), (1536, -576, 192))
+    box(v, (1408, -704, 0), (1536, -576, 192))   # torre até o chão: a face de trás (nodraw) da escada fica encostada nela
     v.create_ent("ht_ladder", origin="1408 -640 0", targetname="ladder1", angles="0 0 0", material=mat("ladder1"))
     v.create_ent("ht_ladder_end", origin="1408 -640 192", targetname="ladder1")
     # --- sprint 3
@@ -92,11 +92,7 @@ def build():
     v.create_ent("ht_rope_end", origin="-1400 1300 300", targetname="trilho1")
     v.create_ent("ht_terrain", origin="1024 -1536 0", targetname="terreno1", tile="512", power="3", amplitude="48", thickness="16", material=mat("terreno1"))
     v.create_ent("ht_terrain_end", origin="1536 -1024 0", targetname="terreno1")               # canto +X/-Y da sala, 512x512
-    # piso que REFLETE (usa $envmap env_cubemap), pra validar os cubemaps: placa de 512x512 no centro-sul
-    box(v, (-256, -768, 0), (256, -512, 2), "metal/citadel_tilefloor016a")
-    box(v, (256, -768, 0), (512, -512, 2), "tile/tilefloor019a")
-    v.create_ent("ht_cubemaps", origin="-1408 -1408 96", targetname="cubemaps1", spacing="512", margin="128")
-    v.create_ent("ht_cubemaps_end", origin="1408 1408 96", targetname="cubemaps1")
+    # ht_cubemaps desativado na fixture (2026-09-27): reflexos não ficaram bons; gerador segue no pacote
     v.create_ent("ht_zone", origin="-960 -1024 0", targetname="zona1", kind="block_los", height="96")  # atrás do duto
     v.create_ent("ht_zone_end", origin="-640 -960 0", targetname="zona1")
     return v

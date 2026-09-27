@@ -704,6 +704,7 @@ NOT_VIEWERS = ("ht_", "logic_", "point_template", "info_overlay", "infodecal", "
 BLOCK_TOOLS = {"tools/toolsnodraw", "tools/toolsskybox", "tools/toolsskybox2d", "tools/toolsblack", "tools/toolsblocklight"}
 VIEW_RANGE = 3000.0
 PROP_TOO_CLOSE = 64.0  # prop colado na face: o próprio modelo costuma tampar o nodraw
+EXPOSED_MIN = 0.25    # fração mínima das amostras da face descobertas pra ela contar como exposta
 SCENERY_SIZE = 256.0   # prop maior que isso (árvore gigante, torre) é cenário: a origem não é onde o jogador fica
 
 
@@ -717,6 +718,7 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float, res: Res
     skybox) contava como jogável só por estar do lado de dentro do selo.
     Displacement bloqueia a visada pela superfície (triângulos), não pelo brush-base: o terreno pode ficar
     longe do brush e a árvore em cima do chão "via" a caixa de nodraw debaixo do mapa.
+    A cobertura é testada em várias amostras da face (não só no centro); exposta = pelo menos 25% descobertas.
     Brush translúcido (vidro, água) com face nodraw não acusa: o vbsp não o trata como sólido e a face
     nodraw só deixa ver através dele (vidro de janela com o lado de dentro nodraw).
     Props tampam: se um ponto a 2, 8 ou 16u à frente da face cai dentro da caixa (girada) de um prop, a face está
@@ -845,13 +847,23 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float, res: Res
             if side.mat.lower() != NODRAW or len(poly) < 3:
                 continue
             nrm, _ = geom.outward(side)
-            c = geom.centroid(poly)
-            q = c + nrm * 1.0
-            key = (int(q.x // B), int(q.y // B), int(q.z // B))
-            if any(o is not s and o.point_inside(q) for o in buckets.get(key, ())):
+            # amostras espalhadas pela face (centro + 1/3 e 2/3 do caminho até cada vértice): um ponto só no centro
+            # falha quando o centro cai numa quina (rampa nodraw embaixo de degraus, que só encostam nas quinas)
+            ctr = geom.centroid(poly)
+            samples = [ctr] + [ctr + (vx - ctr) * t for vx in poly for t in (1 / 3, 2 / 3)]
+
+            def exposed(pt: Vec) -> bool:
+                q = pt + nrm * 1.0
+                if any(o is not s and o.point_inside(q) for o in buckets.get((int(q.x // B), int(q.y // B), int(q.z // B)), ())):
+                    return False
+                # modelo encostado ou a até 16u (piso do modelo do elevador 5u acima do brush)
+                return not any(under_prop(pt + nrm * d) for d in (2.0, 8.0, 16.0))
+
+            open_pts = [pt for pt in samples if exposed(pt)]
+            if len(open_pts) < max(1, EXPOSED_MIN * len(samples)):
                 continue
-            if any(under_prop(c + nrm * d) for d in (2.0, 8.0, 16.0)):
-                continue  # modelo encostado ou a até 16u (piso do modelo do elevador 5u acima do brush)
+            c = open_pts[0]
+            q = c + nrm * 1.0
             # primeiro brush que o raio acerta dentro do alcance da sonda
             cand: dict[int, Solid] = {}
             t = 0.0

@@ -299,11 +299,14 @@ def test_nodraw_hidden_by_prop_bbox():
     next(s for s in pillar.sides if geom.outward(s)[0].x < -0.5).mat = "tools/toolsnodraw"
     v.add_brush(pillar)
     assert _checks(lint.run(v, checks={"nodraw"}), "nodraw")  # sem o prop: à vista (info_player_start enxerga)
-    # modelo 116x10x32 girado 90°: comprido em Y, encostado na face -X do pilar
+    # modelo girado 90°: comprido em Y, encostado na face -X do pilar
     v.create_ent("prop_static", origin="196 0 64", angles="0 90 0", model="models/janela.mdl")
     res = FakeRes()
-    res.model_info = lambda m: {"static": True, "mins": Vec(-58, -5, -16), "maxs": Vec(58, 5, 16)}
+    res.model_info = lambda m: {"static": True, "mins": Vec(-58, -5, -66), "maxs": Vec(58, 5, 66)}  # cobre a face toda
     assert not _checks(lint.run(v, res, checks={"nodraw"}), "nodraw")
+    # modelo cobrindo só 32u de uma face de 128u: o resto do batente fica à vista
+    res.model_info = lambda m: {"static": True, "mins": Vec(-58, -5, -16), "maxs": Vec(58, 5, 16)}
+    assert _checks(lint.run(v, res, checks={"nodraw"}), "nodraw")
 
 
 def test_disp_triangles_follow_generator_layout():
@@ -389,3 +392,27 @@ def test_report_area_filter_and_grouping(tmp_path):
     assert {"0_0_0", "-2_-2_0"} <= keys and areas == sorted(areas, key=lambda a: -a["n"])
     assert 'data-area="0_0_0"' in html and 'data-area="-2_-2_0"' in html
     assert "data-area-go=" in html  # painel: botão "filtrar esta área"
+
+
+def test_nodraw_ramp_under_stair_steps_is_hidden():
+    """Regressão (rp_surdonoso 3414 -12011 -360): cunha func_detail com rampa nodraw embaixo dos degraus; a
+    rampa só encosta nas quinas dos degraus e o centro dela cai exatamente numa quina."""
+    v = _room()
+    # cunha: caixa y -24..24, z 0..32 com o topo inclinado em rampa de (y -24, z 0) a (y 24, z 32)
+    prism = v.make_prism(Vec(-32, -24, 0), Vec(32, 24, 32), "dev/dev_measuregeneric01b")
+    wedge = prism.solid
+    ramp = prism.top
+    ramp.planes = [Vec(p.x, p.y, (p.y + 24) * 32 / 48) for p in ramp.planes]
+    wedge.sides.remove(prism.north if geom.outward(prism.north)[0].y < -0.5 else prism.south)
+    ramp.mat = "tools/toolsnodraw"
+    steps = [v.make_prism(Vec(-32, y0, 0), Vec(32, y0 + 12, z1), "dev/dev_measuregeneric01b").solid
+             for y0, z1 in ((-24, 8), (-12, 16), (0, 24), (12, 32))]
+    _brush_ent(v, "func_detail", [wedge])
+    _brush_ent(v, "func_detail", steps)
+    hits = [i for i in _checks(lint.run(v, checks={"nodraw"}), "nodraw") if "solid %d," % wedge.id in i.msg]
+    assert not hits
+    # sem os degraus a rampa fica exposta: acusa
+    for e in list(v.entities):
+        if e.solids and e.solids[0] is steps[0]:
+            v.remove_ent(e)
+    assert [i for i in _checks(lint.run(v, checks={"nodraw"}), "nodraw") if "solid %d," % wedge.id in i.msg]

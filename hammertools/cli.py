@@ -269,6 +269,35 @@ def cmd_optimize(args) -> int:
     return 0
 
 
+def cmd_pack(args) -> int:
+    """Embute no BSP compilado o conteúdo que o mapa usa e o GMod base não tem."""
+    from hammertools import content, lint, pack
+    src = Path(args.vmf)
+    bsp_in = Path(args.bsp) if args.bsp else src.with_suffix(".bsp")
+    if not bsp_in.exists():
+        print(f"não achei o BSP compilado ({bsp_in}); use --bsp", file=sys.stderr)
+        return 2
+    out = Path(args.out) if args.out else bsp_in.with_name(f"{bsp_in.stem}_packed.bsp")
+    gd = lint._find_game(args.game)
+    dirs = [Path(d) for d in (args.source or [])] or [gd / "addons" / f"{src.stem}_content"]
+    sources = [content.source_dir(d) for d in dirs if Path(d).is_dir()]
+    sources += [content.source_gma(Path(g)) for g in (args.gma or [])]
+    if not sources:
+        print(f"nenhuma fonte de conteúdo existe ({', '.join(map(str, dirs))}); rode `ht content` antes ou passe --source", file=sys.stderr)
+        return 2
+    has, read = pack.base_filesystem(gd, mount=not args.no_css)
+    r = pack.pack(vmfio.load(src), bsp_in, out, sources, has, read, dry_run=args.dry_run)
+    from collections import Counter
+    kinds = Counter(p.split("/")[0] for p in r.added)
+    print(f"{len(r.added)} arquivo(s) embutidos ({r.bytes_added / 1e6:.1f} MB): " + ", ".join(f"{k} {n}" for k, n in kinds.most_common()))
+    print(f"{r.kept} já estavam no pakfile; {len(r.missing)} dependência(s) não achadas em nenhuma fonte")
+    for m in sorted(r.missing)[: args.max]:
+        print(f"  faltando: {m}")
+    if not args.dry_run:
+        print(f"gravado: {out} ({out.stat().st_size / 1e6:.1f} MB)")
+    return 0
+
+
 def cmd_fix(args) -> int:
     """Consertos automáticos seguros num VMF novo (hoje: material de modelo em brush -> cópia LightmappedGeneric)."""
     from hammertools import fix, lint
@@ -342,6 +371,14 @@ def main(argv=None) -> int:
     p.add_argument("--dry-run", action="store_true", help="só lista, não grava")
     p.add_argument("--max", type=int, default=30)
     p.set_defaults(fn=cmd_content)
+    p = sub.add_parser("pack", help="embute no BSP compilado o conteúdo que o mapa usa e o GMod base não tem (pakfile)")
+    p.add_argument("vmf"); p.add_argument("--bsp", help="BSP compilado (padrão: <mapa>.bsp)")
+    p.add_argument("-o", "--out", help="padrão: <bsp>_packed.bsp")
+    p.add_argument("--game"); p.add_argument("--source", action="append", help="pasta com materials/ models/ sound/ (padrão: <jogo>/addons/<mapa>_content)")
+    p.add_argument("--gma", action="append", help="addon .gma como fonte")
+    p.add_argument("--no-css", action="store_true", help="embute também o que vem do CS:S (por padrão conta como montado)")
+    p.add_argument("--dry-run", action="store_true"); p.add_argument("--max", type=int, default=20)
+    p.set_defaults(fn=cmd_pack)
     p = sub.add_parser("fix", help="consertos automáticos seguros num VMF novo (material de modelo em brush, fade de props; --detail-small)")
     p.add_argument("vmf"); p.add_argument("-o", "--out", help="padrão: <mapa>_fix.vmf")
     p.add_argument("--game"); p.add_argument("--bsp", help="BSP com conteúdo embutido (pra achar os .vmt)")

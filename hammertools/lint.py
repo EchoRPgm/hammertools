@@ -273,6 +273,11 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
     if "logic" in checks:
         _logic(v, rep)
 
+    helpers = cordon_helper_brushes(v)
+    if helpers:
+        rep.add("erro", "markers", f"{len(helpers)} brush(es) de cordon salvos no VMF ({', '.join(map(str, helpers))}): o Hammer gera essa "
+                f"caixa de toolsskybox ao compilar com cordon; salva no mapa, ela enche de sólido tudo fora do cordon. Apague-os "
+                f"(o ht-vbsp tira sozinho do build/)", None)
     n_hidden = hidden_count(v)
     if n_hidden:
         rep.add("aviso" if n_hidden < 50 else "erro", "markers", f"{n_hidden} objeto(s) oculto(s) no Hammer (Hide/Ctrl+H): o vbsp NÃO compila "
@@ -1308,6 +1313,30 @@ def hidden_count(v: VMF) -> int:
         else:
             n += sum(1 for s in e.solids if s.hidden)
     return n
+
+
+def cordon_helper_brushes(v: VMF) -> list[int]:
+    """Brushes que o Hammer gera em volta de um cordon na hora de compilar (toolsskybox do tamanho do mundo com uma
+    face em cima de um limite do cordon) e que acabaram salvos no VMF: enchem de sólido tudo fora da caixa."""
+    planes = []
+    for c in getattr(v, "cordons", []) or []:
+        for vec in (c.bounds_min, c.bounds_max):
+            planes += [(0, vec.x), (1, vec.y), (2, vec.z)]
+    if not planes:
+        return []
+    out = []
+    for s in v.brushes:
+        if not all(x.mat.lower() == "tools/toolsskybox" for x in s.sides):
+            continue
+        lo, hi = s.get_bbox()
+        if max(hi[k] - lo[k] for k in range(3)) < 20000:
+            continue
+        for side in s.sides:
+            n, p = geom.outward(side)
+            if any(abs(abs(n[a]) - 1) < 1e-6 and abs(p[a] - val) < 1 for a, val in planes):
+                out.append(s.id)
+                break
+    return out
 
 
 def active_cordon(v: VMF):

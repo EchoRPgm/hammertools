@@ -714,8 +714,14 @@ def vbsp_main(argv=None) -> int:
         if n_prev:
             print(f"ht-vbsp: preview removido do fonte ({n_prev} objeto(s)); recarregue o mapa no Hammer++ antes de salvar de novo")
     n_groups, n_solids, warnings = build(src, out, str(gamedir) if gamedir else None)
-    from hammertools.lint import active_cordon, hidden_count
+    from hammertools.lint import active_cordon, cordon_helper_brushes, hidden_count
     built = vmfio.load(out)
+    helpers = cordon_helper_brushes(built)
+    if helpers:
+        for sol in [b for b in built.brushes if b.id in set(helpers)]:
+            built.remove_brush(sol)
+        vmfio.save(built, out)
+        print(f"\nht-vbsp: {len(helpers)} brush(es) de cordon salvos no VMF removidos do build/ ({', '.join(map(str, helpers))}).\n", flush=True)
     n_hidden = hidden_count(built)
     if n_hidden:
         print(f"\nht-vbsp: AVISO: {n_hidden} objeto(s) oculto(s) no Hammer não serão compilados (mostre tudo com "

@@ -540,3 +540,13 @@ def test_active_cordon_is_flagged():
     v.cordons.append(Cordon(v, Vec(-10, -10, -10), Vec(10, 10, 10), is_active=True))
     assert lint.active_cordon(v) == ((-10, -10, -10), (10, 10, 10))
     assert any("cordon ativo" in i.msg for i in _checks(lint.run(v, checks={"markers"}), "markers"))
+
+
+def test_cordon_helper_brushes_detected():
+    from srctools.vmf import Cordon
+    v = _room()
+    v.cordons.append(Cordon(v, Vec(-100, -100, -100), Vec(100, 100, 100), is_active=False))
+    helper = v.make_prism(Vec(-16000, -16000, 100), Vec(16000, 16000, 16000), "tools/toolsskybox").solid  # acima do cordon
+    v.add_brush(helper)
+    assert lint.cordon_helper_brushes(v) == [helper.id]
+    assert any("brush(es) de cordon" in i.msg for i in _checks(lint.run(v, checks={"markers"}), "markers"))

@@ -25,6 +25,7 @@ PRIORITY = [
     ("phantom", "erro", "Faces fantasma / textura vazada", "O vbsp desenhou uma superfície que não existe no VMF (não aparece no Hammer, dá pra atravessar) ou com a textura de um brush vizinho. O ht-vbsp converte os acabamentos desse plano em func_detail e recompila sozinho."),
     ("leak", "erro", "Leak: o mapa vaza pro vazio", "Sem selo, o vbsp não gera VIS e a luz sai errada. Siga o caminho (pointfile) e tape o buraco."),
     ("markers", "erro", "Marcadores ht_* incompletos", "Falta o par (início/fim) de um gerador: a peça não é gerada."),
+    ("logic", "erro", "Laço de I/O / template quebrado", "Laço sem atraso trava o servidor; template sem alvo não recria nada."),
     ("outputs", "erro", "Outputs órfãos", "I/O mirando nome que não existe: o evento não acontece no jogo."),
     ("textures", "erro", "Texturas faltando", "Aparecem como xadrez rosa e preto. Instale o conteúdo (ht content) ou troque o material."),
     ("models", "erro", "Modelos faltando", "Aparecem como ERROR vermelho. Instale o conteúdo ou troque o prop."),
@@ -33,6 +34,7 @@ PRIORITY = [
     ("nodraw", "aviso", "Nodraw à vista", "Face invisível virada pra área jogável: vira um buraco pro céu/vazio."),
     ("overlaps", "aviso", "Sobreposição com detail/entidade", "Face escondida não é cortada: desperdício e possível z-fighting."),
     ("duplicates", "aviso", "Brushes duplicados", "Dois brushes idênticos no mesmo lugar: z-fighting. Apague um."),
+    ("logic", "aviso", "Templates", "Template nunca acionado (o que ele recria não volta) ou entidade em dois templates (nasce duplicada)."),
     ("grid", "aviso", "Fora do grid", "Vértices fracionários: risco de microfrestas e t-junctions."),
 ]
 
@@ -491,7 +493,7 @@ def write(rep: L.Report, path: Path, map_name: str, cluster_radius: float = 256.
     tj, n_tj = _tab_tjunctions(rep, cluster_radius)
     leak, n_leak = _tab_leak(rep)
     geo, n_geo = _tab_generic(rep, ["phantom", "nodraw", "overlaps", "duplicates", "grid"])
-    ent, n_ent = _tab_generic(rep, ["markers", "outputs"])
+    ent, n_ent = _tab_generic(rep, ["markers", "outputs", "logic"])
     panels = [("dash", "Painel", None, _dashboard(rep, cluster_radius)), ("tex", "Texturas", n_tex, tex), ("reg", "Texturas por região", n_reg, reg),
               ("mdl", "Modelos", n_mdl, mdl), ("tj", "T-junctions", n_tj, tj), ("leak", "Leak", n_leak, leak),
               ("geo", "Geometria", n_geo, geo), ("ent", "Entidades", n_ent, ent)]

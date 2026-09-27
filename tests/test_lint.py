@@ -465,3 +465,29 @@ def test_fix_model_shader_writes_lightmapped_copy(tmp_path):
     assert txt.startswith('"LightmappedGeneric"') and '"$basetexture" "forest/grass_01"' in txt and "$phong" not in txt
     assert next(iter(v.by_class["info_overlay"]))["material"] == "materials/models/grama"
     assert fix.write_materials(r, tmp_path)[0].read_text() == txt
+
+
+def _logic_map():
+    v = _room()
+    v.create_ent("func_breakable_surf", targetname="vidro")
+    v.create_ent("point_template", targetname="t_ok", Template01="vidro")
+    v.create_ent("point_template", targetname="t_nunca", Template01="vidro")          # nunca acionado + duplicado
+    v.create_ent("point_template", targetname="t_vazio", Template01="nao_existe")     # não recria nada
+    relay = v.create_ent("logic_relay", targetname="r")
+    relay.add_out(__import__("srctools").vmf.Output("OnTrigger", "t_ok", "ForceSpawn", "", 1.0))
+    loop = v.create_ent("logic_relay", targetname="loop")
+    loop.add_out(__import__("srctools").vmf.Output("OnTrigger", "loop", "Trigger", "", 0.0))   # trava
+    timer = v.create_ent("logic_relay", targetname="timer")
+    timer.add_out(__import__("srctools").vmf.Output("OnTrigger", "timer", "Trigger", "", 300.0))  # temporizador: ok
+    return v
+
+
+def test_logic_checks():
+    msgs = [i.msg for i in _checks(lint.run(_logic_map(), checks={"logic"}), "logic")]
+    assert any("t_vazio" in m and "não recria nada" in m for m in msgs)
+    assert any("t_nunca" in m and "nunca é acionado" in m for m in msgs)
+    assert not any("'t_ok' nunca" in m for m in msgs)
+    assert not any("'t_vazio' nunca" in m for m in msgs)  # já é erro por não recriar nada
+    assert any("'vidro' está em 2 templates" in m for m in msgs)
+    loops = [m for m in msgs if "laço" in m]
+    assert len(loops) == 1 and "loop" in loops[0] and "timer" not in loops[0]

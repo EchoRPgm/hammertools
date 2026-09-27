@@ -34,7 +34,7 @@ from hammertools.core import geom
 from hammertools.core import vmf as vmfio
 
 MAX_EXAMPLES = 5
-ALL_CHECKS = ("markers", "outputs", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid", "tjunctions", "phantom")
+ALL_CHECKS = ("markers", "outputs", "logic", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid", "tjunctions", "phantom")
 
 # texturas de ferramenta que NÃO selam o mapa (brush com qualquer face dessas não conta pro selo)
 NONSEAL_TOOLS = {
@@ -269,6 +269,9 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
                 if not t or t.startswith("!") or "*" in t or t.lower() in names or t.lower() in classnames:
                     continue
                 rep.add("erro", "outputs", f"{e['classname']} '{e.get('targetname', '?')}' -> {o.output} mira '{t}' que não existe", _origin(e))
+
+    if "logic" in checks:
+        _logic(v, rep)
 
     all_solids = [(s, None) for s in v.brushes] + [(s, e) for e in v.entities for s in e.solids]
 
@@ -603,6 +606,79 @@ def _tjunctions(v: VMF, rep: Report, top: int = 40, eps: float = 0.1) -> None:
     for idx, extra, s, side, poly, owner, _, _ in scored[:top]:
         rep.add("aviso", "tjunctions", f"{owner} solid {s.id} face {side.id} ({side.mat}): {extra} vértice(s) de vizinhos nas arestas, ~{idx} índices",
                 geom.centroid(poly), group=owner)
+
+
+# entradas que fazem a entidade disparar de novo uma saída dela (laço sem atraso = trava o servidor)
+REFIRE = {
+    "logic_relay": {"trigger": ("ontrigger",), "forcetrigger": ("ontrigger",)},
+    "func_button": {"press": ("onpressed",), "pressin": ("onin",), "pressout": ("onout",)},
+    "logic_timer": {"firetimer": ("ontimer",)},
+    "logic_branch": {"test": ("ontrue", "onfalse"), "setvaluetest": ("ontrue", "onfalse"), "toggletest": ("ontrue", "onfalse")},
+    "logic_compare": {"compare": ("onequalto", "onnotequalto", "onlessthan", "ongreaterthan"),
+                      "setvaluecompare": ("onequalto", "onnotequalto", "onlessthan", "ongreaterthan")},
+    "math_counter": {"add": ("outvalue", "onhitmax", "onhitmin"), "subtract": ("outvalue", "onhitmax", "onhitmin"),
+                     "setvalue": ("outvalue", "onhitmax", "onhitmin")},
+    "logic_case": {"invalue": tuple(f"oncase{i:02d}" for i in range(1, 17)) + ("ondefault",), "pickrandom": tuple(f"oncase{i:02d}" for i in range(1, 17))},
+}
+
+
+def _logic(v: VMF, rep: Report) -> None:
+    """Lógica de entidades: point_template nunca acionado / vazio / apontando pra nome que não existe / a mesma
+    entidade em dois templates; laço de I/O sem atraso (entrada que dispara a própria saída de novo)."""
+    names: dict[str, list] = defaultdict(list)
+    for e in v.entities:
+        if e.get("targetname"):
+            names[e["targetname"].lower()].append(e)
+    # quem aciona cada template: ForceSpawn nele ou env_entity_maker com EntityTemplate apontando pra ele
+    spawned = {o.target.lower() for e in v.entities for o in e.outputs if o.input.lower() in ("forcespawn",)}
+    spawned |= {e["EntityTemplate"].lower() for e in v.by_class["env_entity_maker"] if e.get("EntityTemplate")}
+    owner_of: dict[str, list[str]] = defaultdict(list)
+    for e in v.by_class["point_template"]:
+        tname = (e.get("targetname") or "").lower()
+        tpl = [e.get(f"Template{i:02d}") for i in range(1, 17) if e.get(f"Template{i:02d}")]
+        label = f"point_template '{e.get('targetname', '?')}'"
+        missing = [t for t in tpl if t.lower() not in names]
+        if not tpl or len(missing) == len(tpl):
+            rep.add("erro", "logic", f"{label} não recria nada: " + (f"nomes inexistentes {missing}" if tpl else "sem Template01..16"), _origin(e))
+            continue
+        if missing:
+            rep.add("aviso", "logic", f"{label}: nomes inexistentes {missing}", _origin(e))
+        if tname and tname not in spawned:
+            rep.add("aviso", "logic", f"{label} nunca é acionado (nenhum ForceSpawn nem env_entity_maker): o que ele recria não volta", _origin(e))
+        for t in tpl:
+            if t.lower() in names:
+                owner_of[t.lower()].append(e.get("targetname") or "?")
+    for t, owners in owner_of.items():
+        if len(owners) > 1:
+            rep.add("aviso", "logic", f"'{t}' está em {len(owners)} templates ({', '.join(owners)}): se os dois dispararem, nasce duplicado",
+                    _origin(names[t][0]))
+    # laços sem atraso
+    seen_loops: set[frozenset] = set()
+
+    def dfs(start, start_out, e, out, delay, visited, path):
+        for o in e.outputs:
+            if o.output.lower() != out:
+                continue
+            for t in names.get(o.target.lower(), []):
+                fired = REFIRE.get(t["classname"], {}).get(o.input.lower())
+                if not fired:
+                    continue
+                d = delay + (o.delay or 0.0)
+                if d > 0:
+                    continue  # com atraso é temporizador, não trava
+                for nxt in fired:
+                    step = path + [f"{t['classname']} '{t.get('targetname', '')}'.{o.input}"]
+                    if t is start and nxt == start_out:
+                        key = frozenset(step)
+                        if key not in seen_loops:
+                            seen_loops.add(key)
+                            rep.add("erro", "logic", "laço de I/O sem atraso (trava o servidor): " + " -> ".join(step), _origin(start))
+                    elif (id(t), nxt) not in visited and len(path) < 8:
+                        dfs(start, start_out, t, nxt, d, visited | {(id(t), nxt)}, step)
+
+    for e in v.entities:
+        for out in {o.output.lower() for o in e.outputs}:
+            dfs(e, out, e, out, 0.0, {(id(e), out)}, [f"{e['classname']} '{e.get('targetname', '')}'.{out}"])
 
 
 MODEL_SHADERS = {"vertexlitgeneric", "vertexlitgeneric_dx6", "eyerefract", "eyes", "teeth", "character"}
@@ -1035,7 +1111,7 @@ def apply_tjfix(rep: Report, fix: dict, stale: bool = False) -> None:
 LABELS = {
     "markers": "marcadores incompletos", "outputs": "outputs órfãos", "textures": "texturas inexistentes",
     "models": "modelos", "leak": "leak", "nodraw": "nodraw visível", "duplicates": "brushes duplicados",
-    "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions", "phantom": "faces fantasma/vazadas",
+    "logic": "lógica de entidades", "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions", "phantom": "faces fantasma/vazadas",
 }
 
 

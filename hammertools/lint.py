@@ -273,6 +273,10 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
     if "logic" in checks:
         _logic(v, rep)
 
+    n_hidden = hidden_count(v)
+    if n_hidden:
+        rep.add("aviso" if n_hidden < 50 else "erro", "markers", f"{n_hidden} objeto(s) oculto(s) no Hammer (Hide/Ctrl+H): o vbsp NÃO compila "
+                f"objeto oculto; mostre tudo (View > Show All / Ctrl+Shift+H) antes de compilar o mapa inteiro", None)
     box = active_cordon(v)
     if box:
         lo, hi = box
@@ -1293,6 +1297,17 @@ def _bfs_out(labels, outside, start, origin, vs) -> list[Vec]:
         path.append(Vec(*(np.array(c) + 0.5) * vs + origin))
         c = prev[c]
     return list(reversed(path))
+
+
+def hidden_count(v: VMF) -> int:
+    """Brushes e entidades ocultos no Hammer (bloco `hidden`): o vbsp não compila."""
+    n = sum(1 for s in v.brushes if s.hidden)
+    for e in v.entities:
+        if e.hidden:
+            n += 1
+        else:
+            n += sum(1 for s in e.solids if s.hidden)
+    return n
 
 
 def active_cordon(v: VMF):

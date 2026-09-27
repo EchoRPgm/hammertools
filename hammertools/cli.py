@@ -714,8 +714,13 @@ def vbsp_main(argv=None) -> int:
         if n_prev:
             print(f"ht-vbsp: preview removido do fonte ({n_prev} objeto(s)); recarregue o mapa no Hammer++ antes de salvar de novo")
     n_groups, n_solids, warnings = build(src, out, str(gamedir) if gamedir else None)
-    from hammertools.lint import active_cordon
-    box = active_cordon(vmfio.load(out))
+    from hammertools.lint import active_cordon, hidden_count
+    built = vmfio.load(out)
+    n_hidden = hidden_count(built)
+    if n_hidden:
+        print(f"\nht-vbsp: AVISO: {n_hidden} objeto(s) oculto(s) no Hammer não serão compilados (mostre tudo com "
+              "Ctrl+Shift+H se quiser o mapa inteiro).\n", flush=True)
+    box = active_cordon(built)
     if box:
         print(f"\nht-vbsp: AVISO: cordon ativo, só a caixa {box[0]}..{box[1]} será compilada (o resto fica de fora e as bordas "
               "dão leak). Desligue em Map > Cordon se quiser o mapa inteiro.\n", flush=True)

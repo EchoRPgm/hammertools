@@ -972,6 +972,8 @@ def _ray_entry(planes, o: Vec, d: Vec) -> float | None:
 # gm_fork elas "enxergavam" faces que ninguém vê. Cordas, landmarks e cubemaps também ficam de fora.
 VIEWERS = ("info_player_", "info_node", "info_teleport_destination", "info_ladder_dismount", "prop_", "light", "point_spotlight",
            "npc_", "weapon_", "item_", "env_sprite", "env_soundscape")
+GROUND_VIEWERS = ("info_player_", "info_node", "info_teleport_destination", "info_ladder_dismount", "prop_", "npc_", "weapon_", "item_")
+VIEWER_EYE = 48.0
 BLOCK_TOOLS = {"tools/toolsnodraw", "tools/toolsskybox", "tools/toolsskybox2d", "tools/toolsblack", "tools/toolsblocklight"}
 VIEW_RANGE = 3000.0
 PROP_TOO_CLOSE = 64.0  # prop colado na face: o próprio modelo costuma tampar o nodraw
@@ -1065,6 +1067,20 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float, res: Res
             t += B / 4
         return True
 
+    def under_terrain(p: Vec) -> bool:
+        up = Vec(0, 0, 1)
+        seen: set[int] = set()
+        z = p.z
+        while z <= p.z + 4096:
+            for tri in tris.get(cell(Vec(p.x, p.y, z)), ()):
+                if id(tri) in seen:
+                    continue
+                seen.add(id(tri))
+                if geom.ray_triangle(p, up, tri) is not None:
+                    return True
+            z += B / 2
+        return False
+
     viewers: list[tuple[Vec, str]] = []
     for e in v.entities:
         cls = e["classname"]
@@ -1074,8 +1090,12 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float, res: Res
         io = idx(o)
         if io is not None and labels[io] in sky:
             continue  # dentro da sala da skybox 3D (miniatura vista de longe pelo sky_camera)
+        if cls.startswith(GROUND_VIEWERS):
+            o = o + Vec(0, 0, VIEWER_EYE)  # ponto de vista na altura do olho: prop em terreno tem a origem enterrada
         if any(b.point_inside(o) for b in blockers.get(cell(o), ())):
-            continue  # origem enterrada em sólido não enxerga nada
+            continue  # ponto de vista dentro de sólido não enxerga nada
+        if under_terrain(o):
+            continue  # debaixo da superfície do displacement (terreno por cima): não é onde o jogador fica
         if cls.startswith("prop_") and res is not None and res.model_info is not None and e.get("model"):
             info = res.model_info(e["model"])
             if info and "mins" in info:
@@ -1114,6 +1134,23 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float, res: Res
                 return True
         return False
 
+    outside = labels[(0, 0, 0)]
+
+    def touches_void(sol) -> bool:
+        """O brush encosta no vazio (faz parte do casco do mapa)? Amostra os voxels em volta da caixa dele."""
+        lo, hi = sol.get_bbox()
+        x = lo.x - vs
+        while x <= hi.x + vs:
+            y = lo.y - vs
+            while y <= hi.y + vs:
+                for z in (lo.z - vs, (lo.z + hi.z) / 2, hi.z + vs):
+                    i = idx(Vec(x, y, z))
+                    if i is None or labels[i] == outside:
+                        return True
+                y += vs
+            x += vs
+        return False
+
     reach = 2.4 * vs
     owners = list(v.brushes) + [s for e in v.entities for s in e.solids if e["classname"] == "func_detail"]
     n = 0
@@ -1121,6 +1158,10 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float, res: Res
     for s in owners:
         if not any(side.mat.lower() == NODRAW for side in s.sides):
             continue
+        if any(side.is_disp for side in s.sides):
+            continue  # brush de displacement: o jogo só desenha a face do displacement, as outras nunca aparecem
+        if all(side.mat.lower().startswith("tools/") for side in s.sides) and not touches_void(s):
+            continue  # brush só de nodraw solto no mapa: bloqueio invisível de propósito (colisão sem aparência)
         # brush translúcido/água (vidro com um lado nodraw): não é sólido pro vbsp, a face nodraw só deixa
         # ver através dele o que está atrás; o buraco pro vazio (hall of mirrors) só existe em brush opaco
         if seals is not None and any(not x.mat.lower().startswith("tools/") and not seals(x.mat) for x in s.sides):
@@ -1211,6 +1252,28 @@ def _bfs_out(labels, outside, start, origin, vs) -> list[Vec]:
         path.append(Vec(*(np.array(c) + 0.5) * vs + origin))
         c = prev[c]
     return list(reversed(path))
+
+
+def apply_ignore(rep: Report, cfg: dict) -> int:
+    """Tira do relatório as ocorrências dentro das regiões ignoradas (decisão de quem conhece o mapa: área que o
+    jogador não alcança, por exemplo). Cada região: box [[x,y,z],[x,y,z]], checks (vazio = todas), motivo."""
+    regions = []
+    for r in cfg.get("regions", []):
+        (a, b) = r["box"]
+        lo = Vec(min(a[0], b[0]), min(a[1], b[1]), min(a[2], b[2]))
+        hi = Vec(max(a[0], b[0]), max(a[1], b[1]), max(a[2], b[2]))
+        regions.append((lo, hi, set(r.get("checks") or []), r.get("motivo", "")))
+
+    def ignored(i: Issue) -> bool:
+        if i.pos is None:
+            return False
+        return any((not chk or i.check in chk) and all(lo[k] <= i.pos[k] <= hi[k] for k in range(3)) for lo, hi, chk, _ in regions)
+    before = len(rep.issues)
+    rep.issues = [i for i in rep.issues if not ignored(i)]
+    n = before - len(rep.issues)
+    if n:
+        rep.stats["ignorados (lintignore)"] = n
+    return n
 
 
 def bsp_counts(path) -> dict:

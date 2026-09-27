@@ -130,6 +130,11 @@ def cmd_lint(args) -> int:
         if guess.exists() and guess.stat().st_mtime >= Path(args.vmf).stat().st_mtime:
             compiled = guess
     rep = lint.run(v, res, checks, grid=args.grid, detail_grid=args.detail_grid, voxel=args.voxel, compiled=compiled)
+    ign = Path(args.ignore) if args.ignore else Path(args.vmf).with_suffix(".lintignore.json")
+    if ign.exists():
+        import json
+        n = lint.apply_ignore(rep, json.loads(ign.read_text()))
+        print(f"{n} ocorrência(s) ignorada(s) por {ign.name}")
     if "tjunctions" in rep.ran:
         fixp = Path(args.tjfix) if args.tjfix else Path(args.vmf).with_suffix(".tjfix.json")
         if fixp.exists():
@@ -319,6 +324,7 @@ def main(argv=None) -> int:
                    help="gera o relatório geral (painel de prioridades + abas por checagem) e abre no navegador; padrão <mapa>.lint.html")
     p.add_argument("--no-open", action="store_true", help="com --html: só grava, não abre o navegador")
     p.add_argument("--cluster-radius", type=float, default=256.0, help="com --html: distância máxima (u) pra juntar ocorrências na aba 'Por região'")
+    p.add_argument("--ignore", help="regiões a ignorar (padrão <mapa>.lintignore.json): {\"regions\": [{\"box\": [[x,y,z],[x,y,z]], \"checks\": [\"nodraw\"], \"motivo\": \"...\"}]}")
     p.add_argument("--compiled", help="BSP compilado deste VMF, pra checagem de faces fantasma (padrão: <mapa>.bsp se for mais novo que o VMF)")
     p.add_argument("--tjfix", help="registro da compilação (padrão <mapa>.tjfix.json, gravado pelo ht-vbsp): marca as t-junctions resolvidas")
     p.add_argument("--area-size", type=float, default=1024.0, help="com --html: tamanho (u) do bloco de área do filtro/agrupamento por área")

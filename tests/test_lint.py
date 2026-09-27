@@ -510,3 +510,13 @@ def test_perf_prop_fade_and_embedded_window():
     assert fix.fix_fades(v, res) == 1
     caixa = next(e for e in v.entities if e.get("model") == "models/caixa.mdl")
     assert (caixa["fademindist"], caixa["fademaxdist"]) == ("1200", "1500")
+
+
+def test_lintignore_regions():
+    v = _room()
+    floor = min(v.brushes, key=lambda s: s.get_bbox()[1].z)
+    next(side for side in floor.sides if geom.outward(side)[0].z > 0.5).mat = "tools/toolsnodraw"
+    rep = lint.run(v, checks={"nodraw"})
+    assert _checks(rep, "nodraw")
+    n = lint.apply_ignore(rep, {"regions": [{"box": [[-600, -600, -100], [600, 600, 100]], "checks": ["nodraw"], "motivo": "teste"}]})
+    assert n >= 1 and not _checks(rep, "nodraw") and rep.stats["ignorados (lintignore)"] == n

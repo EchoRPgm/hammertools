@@ -335,3 +335,42 @@ def test_nodraw_under_displacement_terrain_not_seen():
     v.create_ent("prop_static", origin="0 0 700", model="models/arvore.mdl")  # em cima do terreno (516)
     hits = [i for i in _checks(lint.run(v, checks={"nodraw"}, voxel=8), "nodraw") if "solid %d," % box.id in i.msg]
     assert not hits
+
+
+def test_nodraw_on_translucent_brush_is_ok():
+    """Regressão (rp_surdonoso 495 -8295 -535): vidro de janela com o lado de dentro nodraw."""
+    v = _room()
+    pane = v.make_prism(Vec(-64, 100, 32), Vec(64, 109, 96), "glass/vidro").solid
+    next(s for s in pane.sides if geom.outward(s)[0].y < -0.5).mat = "tools/toolsnodraw"  # lado virado pro spawn
+    v.add_brush(pane)
+    assert _checks(lint.run(v, FakeRes(materials={"glass/vidro"}), checks={"nodraw"}), "nodraw")  # vidro opaco: acusa
+    assert not _checks(lint.run(v, FakeRes(materials={"glass/vidro"}, nonseal={"glass/vidro"}), checks={"nodraw"}), "nodraw")
+
+
+def test_nodraw_under_prop_with_small_gap():
+    """Regressão (rp_surdonoso -160 -8811 24): piso nodraw do elevador, modelo com o próprio piso 5,5u acima."""
+    v = _room()
+    floor = v.make_prism(Vec(-64, -64, 10), Vec(64, 64, 24), "tools/toolsnodraw").solid
+    v.add_brush(floor)
+    v.create_ent("prop_static", origin="0 0 83", model="models/elevador.mdl")
+    res = FakeRes()
+    res.model_info = lambda m: {"static": True, "mins": Vec(-60, -62, -53.5), "maxs": Vec(66, 62, 52)}
+    hits = [i for i in _checks(lint.run(v, res, checks={"nodraw"}), "nodraw") if "solid %d," % floor.id in i.msg]
+    assert not any("(topo)" in i.msg for i in hits)
+
+
+def test_nodraw_scenery_prop_is_not_a_viewer():
+    """Árvore gigante (caixa > 256u) não conta como testemunha: a base do tronco não é onde o jogador fica."""
+    v = _room()
+    pillar = v.make_prism(Vec(200, -32, 0), Vec(264, 32, 128), "dev/dev_measuregeneric01b").solid
+    next(s for s in pillar.sides if geom.outward(s)[0].x < -0.5).mat = "tools/toolsnodraw"
+    v.add_brush(pillar)
+    for e in list(v.entities):
+        if e["classname"] != "worldspawn":
+            v.remove_ent(e)
+    v.create_ent("prop_static", origin="-100 0 8", model="models/arvore.mdl")
+    res = FakeRes()
+    res.model_info = lambda m: {"static": True, "mins": Vec(-200, -200, 0), "maxs": Vec(200, 200, 700)}
+    assert not _checks(lint.run(v, res, checks={"nodraw"}), "nodraw")
+    res.model_info = lambda m: {"static": True, "mins": Vec(-16, -16, 0), "maxs": Vec(16, 16, 40)}
+    assert _checks(lint.run(v, res, checks={"nodraw"}), "nodraw")

@@ -704,6 +704,7 @@ NOT_VIEWERS = ("ht_", "logic_", "point_template", "info_overlay", "infodecal", "
 BLOCK_TOOLS = {"tools/toolsnodraw", "tools/toolsskybox", "tools/toolsskybox2d", "tools/toolsblack", "tools/toolsblocklight"}
 VIEW_RANGE = 3000.0
 PROP_TOO_CLOSE = 64.0  # prop colado na face: o próprio modelo costuma tampar o nodraw
+SCENERY_SIZE = 256.0   # prop maior que isso (árvore gigante, torre) é cenário: a origem não é onde o jogador fica
 
 
 def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float, res: Resources | None = None) -> int:
@@ -711,12 +712,14 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float, res: Res
     visível (mundo, detail ou entidade) e o espaço LIVRE à frente (até o primeiro brush que o raio acerta)
     pertence a área jogável. A sonda nunca passa do primeiro brush: antes ela atravessava o piso de baixo
     e achava a sala embaixo dele (falso positivo em laje sobre vão fechado).
-    Confirmação: alguma entidade pontual (spawn, luz, prop, npc, porta...) fora de sólidos e a até 3000u
+    Confirmação: alguma entidade pontual (spawn, luz, prop de até 256u, npc, porta...) fora de sólidos e a até 3000u
     tem linha de visada até a face. Sem isso, vão fechado grande (debaixo do terreno, dentro da caixa de
     skybox) contava como jogável só por estar do lado de dentro do selo.
     Displacement bloqueia a visada pela superfície (triângulos), não pelo brush-base: o terreno pode ficar
     longe do brush e a árvore em cima do chão "via" a caixa de nodraw debaixo do mapa.
-    Props tampam: se o ponto logo à frente da face cai dentro da caixa (girada) de um prop, a face está
+    Brush translúcido (vidro, água) com face nodraw não acusa: o vbsp não o trata como sólido e a face
+    nodraw só deixa ver através dele (vidro de janela com o lado de dentro nodraw).
+    Props tampam: se um ponto a 2, 8 ou 16u à frente da face cai dentro da caixa (girada) de um prop, a face está
     escondida pelo modelo (ex.: batente nodraw atrás do modelo de janela que preenche o vão)."""
     coverers = [s for s in v.brushes if _visible(s)] + [s for e in v.entities for s in e.solids if _visible(s)]
     B = 256.0
@@ -789,6 +792,12 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float, res: Res
             continue
         if any(b.point_inside(o) for b in blockers.get(cell(o), ())):
             continue  # origem enterrada em sólido não enxerga nada
+        if cls.startswith("prop_") and res is not None and res.model_info is not None and e.get("model"):
+            info = res.model_info(e["model"])
+            if info and "mins" in info:
+                size = info["maxs"] - info["mins"]
+                if max(size.x, size.y, size.z) * float(e.get("modelscale", 1) or 1) > SCENERY_SIZE:
+                    continue
         viewers.append((o, cls))
 
     props: dict[tuple, list] = defaultdict(list)
@@ -824,8 +833,13 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float, res: Res
     reach = 2.4 * vs
     owners = list(v.brushes) + [s for e in v.entities for s in e.solids if e["classname"] == "func_detail"]
     n = 0
+    seals = res.material_seals if res is not None else None
     for s in owners:
         if not any(side.mat.lower() == NODRAW for side in s.sides):
+            continue
+        # brush translúcido/água (vidro com um lado nodraw): não é sólido pro vbsp, a face nodraw só deixa
+        # ver através dele o que está atrás; o buraco pro vazio (hall of mirrors) só existe em brush opaco
+        if seals is not None and any(not x.mat.lower().startswith("tools/") and not seals(x.mat) for x in s.sides):
             continue
         for side, poly in geom.face_polys(s):
             if side.mat.lower() != NODRAW or len(poly) < 3:
@@ -836,8 +850,8 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float, res: Res
             key = (int(q.x // B), int(q.y // B), int(q.z // B))
             if any(o is not s and o.point_inside(q) for o in buckets.get(key, ())):
                 continue
-            if under_prop(c + nrm * 2.0):
-                continue
+            if any(under_prop(c + nrm * d) for d in (2.0, 8.0, 16.0)):
+                continue  # modelo encostado ou a até 16u (piso do modelo do elevador 5u acima do brush)
             # primeiro brush que o raio acerta dentro do alcance da sonda
             cand: dict[int, Solid] = {}
             t = 0.0

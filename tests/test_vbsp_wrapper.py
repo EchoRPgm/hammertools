@@ -56,3 +56,64 @@ def test_wrapper_retries_with_notjunc(room, tmp_path, monkeypatch, capsys):
     rc = vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))])
     out = capsys.readouterr().out
     assert rc == 0 and "recompilando com -notjunc" in out and src.with_suffix(".bsp").read_text() == "ok"
+
+
+def _room_with_detail_tjunctions(room):
+    """Laje de detail com blocos de detail cujos cantos caem no meio das arestas dela."""
+    from srctools import Vec
+    from srctools.vmf import Entity
+    slab = room.make_prism(Vec(-256, -64, 0), Vec(256, 64, 16), "dev/dev_measuregeneric01b").solid
+    room.add_ent(Entity(room, {"classname": "func_detail"}, solids=[slab]))
+    for x in (-160, -32, 96):
+        blk = room.make_prism(Vec(x, 64, 0), Vec(x + 48, 96, 40), "dev/dev_measuregeneric01b").solid
+        room.add_ent(Entity(room, {"classname": "func_detail"}, solids=[blk]))
+    return room
+
+
+FAKE_TJ = (
+    "import sys, pathlib\n"
+    "p = pathlib.Path(sys.argv[-1]); txt = p.with_suffix('.vmf').read_text()\n"
+    "if '-notjunc' in sys.argv: p.with_suffix('.bsp').write_text('notjunc'); sys.exit(0)\n"
+    "if 'func_brush' not in txt: print('Too many t-junctions to fix up! (1 prims, max 32768 :: 65556 indices, max 65536)'); sys.exit(1)\n"
+    "{on_brush}\n"
+    "p.with_suffix('.bsp').write_text('convertido')\n")
+
+
+def test_wrapper_fixes_tjunctions_by_converting_detail(room, tmp_path, monkeypatch, capsys):
+    src = tmp_path / "mapsrc" / "m.vmf"; src.parent.mkdir()
+    vmfio.save(_room_with_detail_tjunctions(room), src)
+    fake = tmp_path / "vbsp.py"
+    fake.write_text(FAKE_TJ.format(on_brush=""))
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    rc = vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))])
+    out = capsys.readouterr().out
+    assert rc == 0 and src.with_suffix(".bsp").read_text() == "convertido"
+    assert "t-junctions consertadas" in out
+    built = vmfio.load(tmp_path / "mapsrc" / "build" / "m.vmf")
+    assert built.by_class["func_brush"] and all(e["vrad_brush_cast_shadows"] == "1" for e in built.by_class["func_brush"])
+    assert not vmfio.load(src).by_class["func_brush"]  # fonte intocado
+
+
+def test_wrapper_falls_back_to_notjunc_when_vertices_overflow(room, tmp_path, monkeypatch, capsys):
+    src = tmp_path / "mapsrc" / "m.vmf"; src.parent.mkdir()
+    vmfio.save(_room_with_detail_tjunctions(room), src)
+    fake = tmp_path / "vbsp.py"
+    fake.write_text(FAKE_TJ.format(on_brush="print('Too many unique verts, max = 65536 (map has too much brush geometry)'); sys.exit(1)"))
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    rc = vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))])
+    out = capsys.readouterr().out
+    assert rc == 0 and src.with_suffix(".bsp").read_text() == "notjunc" and "recompilando com -notjunc" in out
+    assert not vmfio.load(tmp_path / "mapsrc" / "build" / "m.vmf").by_class["func_brush"]  # build volta ao original
+
+
+def test_rank_and_convert_detail():
+    from srctools import VMF
+    from hammertools import optimize
+    v = _room_with_detail_tjunctions(VMF())
+    slab = next(e for e in v.by_class["func_detail"] if e.solids[0].get_bbox()[1].x - e.solids[0].get_bbox()[0].x > 400)
+    ranked = optimize.rank_detail_tjunctions(v)
+    assert ranked[0] == slab.id  # a laje recebe os vértices dos 3 blocos: é a que mais custa
+    n = optimize.detail_to_brush(v, ranked)
+    # blocos com centro em x < 0 caem no bloco de área vizinho: 2 func_brush, todos os solids preservados
+    assert n == len(v.by_class["func_brush"]) == 2 and sum(len(e.solids) for e in v.by_class["func_brush"]) == len(ranked)
+    assert not v.by_class["func_detail"]

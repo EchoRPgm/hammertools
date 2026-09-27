@@ -344,6 +344,45 @@ def _run_streaming(cmd: list[str]) -> tuple[int, str]:
     return p.wait(), "".join(lines)
 
 
+TJ_STEPS = (100, 200, 400, 800, 1600)
+
+
+def _fix_tjunctions(real: Path, args: list[str], out: Path) -> int:
+    """Estourou o teto de t-junctions: converte os func_detail que mais custam em func_brush (a BSP do modelo corta
+    as faces e a t-junction some), dobrando a quantidade até o vbsp passar. Se estourar outro teto (vértices,
+    modelos) ou acabar o detail, recompila com -notjunc. Mexe só no VMF gerado em build/, nunca no fonte."""
+    from hammertools import optimize
+    base = out.with_name(out.stem + "_base.vmf")
+    shutil.copy2(out, base)
+    ranked = optimize.rank_detail_tjunctions(vmfio.load(base))
+    print(f"\nht-vbsp: estourou o teto de t-junctions do vbsp (65536 índices). {len(ranked)} func_detail causam t-junctions;\n"
+          "ht-vbsp: convertendo os piores em func_brush (a BSP do modelo corta as faces) e recompilando.\n", flush=True)
+    tried = 0
+    for k in TJ_STEPS + (len(ranked),):
+        k = min(k, len(ranked))
+        if k <= tried:
+            continue
+        tried = k
+        v = vmfio.load(base)
+        n = optimize.detail_to_brush(v, ranked[:k])
+        vmfio.save(v, out)
+        print(f"ht-vbsp: tentativa: {k} func_detail -> {n} func_brush", flush=True)
+        rc, text = _run_streaming([str(real), *args[:-1], str(out.with_suffix(""))])
+        low = text.lower()
+        if "too many t-junctions" in low:
+            continue
+        if rc == 0 and out.with_suffix(".bsp").exists() and "too many" not in low and "max_map" not in low:
+            print(f"\nht-vbsp: compilou com as t-junctions consertadas: {k} func_detail viraram {n} func_brush "
+                  "(só no build/, o fonte continua com func_detail).\n", flush=True)
+            return rc
+        break  # outro teto (vértices, modelos): mais conversão só piora
+    shutil.copy2(base, out)
+    print("\nht-vbsp: não coube nos tetos do vbsp convertendo detail; recompilando com -notjunc.\n"
+          "ht-vbsp: efeito colateral possível: brilhos finos nas emendas (veja a aba T-junctions do `ht lint --html`).\n", flush=True)
+    rc, _ = _run_streaming([str(real), *args[:-1], "-notjunc", str(out.with_suffix(""))])
+    return rc
+
+
 def vbsp_main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
@@ -381,10 +420,7 @@ def vbsp_main(argv=None) -> int:
     cmd = [str(real), *args[:-1], str(out.with_suffix(""))]
     rc, text = _run_streaming(cmd)
     if "too many t-junctions" in text.lower() and "-notjunc" not in (a.lower() for a in args):
-        print("\nht-vbsp: estourou o limite de índices de t-junction do vbsp (65536); recompilando com -notjunc.\n"
-              "ht-vbsp: efeito colateral possível: brilhos finos nas emendas; pra evitar, simplifique as faces do\n"
-              "ht-vbsp: ranking `ht lint mapa.vmf --only tjunctions` e compile de novo.\n", flush=True)
-        rc, _ = _run_streaming([str(real), *args[:-1], "-notjunc", str(out.with_suffix(""))])
+        rc = _fix_tjunctions(real, args, out)
     for ext in (".bsp", ".prt", ".lin", ".log"):
         f = out.with_suffix(ext)
         if f.exists():

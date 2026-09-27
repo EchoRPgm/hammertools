@@ -22,7 +22,7 @@ from __future__ import annotations
 import os
 import re
 import struct
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
@@ -540,6 +540,7 @@ def _tjunctions(v: VMF, rep: Report, top: int = 40, eps: float = 0.1) -> None:
         corners = {(round(p.x, 1), round(p.y, 1), round(p.z, 1)) for p in poly}
         extra = 0
         points = []
+        srcs: Counter = Counter()   # solid id -> vértices dele no meio das arestas desta face
         for k in range(len(poly)):
             a, b = poly[k], poly[(k + 1) % len(poly)]
             d = b - a
@@ -559,21 +560,23 @@ def _tjunctions(v: VMF, rep: Report, top: int = 40, eps: float = 0.1) -> None:
                             t = w.dot(u)
                             if eps < t < L - eps and (w - u * t).mag() < eps:
                                 extra += 1
+                                srcs[sid] += 1
                                 if len(points) < MAX_EXAMPLES:
                                     points.append((Vec(*q), f"vértice do {own} solid {sid}"))
         if extra:
             idx = (len(poly) + extra - 2) * 3
             total += idx
-            scored.append((idx, extra, s, side, poly, owner, points))
+            scored.append((idx, extra, s, side, poly, owner, points, srcs))
     scored.sort(key=lambda t: -t[0])
     # a soma é teto (o vbsp faz CSG e só triangula o que não fecha em leque), então vale como ranking, não
     # como veredito. O "N indices" do erro do vbsp é onde ele parou ao estourar, não o total do mapa.
     rep.stats["t-junctions: índices estimados (teto)"] = f"{total} (limite do vbsp {MAX_PRIMINDICES})"
     rep.stats["faces com t-junction"] = len(scored)
     rep.data["tjunctions"] = [{"idx": idx, "extra": extra, "solid": s.id, "face": side.id, "mat": side.mat, "owner": owner,
-                               "center": geom.centroid(poly), "points": pts} for idx, extra, s, side, poly, owner, pts in scored]
+                               "center": geom.centroid(poly), "points": pts, "sources": dict(srcs)}
+                              for idx, extra, s, side, poly, owner, pts, srcs in scored]
     rep.data["tjunctions_total"] = total
-    for idx, extra, s, side, poly, owner, _ in scored[:top]:
+    for idx, extra, s, side, poly, owner, _, _ in scored[:top]:
         rep.add("aviso", "tjunctions", f"{owner} solid {s.id} face {side.id} ({side.mat}): {extra} vértice(s) de vizinhos nas arestas, ~{idx} índices",
                 geom.centroid(poly), group=owner)
 

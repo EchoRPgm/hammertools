@@ -152,3 +152,48 @@ def optimize(v: VMF, classify: Callable[[str], str] = default_classify) -> Resul
     for container in {id(b.container): b.container for b in all_boxes}.values():
         container[:] = [s for s in container if id(s) not in dead]
     return res
+
+
+# --------------------------------------------------------------------------- t-junctions: detail -> func_brush
+# O vbsp não corta faces de func_detail pela árvore BSP: vértice de vizinho no meio da aresta vira t-junction
+# triangulada (índices primitivos, teto de 65536). Mundo e entidades de brush (func_brush) são cortados pela BSP
+# do próprio modelo, então a t-junction some (custa vértices, teto de 65536 também). Converter os func_detail
+# que mais causam t-junctions em func_brush (agrupados por bloco, pra não estourar o teto de modelos) troca um
+# limite pelo outro na medida certa. Validado no rp_surdonoso: 400 func_detail -> 89 func_brush compila com o
+# FixTjuncs ligado; 200 não basta; todos (263 func_brush) estoura "Too many unique verts".
+def rank_detail_tjunctions(v: VMF) -> list[int]:
+    """Ids das entidades func_detail, da que mais custa em t-junctions pra que menos (só as com custo):
+    índices das faces dela + 3 índices por vértice dela no meio de aresta de outra face."""
+    from collections import defaultdict
+    from hammertools import lint
+    rep = lint.run(v, lint.Resources(), {"tjunctions"})
+    ent_of = {s.id: e.id for e in v.by_class["func_detail"] for s in e.solids}
+    cost: dict[int, float] = defaultdict(float)
+    for f in rep.data.get("tjunctions", []):
+        if f["solid"] in ent_of:
+            cost[ent_of[f["solid"]]] += f["idx"]
+        for sid, n in f.get("sources", {}).items():
+            if sid in ent_of:
+                cost[ent_of[sid]] += 3 * n
+    return sorted(cost, key=lambda k: -cost[k])
+
+
+def detail_to_brush(v: VMF, ent_ids, area: float = 1024.0) -> int:
+    """Troca os func_detail escolhidos por func_brush sólidos (um por bloco de `area`u, pelo centro de cada
+    brush) que projetam sombra no vrad. Devolve quantos func_brush criou."""
+    from collections import defaultdict
+    from srctools.vmf import Entity
+    chosen = set(ent_ids)
+    groups: dict[tuple, list] = defaultdict(list)
+    for e in list(v.by_class["func_detail"]):
+        if e.id not in chosen:
+            continue
+        for s in e.solids:
+            lo, hi = s.get_bbox()
+            c = (lo + hi) / 2
+            groups[(int(c.x // area), int(c.y // area), int(c.z // area))].append(s)
+        v.remove_ent(e)
+    for sols in groups.values():
+        v.add_ent(Entity(v, {"classname": "func_brush", "Solidity": "2", "vrad_brush_cast_shadows": "1",
+                             "disableshadows": "0", "rendermode": "0"}, solids=sols))
+    return len(groups)

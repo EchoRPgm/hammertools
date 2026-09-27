@@ -167,7 +167,7 @@ def _tab_tjunctions(rep: L.Report, radius: float) -> tuple[str, int]:
             f'<div class="stat"><b>65536</b><span>limite do vbsp</span></div></div>'
             '<p class="sub">Como resolver à mão: nas regiões abaixo, junte blocos vizinhos que formam uma peça só '
             '(piso, parede, rodapé fatiados), alinhe emendas pra coincidirem com os vértices vizinhos, ou transforme acabamentos em prop. '
-            '<code>ht optimize</code> junta sozinho blocos retangulares fatiados com a mesma textura (ajuda quando há piso/parede em fatias; vizinhos de tamanhos diferentes só à mão). Pra compilar já: o ht-vbsp usa <code>-notjunc</code> sozinho se estourar.</p>')
+            '<code>ht optimize</code> junta sozinho blocos retangulares fatiados com a mesma textura (ajuda quando há piso/parede em fatias; vizinhos de tamanhos diferentes só à mão). Na compilação o ht-vbsp conserta sozinho: converte os func_detail que mais custam em func_brush (a BSP do modelo corta as faces e a t-junction some), só no build/; <code>-notjunc</code> só se não couber nos tetos do vbsp.</p>')
     return (head + "<h3>Onde mais tem t-junction (blocos de 512u)</h3>" + _table(["#", "Centro", "Vértices", "Materiais"], crow, "Nenhuma.")
             + f"<h3>Faces que mais gastam índices (até 300)</h3>" + _table(["#", "Face", "Vértices", "Índices", "Onde (centro + pontos exatos)"], rows, "Nenhuma.")), len(faces)
 

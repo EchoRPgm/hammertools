@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import re
+import struct
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -138,7 +139,14 @@ class Resources:
                     model_cache[key] = None
                 elif len(head) >= 156 and head[:4] == b"IDST":
                     flags = int.from_bytes(head[152:156], "little")  # studiohdr_t.flags
-                    model_cache[key] = {"static": bool(flags & 0x10)}  # STUDIOHDR_FLAGS_STATIC_PROP
+                    info = {"static": bool(flags & 0x10)}  # STUDIOHDR_FLAGS_STATIC_PROP
+                    # studiohdr_t: hull_min/max em 104/116, view_bbmin/max em 128/140 (view zerado = usa o hull)
+                    hull = struct.unpack_from("<6f", head, 104)
+                    view = struct.unpack_from("<6f", head, 128)
+                    box = view if any(view) else hull
+                    if any(box):
+                        info["mins"], info["maxs"] = Vec(*box[:3]), Vec(*box[3:])
+                    model_cache[key] = info
                 else:
                     model_cache[key] = {"static": True, "unknown": True}
             return model_cache[key]
@@ -665,7 +673,7 @@ def _voxel_checks(v: VMF, res: Resources, rep: Report, checks: set, voxel: float
         rep.stats["entidades no vazio"] = len(leaked)
 
     if "nodraw" in checks:
-        n = _nodraw(v, rep, labels, playable, idx, vs)
+        n = _nodraw(v, rep, labels, playable, idx, vs, res)
         rep.stats["nodraw visíveis"] = n
 
 
@@ -698,14 +706,18 @@ VIEW_RANGE = 3000.0
 PROP_TOO_CLOSE = 64.0  # prop colado na face: o próprio modelo costuma tampar o nodraw
 
 
-def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float) -> int:
+def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float, res: Resources | None = None) -> int:
     """Face nodraw é 'visível' se o ponto 1u à frente do centro dela não está dentro de outro brush
     visível (mundo, detail ou entidade) e o espaço LIVRE à frente (até o primeiro brush que o raio acerta)
     pertence a área jogável. A sonda nunca passa do primeiro brush: antes ela atravessava o piso de baixo
     e achava a sala embaixo dele (falso positivo em laje sobre vão fechado).
     Confirmação: alguma entidade pontual (spawn, luz, prop, npc, porta...) fora de sólidos e a até 3000u
     tem linha de visada até a face. Sem isso, vão fechado grande (debaixo do terreno, dentro da caixa de
-    skybox) contava como jogável só por estar do lado de dentro do selo."""
+    skybox) contava como jogável só por estar do lado de dentro do selo.
+    Displacement bloqueia a visada pela superfície (triângulos), não pelo brush-base: o terreno pode ficar
+    longe do brush e a árvore em cima do chão "via" a caixa de nodraw debaixo do mapa.
+    Props tampam: se o ponto logo à frente da face cai dentro da caixa (girada) de um prop, a face está
+    escondida pelo modelo (ex.: batente nodraw atrás do modelo de janela que preenche o vão)."""
     coverers = [s for s in v.brushes if _visible(s)] + [s for e in v.entities for s in e.solids if _visible(s)]
     B = 256.0
     buckets: dict[tuple, list] = defaultdict(list)
@@ -723,7 +735,18 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float) -> int:
         return plane_cache[id(o)]
 
     blockers: dict[tuple, list] = defaultdict(list)
-    for o in coverers + [b for b in v.brushes if not _visible(b) and all(x.mat.lower() in BLOCK_TOOLS for x in b.sides)]:
+    tris: dict[tuple, list] = defaultdict(list)  # terreno: a superfície do displacement, não o brush-base
+    for b in v.brushes:
+        if any(x.is_disp for x in b.sides):
+            for t in geom.disp_triangles(b):
+                lo = Vec(min(p.x for p in t), min(p.y for p in t), min(p.z for p in t))
+                hi = Vec(max(p.x for p in t), max(p.y for p in t), max(p.z for p in t))
+                for bx in range(int(lo.x // B), int(hi.x // B) + 1):
+                    for by in range(int(lo.y // B), int(hi.y // B) + 1):
+                        for bz in range(int(lo.z // B), int(hi.z // B) + 1):
+                            tris[(bx, by, bz)].append(t)
+    for o in [c for c in coverers if not any(x.is_disp for x in c.sides)] + [
+            b for b in v.brushes if not _visible(b) and all(x.mat.lower() in BLOCK_TOOLS for x in b.sides)]:
         lo, hi = o.get_bbox()
         for bx in range(int(lo.x // B), int(hi.x // B) + 1):
             for by in range(int(lo.y // B), int(hi.y // B) + 1):
@@ -740,11 +763,19 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float) -> int:
         seen: set[int] = set()
         t = 0.0
         while t <= length + B:
-            for o in blockers.get(cell(a + d * min(t, length)), ()):
+            k = cell(a + d * min(t, length))
+            for o in blockers.get(k, ()):
                 if o is skip or id(o) in seen:
                     continue
                 seen.add(id(o))
                 hit = _ray_entry(planes(o), a, d)
+                if hit is not None and hit < length - 0.5:
+                    return False
+            for tri in tris.get(k, ()):
+                if id(tri) in seen:
+                    continue
+                seen.add(id(tri))
+                hit = geom.ray_triangle(a, d, tri)
                 if hit is not None and hit < length - 0.5:
                     return False
             t += B / 4
@@ -760,6 +791,36 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float) -> int:
             continue  # origem enterrada em sólido não enxerga nada
         viewers.append((o, cls))
 
+    props: dict[tuple, list] = defaultdict(list)
+    if res is not None and res.model_info is not None:
+        from srctools import Angle, Matrix
+        for e in v.entities:
+            if not e["classname"].startswith("prop_") or not e.get("model", "").lower().endswith(".mdl"):
+                continue
+            info = res.model_info(e["model"])
+            o = _origin(e)
+            if not info or "mins" not in info or o is None:
+                continue
+            try:
+                inv = Matrix.from_angle(Angle.from_str(e.get("angles", "0 0 0"))).inverse()
+                scale = float(e.get("modelscale", 1) or 1)
+            except ValueError:
+                continue
+            lo, hi = info["mins"] * scale, info["maxs"] * scale
+            r = max(lo.mag(), hi.mag())
+            item = (o, inv, lo - Vec(1, 1, 1), hi + Vec(1, 1, 1))
+            for bx in range(int((o.x - r) // B), int((o.x + r) // B) + 1):
+                for by in range(int((o.y - r) // B), int((o.y + r) // B) + 1):
+                    for bz in range(int((o.z - r) // B), int((o.z + r) // B) + 1):
+                        props[(bx, by, bz)].append(item)
+
+    def under_prop(p: Vec) -> bool:
+        for o, inv, lo, hi in props.get((int(p.x // B), int(p.y // B), int(p.z // B)), ()):
+            q = (p - o) @ inv
+            if lo.x <= q.x <= hi.x and lo.y <= q.y <= hi.y and lo.z <= q.z <= hi.z:
+                return True
+        return False
+
     reach = 2.4 * vs
     owners = list(v.brushes) + [s for e in v.entities for s in e.solids if e["classname"] == "func_detail"]
     n = 0
@@ -774,6 +835,8 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float) -> int:
             q = c + nrm * 1.0
             key = (int(q.x // B), int(q.y // B), int(q.z // B))
             if any(o is not s and o.point_inside(q) for o in buckets.get(key, ())):
+                continue
+            if under_prop(c + nrm * 2.0):
                 continue
             # primeiro brush que o raio acerta dentro do alcance da sonda
             cand: dict[int, Solid] = {}

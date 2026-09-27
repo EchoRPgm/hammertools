@@ -9,7 +9,7 @@ Geradores de geometria e entidades para o Hammer++ (Garry's Mod). Marcadores `ht
 - Sprints 1–5 prontos e validados no jogo: escada (com playerclip), cerca (brush/prop com bbox do .mdl), corrimão, escada de mão (func_useableladder), arco, tubo/duto com cotovelos curvos, escada em curva, porta, luzes em fila, elevador, spawn room, cabo, trilho curvo com trem automático e estações, terreno (displacement), zonas (`ht_zone`).
 - `ht_cubemaps` desativado (reflexos ruins no jogo); gerador existe, fora da fixture.
 - Sprint 6: **lint completo pronto** (`ht lint`: texturas/modelos com VPK+addons+BSP, leak por voxel com pointfile, nodraw, duplicados, sobreposições, grid, I/O, t-junctions) com relatório HTML geral (`--html`, aba Painel primeiro); `ht content` (monta o addon de conteúdo do mapa); `ht optimize` (junta blocos fatiados); ht-vbsp recompila com `-notjunc` se estourar t-junctions. Pendente: abrir rp_surdonoso_w no Hammer++ da VM (Windows-MCP desconectado; precisa `/mcp`). Próximo: `ht detail` (mapa pronto), `ht lightmap`, `ht rename`; sprint 7 = `ht diff`, `ht retexture`, `ht pack`.
-- 91 testes (`.venv/bin/python -m pytest -q`), leak test (`tools/leaktest.sh`, 5 mapas) e lint da fixture limpos.
+- 94 testes (`.venv/bin/python -m pytest -q`), leak test (`tools/leaktest.sh`, 5 mapas) e lint da fixture limpos.
 
 ## Fluxo de trabalho
 

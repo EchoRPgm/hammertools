@@ -290,3 +290,48 @@ def test_nodraw_needs_line_of_sight_from_an_entity():
     v.create_ent("light", origin="100 0 64")  # agora alguém do mesmo lado enxerga a face
     hits = _checks(lint.run(v, checks={"nodraw"}), "nodraw")
     assert len(hits) == 1 and "light a" in hits[0].msg
+
+
+def test_nodraw_hidden_by_prop_bbox():
+    """Regressão (rp_surdonoso -3394 -10900 -152): batente nodraw atrás do modelo de janela que preenche o vão."""
+    v = _room()
+    pillar = v.make_prism(Vec(200, -32, 0), Vec(264, 32, 128), "dev/dev_measuregeneric01b").solid
+    next(s for s in pillar.sides if geom.outward(s)[0].x < -0.5).mat = "tools/toolsnodraw"
+    v.add_brush(pillar)
+    assert _checks(lint.run(v, checks={"nodraw"}), "nodraw")  # sem o prop: à vista (info_player_start enxerga)
+    # modelo 116x10x32 girado 90°: comprido em Y, encostado na face -X do pilar
+    v.create_ent("prop_static", origin="196 0 64", angles="0 90 0", model="models/janela.mdl")
+    res = FakeRes()
+    res.model_info = lambda m: {"static": True, "mins": Vec(-58, -5, -16), "maxs": Vec(58, 5, 16)}
+    assert not _checks(lint.run(v, res, checks={"nodraw"}), "nodraw")
+
+
+def test_disp_triangles_follow_generator_layout():
+    from hammertools.core.disp import terrain_tile
+    v = VMF()
+    s = terrain_tile(v, Vec(0, 0, 0), Vec(512, 256, 0), 16, 2, "nature/grass", lambda u, w: 100 * u + 10 * w)
+    tris = geom.disp_triangles(s)
+    assert len(tris) == 2 * 4 * 4
+    pts = {tuple(round(c) for c in p) for t in tris for p in t}
+    assert (0, 0, 0) in pts and (512, 0, 100) in pts and (512, 256, 110) in pts and (0, 256, 10) in pts
+    hit = min(h for t in tris if (h := geom.ray_triangle(Vec(256, 128, 500), Vec(0, 0, -1), t)) is not None)
+    assert abs(hit - (500 - 55)) < 0.5  # 100*0.5 + 10*0.5
+
+
+def test_nodraw_under_displacement_terrain_not_seen():
+    """Regressão (rp_surdonoso z -2035): árvore em cima do terreno 'via' a caixa nodraw debaixo do chão
+    porque o raio testava o brush-base do displacement, não a superfície elevada."""
+    from hammertools.core.disp import terrain_tile
+    v = _room(height=1024)
+    # terreno cobrindo a sala, brush-base fino em z 300..316 e superfície subindo 200u
+    v.add_brush(terrain_tile(v, Vec(-512, -512, 316), Vec(512, 512, 316), 16, 2, "nature/grass", lambda u, w: 200))
+    box = v.make_prism(Vec(-64, -64, 380), Vec(64, 64, 400), "dev/dev_measuregeneric01b").solid  # entre base e superfície
+    next(x for x in box.sides if geom.outward(x)[0].z > 0.5).mat = "tools/toolsnodraw"  # só o topo, virado pra árvore
+    v.add_brush(box)
+    for e in list(v.entities):
+        if e["classname"] != "worldspawn":
+            v.remove_ent(e)
+    v.create_ent("info_player_start", origin="0 0 8")
+    v.create_ent("prop_static", origin="0 0 700", model="models/arvore.mdl")  # em cima do terreno (516)
+    hits = [i for i in _checks(lint.run(v, checks={"nodraw"}, voxel=8), "nodraw") if "solid %d," % box.id in i.msg]
+    assert not hits

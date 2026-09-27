@@ -112,3 +112,56 @@ def edges(solid: Solid) -> list[Vec]:
                 if not any(abs(abs(d.dot(e)) - 1) < 1e-4 for e in dirs):
                     dirs.append(d)
     return dirs
+
+
+def disp_triangles(solid: Solid) -> list[tuple[Vec, Vec, Vec]]:
+    """Triângulos em coordenadas do mundo das faces displacement do solid.
+    Grade (SDK builddisp): linha y ao longo de p0->p1, coluna x ao longo de p0->p3, p0 = disp_pos; p1 e p3
+    são os vizinhos de p0 no polígono com cross(p1-p0, p3-p0) contra a normal pra fora (mesma orientação
+    do gerador de terreno validado no jogo). Vértice = base + normal*distance + offset + normal da face*elevation."""
+    out = []
+    for side, poly in face_polys(solid):
+        if not side.is_disp or len(poly) != 4:
+            continue
+        n, _ = outward(side)
+        i0 = min(range(4), key=lambda i: (poly[i] - side.disp_pos).mag())
+        p0, a, c, b = poly[i0], poly[(i0 + 1) % 4], poly[(i0 + 2) % 4], poly[(i0 + 3) % 4]
+        p1, p3 = (a, b) if Vec.cross(a - p0, b - p0).dot(n) < 0 else (b, a)
+        p2 = c
+        size = side.disp_size
+        elev = n * (side.disp_elevation or 0.0)
+
+        def pos(x: int, y: int) -> Vec:
+            t, u = y / (size - 1), x / (size - 1)
+            start = p0 + (p1 - p0) * t
+            end = p3 + (p2 - p3) * t
+            vert = side._disp_verts[y * size + x]
+            return start + (end - start) * u + vert.normal * vert.distance + vert.offset + elev
+
+        grid = [[pos(x, y) for x in range(size)] for y in range(size)]
+        for y in range(size - 1):
+            for x in range(size - 1):
+                q00, q10, q01, q11 = grid[y][x], grid[y][x + 1], grid[y + 1][x], grid[y + 1][x + 1]
+                out += [(q00, q01, q11), (q00, q11, q10)]
+    return out
+
+
+def ray_triangle(o: Vec, d: Vec, tri: tuple[Vec, Vec, Vec]) -> float | None:
+    """Distância t > 0 em que o raio o + t·d acerta o triângulo (Möller–Trumbore), ou None."""
+    a, b, c = tri
+    e1, e2 = b - a, c - a
+    pv = Vec.cross(d, e2)
+    det = e1.dot(pv)
+    if abs(det) < 1e-9:
+        return None
+    inv = 1.0 / det
+    tv = o - a
+    u = tv.dot(pv) * inv
+    if u < 0 or u > 1:
+        return None
+    qv = Vec.cross(tv, e1)
+    w = d.dot(qv) * inv
+    if w < 0 or u + w > 1:
+        return None
+    t = e2.dot(qv) * inv
+    return t if t > 1e-6 else None

@@ -11,3 +11,5 @@ vm-share/hammertools_pkg/
 vm-share/*.vmf
 vm-share/leak/
 hammerplusplus_gmod_build8871/
+vm-share/*.bsp
+vm-share/*.lin

@@ -196,6 +196,7 @@ class Issue:
     name: str = ""      # recurso (material/modelo) a que se refere
     count: int = 0      # quantas vezes é usado
     examples: list = field(default_factory=list)  # [(Vec, "descrição")], no máximo MAX_EXAMPLES
+    locations: list = field(default_factory=list)  # todas as ocorrências [(Vec, "descrição")] (pra agrupar por região)
 
 
 @dataclass
@@ -262,7 +263,8 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
                 if mat and not res.material_exists(mat):
                     ex = _texture_examples(users)
                     rep.add("erro", "textures", f"material inexistente '{mat}' ({len(users)} uso(s))",
-                            ex[0][0] if ex else None, group=_folder(mat), name=mat, count=len(users), examples=ex)
+                            ex[0][0] if ex else None, group=_folder(mat), name=mat, count=len(users), examples=ex,
+                            locations=_texture_locations(users))
 
     if "models" in checks:
         if res.model_info is None:
@@ -331,6 +333,75 @@ def _texture_examples(users: list) -> list:
             out.append((p, desc))
         if len(out) >= MAX_EXAMPLES:
             break
+    return out
+
+
+def _texture_locations(users: list) -> list:
+    """Todas as ocorrências: centro de cada face (ou origem do overlay/decal)."""
+    out = []
+    polys: dict[int, dict] = {}
+    for obj, side, owner in users:
+        if side is None:
+            p = _origin(obj)
+            if p is not None:
+                out.append((p, f"{obj['classname']} (id {obj.id})"))
+            continue
+        if id(obj) not in polys:
+            polys[id(obj)] = {id(sd): pl for sd, pl in geom.face_polys(obj)}
+        poly = polys[id(obj)].get(id(side))
+        p = geom.centroid(poly) if poly else _center(obj)
+        out.append((p, f"{'mundo' if owner is None else owner['classname']} · solid {obj.id} · face {side.id}"))
+    return out
+
+
+def cluster_locations(items: list, radius: float = 256.0) -> list[dict]:
+    """Agrupa ocorrências próximas (ligação simples: dois pontos a <= radius ficam no mesmo grupo), misturando
+    materiais diferentes. items = [(nome, Vec, desc)]. Devolve grupos ordenados por quantidade."""
+    from collections import Counter
+    n = len(items)
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    cells: dict[tuple, list[int]] = defaultdict(list)
+    for i, (_, p, _) in enumerate(items):
+        cells[(int(p.x // radius), int(p.y // radius), int(p.z // radius))].append(i)
+    r2 = radius * radius
+    for (cx, cy, cz), idxs in cells.items():
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    other = cells.get((cx + dx, cy + dy, cz + dz))
+                    if not other:
+                        continue
+                    for i in idxs:
+                        pi = items[i][1]
+                        for j in other:
+                            if j <= i:
+                                continue
+                            pj = items[j][1]
+                            if (pi.x - pj.x) ** 2 + (pi.y - pj.y) ** 2 + (pi.z - pj.z) ** 2 <= r2:
+                                a, b = find(i), find(j)
+                                if a != b:
+                                    parent[a] = b
+    groups: dict[int, list[int]] = defaultdict(list)
+    for i in range(n):
+        groups[find(i)].append(i)
+    out = []
+    for idxs in groups.values():
+        pts = [items[i][1] for i in idxs]
+        center = sum(pts, Vec()) / len(pts)
+        lo = Vec(min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts))
+        hi = Vec(max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts))
+        mats = Counter(items[i][0] for i in idxs)
+        near = sorted(idxs, key=lambda i: (items[i][1] - center).mag())  # exemplos: os mais próximos do centro
+        out.append({"count": len(idxs), "center": center, "lo": lo, "hi": hi, "materials": mats.most_common(),
+                    "examples": [(items[i][1], f"{items[i][0]} · {items[i][2]}") for i in near[:MAX_EXAMPLES]]})
+    out.sort(key=lambda g: (-g["count"], -len(g["materials"])))
     return out
 
 
@@ -634,7 +705,7 @@ def write_pointfile(path: Path, pts: list[Vec]) -> None:
 
 
 # --------------------------------------------------------------------------- relatório HTML
-def write_html(rep: Report, path: Path, map_name: str) -> Path:
+def write_html(rep: Report, path: Path, map_name: str, cluster_radius: float = 256.0) -> Path:
     """Página com as texturas faltando: uso, pasta e até MAX_EXAMPLES localizações (com botão de copiar
     `setpos` pro console do jogo e as coordenadas pro Hammer: Ctrl+Shift+G)."""
     from html import escape
@@ -649,13 +720,33 @@ def write_html(rep: Report, path: Path, map_name: str) -> Path:
     def coord(p):
         return f"{p.x:.0f} {p.y:.0f} {p.z:.0f}"
 
+    def loc_li(p, d):
+        return (f'<li><code>{escape(coord(p))}</code><span class="d">{escape(d)}</span>'
+                f'<button data-copy="setpos {escape(coord(p + Vec(0, 0, 64)))}" title="copiar setpos (64u acima)">setpos</button>'
+                f'<button data-copy="{escape(coord(p))}" title="copiar coordenadas (Hammer: Ctrl+Shift+G)">xyz</button></li>')
+
+    clusters = cluster_locations([(i.name, p, d) for i in items for p, d in i.locations], cluster_radius)
+    crow = []
+    for k, g in enumerate(clusters, 1):
+        size = g["hi"] - g["lo"]
+        mats = "".join(f'<li><code>{escape(m)}</code><span class="d">{c}×</span></li>' for m, c in g["materials"][:8])
+        if len(g["materials"]) > 8:
+            mats += f'<li class="more">+{len(g["materials"]) - 8} material(is)</li>'
+        ex = "".join(loc_li(p, d) for p, d in g["examples"])
+        more = f'<li class="more">+{g["count"] - len(g["examples"])} ocorrência(s)</li>' if g["count"] > len(g["examples"]) else ""
+        names = " ".join(m for m, _ in g["materials"])
+        crow.append(
+            f'<tr data-name="{escape(names)}" data-folder=""><td class="n">{k}</td>'
+            f'<td><code>{escape(coord(g["center"]))}</code><div class="d">área ~{size.x:.0f}×{size.y:.0f}×{size.z:.0f}u</div>'
+            f'<button class="go" data-copy="setpos {escape(coord(g["center"] + Vec(0, 0, 64)))}">setpos no centro</button></td>'
+            f'<td class="n">{g["count"]}</td><td><ul>{mats}</ul></td><td><ul>{ex}{more}</ul></td></tr>')
+    cbody = (f'<table><thead><tr><th class="n">#</th><th>Centro</th><th class="n">Ocorr.</th><th>Materiais</th>'
+             f'<th>Onde (até {MAX_EXAMPLES}, mais perto do centro)</th></tr></thead><tbody>{"".join(crow)}</tbody></table>'
+             ) if clusters else '<p class="ok">Nenhuma ocorrência.</p>'
+
     rows = []
     for i in items:
-        ex = "".join(
-            f'<li><code>{escape(coord(p))}</code><span class="d">{escape(d)}</span>'
-            f'<button data-copy="setpos {escape(coord(p + Vec(0, 0, 64)))}" title="copiar setpos (64u acima)">setpos</button>'
-            f'<button data-copy="{escape(coord(p))}" title="copiar coordenadas (Hammer: Ctrl+Shift+G)">xyz</button></li>'
-            for p, d in i.examples)
+        ex = "".join(loc_li(p, d) for p, d in i.examples)
         more = f'<li class="more">+{i.count - len(i.examples)} uso(s)</li>' if i.count > len(i.examples) else ""
         rows.append(
             f'<tr data-folder="{escape(i.group)}" data-name="{escape(i.name)}">'
@@ -699,6 +790,12 @@ li .d {{ color:var(--muted); font-size:12px }} li.more {{ color:var(--muted); fo
 li button {{ border:1px solid var(--line); background:transparent; color:var(--fg); border-radius:6px; padding:1px 7px; font-size:12px; cursor:pointer }}
 li button:hover {{ border-color:var(--accent); color:var(--accent) }}
 .ok {{ padding:16px }} .warn {{ color:var(--accent) }}
+.tabs {{ display:flex; gap:4px; border-bottom:1px solid var(--line); margin:0 0 14px }}
+.tab {{ border:0; background:transparent; color:var(--muted); font:inherit; padding:8px 14px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px }}
+.tab.on {{ color:var(--fg); border-bottom-color:var(--accent); font-weight:600 }}
+.panel[hidden] {{ display:none }} .d {{ color:var(--muted); font-size:12px }}
+button.go {{ margin-top:6px; border:1px solid var(--line); background:transparent; color:var(--fg); border-radius:6px; padding:2px 8px; font-size:12px; cursor:pointer }}
+button.go:hover {{ border-color:var(--accent); color:var(--accent) }}
 #toast {{ position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:var(--fg); color:var(--bg); padding:6px 12px; border-radius:8px; opacity:0; transition:opacity .2s; font-size:13px }}
 </style></head><body><main>
 <h1>Texturas faltando</h1>
@@ -707,17 +804,27 @@ li button:hover {{ border-color:var(--accent); color:var(--accent) }}
 <div class="stats"><div class="stat"><b>{len(items)}</b><span>materiais faltando</span></div>
 <div class="stat"><b>{total_uses}</b><span>usos (faces, overlays, decals)</span></div>
 <div class="stat"><b>{len(folders)}</b><span>pastas</span></div></div>
+<div class="tabs"><button class="tab on" data-tab="mat">Por textura <b>{len(items)}</b></button>
+<button class="tab" data-tab="reg">Por região <b>{len(clusters)}</b></button></div>
 <div class="tools"><input type="search" id="q" placeholder="Filtrar por nome ou pasta"></div>
-<div class="chips">{chips}</div>
-<div class="tablewrap">{body}</div>
+<section class="panel" id="p-mat"><div class="chips">{chips}</div><div class="tablewrap">{body}</div></section>
+<section class="panel" id="p-reg" hidden><p class="sub">Ocorrências a até {cluster_radius:.0f}u umas das outras viram uma região, mesmo com materiais diferentes. Ordenado pela quantidade.</p>
+<div class="tablewrap">{cbody}</div></section>
 <p class="sub" style="margin-top:14px">Em cada localização: <b>setpos</b> copia um comando pro console do jogo (64u acima da face); <b>xyz</b> copia as coordenadas pro Hammer++ (Ctrl+Shift+G, "Go to coordinates").</p>
 </main><div id="toast">copiado</div>
 <script>
 const q = document.getElementById('q'), rows = [...document.querySelectorAll('tbody tr')];
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {{
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t));
+  document.getElementById('p-mat').hidden = t.dataset.tab !== 'mat';
+  document.getElementById('p-reg').hidden = t.dataset.tab !== 'reg';
+  try {{ localStorage.setItem('ht-tab', t.dataset.tab); }} catch (_) {{}}
+}}));
+try {{ const saved = localStorage.getItem('ht-tab'); if (saved) document.querySelector(`.tab[data-tab="${{saved}}"]`)?.click(); }} catch (_) {{}}
 let folder = '';
 function apply() {{
   const t = q.value.toLowerCase();
-  rows.forEach(r => r.hidden = !((!folder || r.dataset.folder === folder) && (!t || r.dataset.name.includes(t) || r.dataset.folder.includes(t))));
+  rows.forEach(r => r.hidden = !((!folder || !r.dataset.folder || r.dataset.folder === folder) && (!t || r.dataset.name.includes(t) || r.dataset.folder.includes(t))));
 }}
 q.addEventListener('input', apply);
 document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {{

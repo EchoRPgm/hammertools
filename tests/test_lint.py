@@ -210,7 +210,8 @@ def test_texture_examples_and_html(tmp_path):
     p = lint.write_html(rep, tmp_path / "r.html", "m.vmf")
     html = p.read_text()
     assert "custom/sumiu" in html and "decals/sumiu_decal" in html and "+37 uso(s)" in html
-    assert html.count('title="copiar setpos') == 6 and "setpos 10 20 94" in html
+    by_mat = html.split('id="p-reg"')[0]
+    assert by_mat.count('title="copiar setpos') == 6 and "setpos 10 20 94" in html
 
 
 def test_cli_html(tmp_path):
@@ -219,3 +220,25 @@ def test_cli_html(tmp_path):
     p = tmp_path / "m.vmf"; vmfio.save(_room(), p)
     assert main(["lint", str(p), "--only", "textures", "--html", "--no-open"]) in (0, 1)
     assert (tmp_path / "m.texturas.html").exists()
+
+
+def test_cluster_regions_mix_materials():
+    from hammertools.lint import cluster_locations
+    items = [("a/x", Vec(0, 0, 0), ""), ("b/y", Vec(100, 0, 0), ""), ("a/x", Vec(200, 50, 0), ""),  # cadeia: tudo junto
+             ("c/z", Vec(5000, 0, 0), ""), ("c/z", Vec(5010, 0, 0), ""),
+             ("d/w", Vec(-9000, 0, 0), "")]
+    g = cluster_locations(items, 256)
+    assert [x["count"] for x in g] == [3, 2, 1]
+    assert dict(g[0]["materials"]) == {"a/x": 2, "b/y": 1}
+    assert len(g[0]["examples"]) == 3 and g[0]["lo"] == Vec(0, 0, 0) and g[0]["hi"] == Vec(200, 50, 0)
+
+
+def test_html_has_region_tab(tmp_path):
+    v = _room()
+    for k in range(3):
+        v.add_brush(v.make_prism(Vec(k * 80, 0, 0), Vec(k * 80 + 64, 64, 64), "custom/a").solid)
+    v.add_brush(v.make_prism(Vec(0, 100, 0), Vec(64, 164, 64), "custom/b").solid)
+    rep = lint.run(v, FakeRes(materials={"dev/dev_measuregeneric01b", "tools/toolsnodraw"}), {"textures"})
+    assert sum(len(i.locations) for i in rep.issues) == 3 * 6 + 6
+    html = lint.write_html(rep, tmp_path / "r.html", "m.vmf", 256).read_text()
+    assert 'data-tab="reg"' in html and "Por região <b>1</b>" in html  # tudo perto: uma região só, com os 2 materiais

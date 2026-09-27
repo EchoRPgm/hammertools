@@ -258,3 +258,35 @@ def test_full_report_dashboard(tmp_path):
     pos = [dash.find(t) for t in ("Leak: o mapa vaza", "Texturas faltando", "Modelos faltando", "Brushes duplicados")]
     assert all(p > 0 for p in pos) and pos == sorted(pos)
     assert "Onde concentrar esforço" in dash and "Caminho do leak" in html
+
+
+def test_nodraw_probe_does_not_see_through_other_floor():
+    """Regressão (rp_surdonoso 1860 -9685 -532): laje com fundo nodraw, vão fechado de 81u e outro piso
+    embaixo; com voxel grosso a sonda atravessava o piso de baixo e achava a sala jogável debaixo dele."""
+    v = _room(height=1024)
+    a = v.make_prism(Vec(-512, -512, 600), Vec(512, 512, 640), "dev/dev_measuregeneric01b").solid
+    next(s for s in a.sides if geom.outward(s)[0].z < -0.5).mat = "tools/toolsnodraw"
+    v.add_brush(a)
+    v.add_brush(v.make_prism(Vec(-512, -512, 500), Vec(512, 512, 519), "dev/dev_measuregeneric01b").solid)
+    assert not _checks(lint.run(v, checks={"nodraw"}, voxel=80), "nodraw")
+    # sem o piso de baixo a face dá mesmo pra sala: tem que acusar
+    v.remove_brush(v.brushes[-1])
+    assert _checks(lint.run(v, checks={"nodraw"}, voxel=80), "nodraw")
+
+
+def test_nodraw_needs_line_of_sight_from_an_entity():
+    """Espaço ligado ao interior mas que nenhuma entidade enxerga (atrás de parede, passagem em L) não acusa."""
+    v = _room(height=256)
+    # divisória em x=0 com passagem só no canto y>448: as duas metades são o mesmo espaço pro voxel
+    v.add_brush(v.make_prism(Vec(-8, -512, 0), Vec(8, 448, 256), "dev/dev_measuregeneric01b").solid)
+    pillar = v.make_prism(Vec(200, -32, 0), Vec(264, 32, 128), "dev/dev_measuregeneric01b").solid
+    next(s for s in pillar.sides if geom.outward(s)[0].x < -0.5).mat = "tools/toolsnodraw"  # face virada pra divisória
+    v.add_brush(pillar)
+    for e in list(v.entities):
+        if e["classname"] != "worldspawn":
+            v.remove_ent(e)
+    v.create_ent("info_player_start", origin="-300 0 8")  # do outro lado da divisória
+    assert not _checks(lint.run(v, checks={"nodraw"}), "nodraw")
+    v.create_ent("light", origin="100 0 64")  # agora alguém do mesmo lado enxerga a face
+    hits = _checks(lint.run(v, checks={"nodraw"}), "nodraw")
+    assert len(hits) == 1 and "light a" in hits[0].msg

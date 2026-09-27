@@ -669,9 +669,43 @@ def _voxel_checks(v: VMF, res: Resources, rep: Report, checks: set, voxel: float
         rep.stats["nodraw visíveis"] = n
 
 
+def _ray_entry(planes, o: Vec, d: Vec) -> float | None:
+    """Distância em que o raio o + t·d (t > 0) entra no convexo dado pelos planos (normal pra fora, ponto)."""
+    t0, t1 = 0.0, float("inf")
+    for n, p in planes:
+        den = n.dot(d)
+        dist = n.dot(o - p)
+        if abs(den) < 1e-9:
+            if dist > 1e-4:
+                return None
+            continue
+        t = -dist / den
+        if den < 0:
+            t0 = max(t0, t)
+        else:
+            t1 = min(t1, t)
+        if t0 > t1:
+            return None
+    return t0
+
+
+# entidades que não marcam lugar onde o jogador vê: cordas cruzam céu e vãos, landmark/lógica ficam em qualquer canto
+NOT_VIEWERS = ("ht_", "logic_", "point_template", "info_overlay", "infodecal", "env_cubemap", "sky_camera",
+               "info_landmark", "keyframe_rope", "move_rope", "math_", "filter_", "game_", "ai_", "env_fog_controller",
+               "env_tonemap_controller", "shadow_control", "env_sun", "light_environment", "func_")
+BLOCK_TOOLS = {"tools/toolsnodraw", "tools/toolsskybox", "tools/toolsskybox2d", "tools/toolsblack", "tools/toolsblocklight"}
+VIEW_RANGE = 3000.0
+PROP_TOO_CLOSE = 64.0  # prop colado na face: o próprio modelo costuma tampar o nodraw
+
+
 def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float) -> int:
     """Face nodraw é 'visível' se o ponto 1u à frente do centro dela não está dentro de outro brush
-    visível (mundo, detail ou entidade) e o primeiro voxel vazio à frente pertence a área jogável."""
+    visível (mundo, detail ou entidade) e o espaço LIVRE à frente (até o primeiro brush que o raio acerta)
+    pertence a área jogável. A sonda nunca passa do primeiro brush: antes ela atravessava o piso de baixo
+    e achava a sala embaixo dele (falso positivo em laje sobre vão fechado).
+    Confirmação: alguma entidade pontual (spawn, luz, prop, npc, porta...) fora de sólidos e a até 3000u
+    tem linha de visada até a face. Sem isso, vão fechado grande (debaixo do terreno, dentro da caixa de
+    skybox) contava como jogável só por estar do lado de dentro do selo."""
     coverers = [s for s in v.brushes if _visible(s)] + [s for e in v.entities for s in e.solids if _visible(s)]
     B = 256.0
     buckets: dict[tuple, list] = defaultdict(list)
@@ -681,6 +715,52 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float) -> int:
             for by in range(int(lo.y // B), int(hi.y // B) + 1):
                 for bz in range(int(lo.z // B), int(hi.z // B) + 1):
                     buckets[(bx, by, bz)].append(s)
+    plane_cache: dict[int, list] = {}
+
+    def planes(o: Solid):
+        if id(o) not in plane_cache:
+            plane_cache[id(o)] = [geom.outward(side) for side in o.sides]
+        return plane_cache[id(o)]
+
+    blockers: dict[tuple, list] = defaultdict(list)
+    for o in coverers + [b for b in v.brushes if not _visible(b) and all(x.mat.lower() in BLOCK_TOOLS for x in b.sides)]:
+        lo, hi = o.get_bbox()
+        for bx in range(int(lo.x // B), int(hi.x // B) + 1):
+            for by in range(int(lo.y // B), int(hi.y // B) + 1):
+                for bz in range(int(lo.z // B), int(hi.z // B) + 1):
+                    blockers[(bx, by, bz)].append(o)
+
+    def cell(p: Vec) -> tuple:
+        return (int(p.x // B), int(p.y // B), int(p.z // B))
+
+    def clear(a: Vec, b: Vec, skip: Solid) -> bool:
+        d = b - a
+        length = d.mag()
+        d = d / length
+        seen: set[int] = set()
+        t = 0.0
+        while t <= length + B:
+            for o in blockers.get(cell(a + d * min(t, length)), ()):
+                if o is skip or id(o) in seen:
+                    continue
+                seen.add(id(o))
+                hit = _ray_entry(planes(o), a, d)
+                if hit is not None and hit < length - 0.5:
+                    return False
+            t += B / 4
+        return True
+
+    viewers: list[tuple[Vec, str]] = []
+    for e in v.entities:
+        cls = e["classname"]
+        o = _origin(e)
+        if e.solids or o is None or cls.startswith(NOT_VIEWERS):
+            continue
+        if any(b.point_inside(o) for b in blockers.get(cell(o), ())):
+            continue  # origem enterrada em sólido não enxerga nada
+        viewers.append((o, cls))
+
+    reach = 2.4 * vs
     owners = list(v.brushes) + [s for e in v.entities for s in e.solids if e["classname"] == "func_detail"]
     n = 0
     for s in owners:
@@ -695,18 +775,43 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float) -> int:
             key = (int(q.x // B), int(q.y // B), int(q.z // B))
             if any(o is not s and o.point_inside(q) for o in buckets.get(key, ())):
                 continue
+            # primeiro brush que o raio acerta dentro do alcance da sonda
+            cand: dict[int, Solid] = {}
+            t = 0.0
+            while t <= reach + B:
+                p = c + nrm * t
+                for o in buckets.get((int(p.x // B), int(p.y // B), int(p.z // B)), ()):
+                    if o is not s:
+                        cand[id(o)] = o
+                t += B / 2
+            free = reach
+            for o in cand.values():
+                hit = _ray_entry(planes(o), q, nrm)
+                if hit is not None:
+                    free = min(free, hit + 1.0)
             lab = 0
             for k in (0.6, 1.2, 1.8, 2.4):
+                if vs * k >= free:
+                    break
                 i = idx(c + nrm * (vs * k))
                 if i is None:
                     break
                 lab = labels[i]
                 if lab:
                     break
-            if lab and lab in playable:
-                n += 1
-                ori = "topo" if nrm.z > 0.7 else "fundo" if nrm.z < -0.7 else "lateral"
-                rep.add("aviso", "nodraw", f"face nodraw ({ori}) dá pra área jogável (solid {s.id}, face {side.id})", c, group=ori)
+            if not (lab and lab in playable):
+                continue
+            tgt = c + nrm * 2.0
+            near = sorted(((o, cls) for o, cls in viewers if (o - tgt).dot(nrm) > 1 and (o - tgt).mag() < VIEW_RANGE
+                           and not (cls.startswith("prop_") and (o - tgt).mag() < PROP_TOO_CLOSE)),
+                          key=lambda oc: (oc[0] - tgt).mag())[:60]
+            seer = next(((o, cls) for o, cls in near if clear(o, tgt, s)), None)
+            if seer is None:
+                continue
+            n += 1
+            ori = "topo" if nrm.z > 0.7 else "fundo" if nrm.z < -0.7 else "lateral"
+            rep.add("aviso", "nodraw", f"face nodraw ({ori}) à vista (solid {s.id}, face {side.id}): "
+                    f"{seer[1]} a {(seer[0] - tgt).mag():.0f}u enxerga", c, group=ori)
     return n
 
 

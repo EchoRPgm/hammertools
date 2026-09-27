@@ -22,6 +22,7 @@ from hammertools import lint as L
 
 # ordem de prioridade no painel: o que quebra o mapa primeiro
 PRIORITY = [
+    ("phantom", "erro", "Faces fantasma", "Superfície que o vbsp desenhou sem existir no VMF: não aparece no Hammer e dá pra atravessar. O ht-vbsp cobre com hint e recompila sozinho."),
     ("leak", "erro", "Leak: o mapa vaza pro vazio", "Sem selo, o vbsp não gera VIS e a luz sai errada. Siga o caminho (pointfile) e tape o buraco."),
     ("markers", "erro", "Marcadores ht_* incompletos", "Falta o par (início/fim) de um gerador: a peça não é gerada."),
     ("outputs", "erro", "Outputs órfãos", "I/O mirando nome que não existe: o evento não acontece no jogo."),
@@ -276,7 +277,7 @@ def _dashboard(rep: L.Report, radius: float) -> str:
         else:
             top = [(i.msg, "", i.pos) for i in items[:3]]
             summary = f"{len(items)} ocorrência(s)"
-        tab = {"textures": "tex", "models": "mdl", "leak": "leak", "markers": "ent", "outputs": "ent"}.get(check, "geo")
+        tab = {"textures": "tex", "models": "mdl", "leak": "leak", "markers": "ent", "outputs": "ent", "logic": "ent"}.get(check, "geo")
         cards.append((level, title, summary, what, top, tab))
     card_html = []
     for level, title, summary, what, top, tab in cards:
@@ -489,7 +490,7 @@ def write(rep: L.Report, path: Path, map_name: str, cluster_radius: float = 256.
     mdl, n_mdl = _tab_models(rep)
     tj, n_tj = _tab_tjunctions(rep, cluster_radius)
     leak, n_leak = _tab_leak(rep)
-    geo, n_geo = _tab_generic(rep, ["nodraw", "overlaps", "duplicates", "grid"])
+    geo, n_geo = _tab_generic(rep, ["phantom", "nodraw", "overlaps", "duplicates", "grid"])
     ent, n_ent = _tab_generic(rep, ["markers", "outputs"])
     panels = [("dash", "Painel", None, _dashboard(rep, cluster_radius)), ("tex", "Texturas", n_tex, tex), ("reg", "Texturas por região", n_reg, reg),
               ("mdl", "Modelos", n_mdl, mdl), ("tj", "T-junctions", n_tj, tj), ("leak", "Leak", n_leak, leak),

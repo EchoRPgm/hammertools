@@ -436,3 +436,32 @@ def test_tjfix_marks_resolved_faces(tmp_path):
     # compilado com -notjunc: tudo pendente
     lint.apply_tjfix(rep, {"result": "notjunc"})
     assert all(f["status"] == "pend" for f in rep.data["tjunctions"])
+
+
+def test_model_shader_on_brush_is_flagged():
+    """Regressão (rp_surdonoso 5337 -9769): faixa de grama com material de modelo (VertexLitGeneric) em brush."""
+    v = _room()
+    v.add_brush(v.make_prism(Vec(-64, -64, 0), Vec(64, 64, 8), "models/grama").solid)
+    vmts = {"materials/models/grama.vmt": b'"VertexLitGeneric"\n{\n"$basetexture" "forest/grass_01"\n}',
+            "materials/dev/dev_measuregeneric01b.vmt": b'"LightmappedGeneric" { }',
+            "materials/tools/toolsnodraw.vmt": b'"LightmappedGeneric" { }'}
+    res = FakeRes(materials={"models/grama", "dev/dev_measuregeneric01b", "tools/toolsnodraw"})
+    res.read = lambda p, limit=None: vmts.get(p.lower())
+    hits = [i for i in _checks(lint.run(v, res, {"textures"}), "textures") if i.group == "shader de modelo"]
+    assert len(hits) == 1 and hits[0].name == "models/grama" and hits[0].count == 6
+
+
+def test_fix_model_shader_writes_lightmapped_copy(tmp_path):
+    from hammertools import fix
+    v = _room()
+    v.add_brush(v.make_prism(Vec(-64, -64, 0), Vec(64, 64, 8), "materials/models/grama").solid)
+    v.create_ent("info_overlay", material="materials/models/grama")  # overlay não muda
+    vmts = {"materials/materials/models/grama.vmt": b'"VertexLitGeneric"\n{\n"$basetexture" "forest/grass_01"\n"$surfaceprop" "grass"\n"$phong" "1"\n}'}
+    res = FakeRes(materials={"materials/models/grama"})
+    res.read = lambda p, limit=None: vmts.get(p.lower())
+    r = fix.fix_model_shaders(v, res, "m_fix")
+    assert r.faces == 6 and r.replaced == {"materials/models/grama": "m_fix/models/grama"}
+    txt = r.materials["m_fix/models/grama"]
+    assert txt.startswith('"LightmappedGeneric"') and '"$basetexture" "forest/grass_01"' in txt and "$phong" not in txt
+    assert next(iter(v.by_class["info_overlay"]))["material"] == "materials/models/grama"
+    assert fix.write_materials(r, tmp_path)[0].read_text() == txt

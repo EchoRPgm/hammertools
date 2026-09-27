@@ -124,7 +124,12 @@ def cmd_lint(args) -> int:
         return 2
     need_res = checks & {"textures", "models", "leak", "nodraw"}
     res = lint.Resources.from_game(args.game, args.bsp, args.extra or ()) if need_res else lint.Resources()
-    rep = lint.run(v, res, checks, grid=args.grid, detail_grid=args.detail_grid, voxel=args.voxel)
+    compiled = Path(args.compiled) if args.compiled else None
+    if compiled is None and "phantom" in checks:
+        guess = Path(args.vmf).with_suffix(".bsp")  # o ht-vbsp copia o .bsp pra junto do fonte
+        if guess.exists() and guess.stat().st_mtime >= Path(args.vmf).stat().st_mtime:
+            compiled = guess
+    rep = lint.run(v, res, checks, grid=args.grid, detail_grid=args.detail_grid, voxel=args.voxel, compiled=compiled)
     if "tjunctions" in rep.ran:
         fixp = Path(args.tjfix) if args.tjfix else Path(args.vmf).with_suffix(".tjfix.json")
         if fixp.exists():
@@ -259,6 +264,30 @@ def cmd_optimize(args) -> int:
     return 0
 
 
+def cmd_fix(args) -> int:
+    """Consertos automáticos seguros num VMF novo (hoje: material de modelo em brush -> cópia LightmappedGeneric)."""
+    from hammertools import fix, lint
+    src = Path(args.vmf)
+    out = Path(args.out) if args.out else src.with_name(f"{src.stem}_fix.vmf")
+    if out.resolve() == src.resolve():
+        print("recuse: a saída não pode ser o próprio fonte", file=sys.stderr)
+        return 2
+    res = lint.Resources.from_game(args.game, args.bsp)
+    v = vmfio.load(src)
+    r = fix.fix_model_shaders(v, res, args.prefix or f"{src.stem}_fix")
+    for old, new in r.replaced.items():
+        print(f"  {old} -> {new}")
+    print(f"{len(r.replaced)} material(is) de modelo trocados em {r.faces} face(s) de brush")
+    if args.dry_run:
+        return 0
+    content = Path(args.content) if args.content else lint._find_game(args.game) / "addons" / f"{src.stem}_content"
+    for p in fix.write_materials(r, content):
+        print(f"  gravado {p}")
+    vmfio.save(v, out)
+    print(f"gravado: {out}  (os .vmt novos precisam ir junto com o mapa: pasta de conteúdo ou pakfile)")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="ht", description="hammertools: marcadores ht_* -> geometria")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -286,6 +315,7 @@ def main(argv=None) -> int:
                    help="gera o relatório geral (painel de prioridades + abas por checagem) e abre no navegador; padrão <mapa>.lint.html")
     p.add_argument("--no-open", action="store_true", help="com --html: só grava, não abre o navegador")
     p.add_argument("--cluster-radius", type=float, default=256.0, help="com --html: distância máxima (u) pra juntar ocorrências na aba 'Por região'")
+    p.add_argument("--compiled", help="BSP compilado deste VMF, pra checagem de faces fantasma (padrão: <mapa>.bsp se for mais novo que o VMF)")
     p.add_argument("--tjfix", help="registro da compilação (padrão <mapa>.tjfix.json, gravado pelo ht-vbsp): marca as t-junctions resolvidas")
     p.add_argument("--area-size", type=float, default=1024.0, help="com --html: tamanho (u) do bloco de área do filtro/agrupamento por área")
     p.set_defaults(fn=cmd_lint)
@@ -302,6 +332,13 @@ def main(argv=None) -> int:
     p.add_argument("--dry-run", action="store_true", help="só lista, não grava")
     p.add_argument("--max", type=int, default=30)
     p.set_defaults(fn=cmd_content)
+    p = sub.add_parser("fix", help="consertos automáticos seguros num VMF novo (material de modelo em brush)")
+    p.add_argument("vmf"); p.add_argument("-o", "--out", help="padrão: <mapa>_fix.vmf")
+    p.add_argument("--game"); p.add_argument("--bsp", help="BSP com conteúdo embutido (pra achar os .vmt)")
+    p.add_argument("--content", help="pasta onde gravar os .vmt novos (padrão: <jogo>/addons/<mapa>_content)")
+    p.add_argument("--prefix", help="pasta dos materiais novos dentro de materials/ (padrão: <mapa>_fix)")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(fn=cmd_fix)
     p = sub.add_parser("optimize", help="junta blocos retangulares fatiados com a mesma textura (menos t-junctions) num VMF novo")
     p.add_argument("vmf"); p.add_argument("-o", "--out", help="padrão: <mapa>_opt.vmf")
     p.add_argument("--game", help="pasta com gameinfo.txt (padrão: HT_GAME ou a instalação do GMod): diz quais materiais são translúcidos/água")

@@ -34,7 +34,7 @@ from hammertools.core import geom
 from hammertools.core import vmf as vmfio
 
 MAX_EXAMPLES = 5
-ALL_CHECKS = ("markers", "outputs", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid", "tjunctions")
+ALL_CHECKS = ("markers", "outputs", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid", "tjunctions", "phantom")
 
 # texturas de ferramenta que NÃO selam o mapa (brush com qualquer face dessas não conta pro selo)
 NONSEAL_TOOLS = {
@@ -59,6 +59,7 @@ class Resources:
     material_seals: Callable[[str], bool] | None = None   # False = translúcido/água (não sela)
     model_info: Callable[[str], dict | None] | None = None  # None = não existe; {"static": bool}
     source: str = ""
+    read: Callable[..., bytes | None] | None = None  # leitura crua (caminho relativo ao jogo, limite opcional)
 
     @classmethod
     def from_game(cls, gamedir: str | Path | None, bsp: str | Path | None = None, extra: Iterable[str | Path] = (),
@@ -153,7 +154,7 @@ class Resources:
 
         extra = list(extra)
         src = str(gd) + (f" + {len(extra)} pasta(s) extra(s)" if extra else "") + (f" + jogos montados: {', '.join(mounted)}" if mounted else "") + (f" + {gmas.count} addons" if gmas else "") + (f" + BSP" if bsp else "")
-        return cls(lambda m: exists(f"materials/{m.lower()}.vmt"), material_seals, model_info, source=src)
+        return cls(lambda m: exists(f"materials/{m.lower()}.vmt"), material_seals, model_info, source=src, read=read)
 
 
 # jogos que o GMod monta sozinho quando instalados (pasta em steamapps/common, subpasta do jogo)
@@ -228,13 +229,25 @@ class Report:
 
 # --------------------------------------------------------------------------- execução
 def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS, grid: float = 1.0,
-        detail_grid: bool = False, voxel: float | None = None, overlap_min: float = 1.0) -> Report:
+        detail_grid: bool = False, voxel: float | None = None, overlap_min: float = 1.0,
+        compiled: str | Path | None = None) -> Report:
     from hammertools.generators import REGISTRY, SINGLE
     res = res or Resources(source="sem arquivos do jogo")
     checks = set(checks)
     rep = Report()
     rep.stats["recursos"] = res.source
     rep.ran = set(checks)
+
+    if "phantom" in checks:
+        if compiled is None:
+            rep.skipped["phantom"] = "precisa do BSP compilado deste VMF (--compiled, ou <mapa>.bsp mais novo que o VMF ao lado dele)"
+        else:
+            from hammertools import bspcheck
+            for f in bspcheck.phantom_faces(v, compiled):
+                rep.add("erro" if f["area"] >= 256 else "aviso", "phantom",
+                        f"face fantasma {f['material']} (~{f['area']:.0f}u²): o vbsp desenhou uma superfície que não existe no VMF "
+                        f"(não aparece no Hammer, dá pra atravessar); conserto: hint cobrindo a região (o ht-vbsp faz sozinho)",
+                        f["center"], group=f["material"].lower(), name=f["material"].lower())
 
     if "markers" in checks:
         for g in vmfio.group_markers(vmfio.markers(v)).values():
@@ -278,6 +291,16 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
                     rep.add("erro", "textures", f"material inexistente '{mat}' ({len(users)} uso(s))",
                             ex[0][0] if ex else None, group=_folder(mat), name=mat, count=len(users), examples=ex,
                             locations=_texture_locations(users))
+                elif mat and res.read is not None:
+                    # shader de modelo numa face de brush: sem lightmap, a luz sai errada e muda com a distância
+                    brush_users = [u for u in users if u[1] is not None]
+                    shader = _shader(res, mat)
+                    if brush_users and shader in MODEL_SHADERS:
+                        ex = _texture_examples(brush_users)
+                        rep.add("aviso", "textures", f"material de modelo ({shader}) em brush: '{mat}' ({len(brush_users)} face(s)); "
+                                f"sem lightmap, a luz sai errada e muda com a distância. Use uma cópia LightmappedGeneric",
+                                ex[0][0] if ex else None, group="shader de modelo", name=mat, count=len(brush_users), examples=ex,
+                                locations=_texture_locations(brush_users))
 
     if "models" in checks:
         if res.model_info is None:
@@ -581,6 +604,27 @@ def _tjunctions(v: VMF, rep: Report, top: int = 40, eps: float = 0.1) -> None:
                 geom.centroid(poly), group=owner)
 
 
+MODEL_SHADERS = {"vertexlitgeneric", "vertexlitgeneric_dx6", "eyerefract", "eyes", "teeth", "character"}
+
+
+def _shader(res: Resources, mat: str) -> str:
+    """Primeiro token do .vmt (o shader), seguindo 'patch' -> include. '' se não der pra ler."""
+    for _ in range(4):
+        data = res.read(f"materials/{mat}.vmt", 4096) if res.read else None
+        if not data:
+            return ""
+        text = data.decode("utf-8", "replace")
+        m = re.match(r'\s*(?://[^\n]*\s*)*"?([A-Za-z_0-9]+)"?', text)
+        shader = m.group(1).lower() if m else ""
+        if shader != "patch":
+            return shader
+        inc = re.search(r'"?include"?\s+"([^"]+)"', text, re.I)
+        if not inc:
+            return ""
+        mat = re.sub(r"^materials/", "", inc.group(1).replace("\\", "/"), flags=re.I).rsplit(".vmt", 1)[0].lower()
+    return ""
+
+
 # --------------------------------------------------------------------------- voxel: leak e nodraw
 def _seals(s: Solid, res: Resources) -> bool:
     if any(side.is_disp for side in s.sides):
@@ -700,10 +744,11 @@ def _ray_entry(planes, o: Vec, d: Vec) -> float | None:
     return t0
 
 
-# entidades que não marcam lugar onde o jogador vê: cordas cruzam céu e vãos, landmark/lógica ficam em qualquer canto
-NOT_VIEWERS = ("ht_", "logic_", "point_template", "info_overlay", "infodecal", "env_cubemap", "sky_camera",
-               "info_landmark", "keyframe_rope", "move_rope", "math_", "filter_", "game_", "ai_", "env_fog_controller",
-               "env_tonemap_controller", "shadow_control", "env_sun", "light_environment", "func_")
+# testemunhas do nodraw: só entidades que ficam onde o jogador está ou olha. Lista do que PODE (não do que não
+# pode): entidade de lógica (info_target, lua_run, logic_*...) fica em qualquer canto, inclusive escondida; no
+# gm_fork elas "enxergavam" faces que ninguém vê. Cordas, landmarks e cubemaps também ficam de fora.
+VIEWERS = ("info_player_", "info_node", "info_teleport_destination", "info_ladder_dismount", "prop_", "light", "point_spotlight",
+           "npc_", "weapon_", "item_", "env_sprite", "env_soundscape")
 BLOCK_TOOLS = {"tools/toolsnodraw", "tools/toolsskybox", "tools/toolsskybox2d", "tools/toolsblack", "tools/toolsblocklight"}
 VIEW_RANGE = 3000.0
 PROP_TOO_CLOSE = 64.0  # prop colado na face: o próprio modelo costuma tampar o nodraw
@@ -726,6 +771,14 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float, res: Res
     nodraw só deixa ver através dele (vidro de janela com o lado de dentro nodraw).
     Props tampam: se um ponto a 2, 8 ou 16u à frente da face cai dentro da caixa (girada) de um prop, a face está
     escondida pelo modelo (ex.: batente nodraw atrás do modelo de janela que preenche o vão)."""
+    # sala da skybox 3D: o espaço onde está o sky_camera não é área jogável (é a miniatura desenhada ao fundo)
+    sky = set()
+    for e in v.by_class["sky_camera"]:
+        o = _origin(e)
+        i = idx(o) if o is not None else None
+        if i is not None and labels[i]:
+            sky.add(labels[i])
+    playable = playable - sky
     coverers = [s for s in v.brushes if _visible(s)] + [s for e in v.entities for s in e.solids if _visible(s)]
     B = 256.0
     buckets: dict[tuple, list] = defaultdict(list)
@@ -793,8 +846,11 @@ def _nodraw(v: VMF, rep: Report, labels, playable: set, idx, vs: float, res: Res
     for e in v.entities:
         cls = e["classname"]
         o = _origin(e)
-        if e.solids or o is None or cls.startswith(NOT_VIEWERS):
+        if e.solids or o is None or not cls.startswith(VIEWERS) or cls == "light_environment":
             continue
+        io = idx(o)
+        if io is not None and labels[io] in sky:
+            continue  # dentro da sala da skybox 3D (miniatura vista de longe pelo sky_camera)
         if any(b.point_inside(o) for b in blockers.get(cell(o), ())):
             continue  # origem enterrada em sólido não enxerga nada
         if cls.startswith("prop_") and res is not None and res.model_info is not None and e.get("model"):
@@ -978,7 +1034,7 @@ def apply_tjfix(rep: Report, fix: dict, stale: bool = False) -> None:
 LABELS = {
     "markers": "marcadores incompletos", "outputs": "outputs órfãos", "textures": "texturas inexistentes",
     "models": "modelos", "leak": "leak", "nodraw": "nodraw visível", "duplicates": "brushes duplicados",
-    "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions",
+    "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions", "phantom": "faces fantasma",
 }
 
 

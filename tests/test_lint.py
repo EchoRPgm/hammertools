@@ -374,3 +374,18 @@ def test_nodraw_scenery_prop_is_not_a_viewer():
     assert not _checks(lint.run(v, res, checks={"nodraw"}), "nodraw")
     res.model_info = lambda m: {"static": True, "mins": Vec(-16, -16, 0), "maxs": Vec(16, 16, 40)}
     assert _checks(lint.run(v, res, checks={"nodraw"}), "nodraw")
+
+
+def test_report_area_filter_and_grouping(tmp_path):
+    import json, re
+    v = _room()
+    v.add_brush(v.make_prism(Vec(0, 0, 0), Vec(64, 64, 64), "custom/sumiu").solid)       # área 0_0_0
+    v.add_brush(v.make_prism(Vec(-300, -300, 0), Vec(-236, -236, 64), "custom/sumiu").solid)  # área -1_-1_0
+    rep = lint.run(v, FakeRes(materials={"dev/dev_measuregeneric01b", "tools/toolsnodraw"}), lint.ALL_CHECKS)
+    html = lint.write_html(rep, tmp_path / "r.html", "m.vmf", area_size=256).read_text()
+    assert 'id="area"' in html and 'id="group"' in html
+    areas = json.loads(re.search(r'<script type="application/json" id="areas">(.*?)</script>', html, re.S).group(1))
+    keys = {a["k"] for a in areas}
+    assert {"0_0_0", "-2_-2_0"} <= keys and areas == sorted(areas, key=lambda a: -a["n"])
+    assert 'data-area="0_0_0"' in html and 'data-area="-2_-2_0"' in html
+    assert "data-area-go=" in html  # painel: botão "filtrar esta área"

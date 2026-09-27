@@ -128,7 +128,7 @@ def cmd_lint(args) -> int:
     print(lint.format_report(rep, args.max))
     if args.html is not None:
         out = Path(args.html) if args.html else Path(args.vmf).with_suffix(".lint.html")
-        lint.write_html(rep, out, Path(args.vmf).name, args.cluster_radius)
+        lint.write_html(rep, out, Path(args.vmf).name, args.cluster_radius, args.area_size)
         print(f"relatório: {out}")
         if not args.no_open:
             import webbrowser
@@ -281,6 +281,7 @@ def main(argv=None) -> int:
                    help="gera o relatório geral (painel de prioridades + abas por checagem) e abre no navegador; padrão <mapa>.lint.html")
     p.add_argument("--no-open", action="store_true", help="com --html: só grava, não abre o navegador")
     p.add_argument("--cluster-radius", type=float, default=256.0, help="com --html: distância máxima (u) pra juntar ocorrências na aba 'Por região'")
+    p.add_argument("--area-size", type=float, default=1024.0, help="com --html: tamanho (u) do bloco de área do filtro/agrupamento por área")
     p.set_defaults(fn=cmd_lint)
     p = sub.add_parser("content", help="monta a pasta de conteúdo do mapa (dependências que o jogo não tem) em garrysmod/addons/<mapa>_content")
     p.add_argument("vmf")

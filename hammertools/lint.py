@@ -968,7 +968,7 @@ def write_pointfile(path: Path, pts: list[Vec]) -> None:
 
 
 # --------------------------------------------------------------------------- relatório HTML
-def write_html(rep: Report, path: Path, map_name: str, cluster_radius: float = 256.0) -> Path:
-    """Relatório geral (hammertools.report): painel de prioridades + uma aba por área."""
+def write_html(rep: Report, path: Path, map_name: str, cluster_radius: float = 256.0, area_size: float = 1024.0) -> Path:
+    """Relatório geral (hammertools.report): painel de prioridades + uma aba por checagem, filtro/agrupamento por área."""
     from hammertools import report
-    return report.write(rep, path, map_name, cluster_radius)
+    return report.write(rep, path, map_name, cluster_radius, area_size)

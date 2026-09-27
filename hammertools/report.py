@@ -3,10 +3,15 @@
 Abas: Painel (prioridades + pontos quentes somando todas as checagens) · Texturas · Texturas por região ·
 Modelos · T-junctions · Leak · Geometria (nodraw, sobreposições, duplicados, grid) · Entidades (I/O e
 marcadores). Cada localização tem botão de copiar `setpos` (console do jogo) e `xyz` (Hammer: Ctrl+Shift+G).
+
+Áreas: o mapa é dividido em blocos fixos (padrão 1024u), numerados pelo total de problemas. Toda localização
+carrega `data-area`; a barra de cima tem um filtro opcional por área e "Agrupar por área", que valem pra
+todas as abas (JS). Os blocos são os mesmos do "Onde concentrar esforço" do painel.
 """
 from __future__ import annotations
 
-from collections import defaultdict
+import json
+from collections import Counter, defaultdict
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -31,12 +36,19 @@ PRIORITY = [
 ]
 
 
+AREA = 1024.0  # tamanho do bloco de área; write() ajusta
+
+
+def _akey(p: Vec) -> str:
+    return f"{int(p.x // AREA)}_{int(p.y // AREA)}_{int(p.z // AREA)}"
+
+
 def _coord(p: Vec) -> str:
     return f"{p.x:.0f} {p.y:.0f} {p.z:.0f}"
 
 
 def _loc(p: Vec, d: str = "") -> str:
-    return (f'<li><code>{escape(_coord(p))}</code>{f"<span class=d>{escape(d)}</span>" if d else ""}'
+    return (f'<li data-area="{_akey(p)}"><code>{escape(_coord(p))}</code>{f"<span class=d>{escape(d)}</span>" if d else ""}'
             f'<button data-copy="setpos {escape(_coord(p + Vec(0, 0, 64)))}" title="copiar setpos (64u acima)">setpos</button>'
             f'<button data-copy="{escape(_coord(p))}" title="copiar coordenadas (Hammer: Ctrl+Shift+G)">xyz</button></li>')
 
@@ -101,7 +113,7 @@ def _tab_textures(rep: L.Report, radius: float) -> tuple[str, str, int, int]:
         if len(g["materials"]) > 8:
             mats += f'<li class="more">+{len(g["materials"]) - 8} material(is)</li>'
         more = f'<li class="more">+{g["count"] - len(g["examples"])} ocorrência(s)</li>' if g["count"] > len(g["examples"]) else ""
-        crow.append(f'<tr data-name="{escape(" ".join(m for m, _ in g["materials"]))}" data-folder=""><td class="n">{k}</td>'
+        crow.append(f'<tr data-name="{escape(" ".join(m for m, _ in g["materials"]))}" data-folder="" data-areas="{_akey(g["center"])}"><td class="n">{k}</td>'
                     f'<td><code>{escape(_coord(g["center"]))}</code><div class="d">área ~{size.x:.0f}×{size.y:.0f}×{size.z:.0f}u</div>'
                     f'<button class="go" data-copy="setpos {escape(_coord(g["center"] + Vec(0, 0, 64)))}">setpos no centro</button></td>'
                     f'<td class="n">{g["count"]}</td><td><ul>{mats}</ul></td><td><ul>{"".join(_loc(p, d) for p, d in g["examples"])}{more}</ul></td></tr>')
@@ -140,7 +152,7 @@ def _tab_tjunctions(rep: L.Report, radius: float) -> tuple[str, int]:
     crow = []
     for k, g in enumerate(clusters, 1):
         size = g["hi"] - g["lo"]
-        crow.append(f'<tr data-name="" data-folder=""><td class="n">{k}</td><td><code>{escape(_coord(g["center"]))}</code>'
+        crow.append(f'<tr data-name="" data-folder="" data-areas="{_akey(g["center"])}"><td class="n">{k}</td><td><code>{escape(_coord(g["center"]))}</code>'
                     f'<div class="d">área ~{size.x:.0f}×{size.y:.0f}×{size.z:.0f}u</div>'
                     f'<button class="go" data-copy="setpos {escape(_coord(g["center"] + Vec(0, 0, 64)))}">setpos no centro</button></td>'
                     f'<td class="n">{g["count"]}</td><td><ul>{"".join(f"<li><code>{escape(m)}</code><span class=d>{c}×</span></li>" for m, c in g["materials"][:5])}</ul></td></tr>')
@@ -223,7 +235,7 @@ def _dashboard(rep: L.Report, radius: float) -> str:
         cards.append((level, title, summary, what, top, tab))
     card_html = []
     for level, title, summary, what, top, tab in cards:
-        li = "".join(f'<li><span class="nm">{escape(n)}</span>{f"<span class=d>{escape(extra)}</span>" if extra else ""}'
+        li = "".join(f'<li{f" data-area={_akey(p)}" if p is not None else ""}><span class="nm">{escape(n)}</span>{f"<span class=d>{escape(extra)}</span>" if extra else ""}'
                      + (f'<button data-copy="setpos {escape(_coord(p + Vec(0, 0, 64)))}">setpos</button>' if p is not None else "") + "</li>"
                      for n, extra, p in top)
         card_html.append(f'<div class="card {level}"><div class="ch"><span class="lv {level}">{"erro" if level == "erro" else "risco" if level == "risco" else "aviso"}</span>'
@@ -238,15 +250,17 @@ def _dashboard(rep: L.Report, radius: float) -> str:
             pts.append(((i.level, i.check), i.pos, ""))
     for f in rep.data.get("tjunctions", [])[:2000]:
         pts.append((("aviso", "tjunctions"), f["center"], ""))
-    hot = hotspots(pts, 1024.0)
+    hot = hotspots(pts, AREA)
     hot.sort(key=lambda g: (-sum(c for (lv, _), c in g["materials"] if lv == "erro"), -g["count"]))
     hrows = []
     for k, g in enumerate(hot[:8], 1):
         size = g["hi"] - g["lo"]
         br = "".join(f'<span class="tag {lv}">{escape(L.LABELS[c])} {n}</span>' for (lv, c), n in g["materials"])
-        hrows.append(f'<tr data-name="" data-folder=""><td class="n">{k}</td><td><code>{escape(_coord(g["center"]))}</code>'
+        key = _akey(g["center"])
+        hrows.append(f'<tr data-name="" data-folder="" data-areas="{key}"><td class="n">{k}</td><td><code>{escape(_coord(g["center"]))}</code>'
                      f'<div class="d">área ~{size.x:.0f}×{size.y:.0f}×{size.z:.0f}u</div>'
-                     f'<button class="go" data-copy="setpos {escape(_coord(g["center"] + Vec(0, 0, 64)))}">setpos no centro</button></td>'
+                     f'<button class="go" data-copy="setpos {escape(_coord(g["center"] + Vec(0, 0, 64)))}">setpos no centro</button> '
+                     f'<button class="go" data-area-go="{key}">filtrar esta área</button></td>'
                      f'<td class="n">{g["count"]}</td><td>{br}</td></tr>')
     ok_checks = [L.LABELS[c] for c in L.ALL_CHECKS if c in rep.ran and c not in rep.skipped and not any(i.check == c for i in rep.issues)
                  and not (c == "tjunctions" and rep.data.get("tjunctions"))]
@@ -255,8 +269,30 @@ def _dashboard(rep: L.Report, radius: float) -> str:
             + (f'<p class="sub">Limpas: {escape(", ".join(ok_checks))}</p>' if ok_checks else "")
             + "".join(f'<p class="warn">Pulada: {escape(L.LABELS[c])} — {escape(w)}</p>' for c, w in rep.skipped.items())
             + '<h2>Prioridades</h2><div class="cards">' + ("".join(card_html) or '<p class="ok">Nada a resolver.</p>') + "</div>"
-            + "<h2>Onde concentrar esforço</h2><p class='sub'>Blocos de 1024u que juntam mais problemas (todas as checagens), erros primeiro.</p>"
+            + f"<h2>Onde concentrar esforço</h2><p class='sub'>Blocos de {AREA:.0f}u que juntam mais problemas (todas as checagens), erros primeiro. "
+            "O mesmo bloco é a área do filtro lá em cima.</p>"
             + _table(["#", "Centro", "Ocorr.", "O quê"], hrows, "Nenhuma ocorrência com posição."))
+
+
+def _areas(rep: L.Report) -> list[dict]:
+    """Blocos com problema, do mais carregado pro menos: chave, total, centro e composição por checagem."""
+    pts = []
+    for i in rep.issues:
+        if i.check == "textures":
+            pts += [(i.check, p) for p, _ in i.locations]
+        elif i.pos is not None:
+            pts.append((i.check, i.pos))
+    pts += [("tjunctions", f["center"]) for f in rep.data.get("tjunctions", [])]
+    cells: dict[str, list] = defaultdict(list)
+    for c, p in pts:
+        cells[_akey(p)].append((c, p))
+    out = []
+    for k, lst in cells.items():
+        center = sum((p for _, p in lst), Vec()) / len(lst)
+        out.append({"k": k, "n": len(lst), "c": _coord(center),
+                    "w": ", ".join(f"{L.LABELS[c]} {n}" for c, n in Counter(c for c, _ in lst).most_common(3))})
+    out.sort(key=lambda a: -a["n"])
+    return out
 
 
 # --------------------------------------------------------------------------- página
@@ -272,7 +308,11 @@ main { max-width:1240px; margin:0 auto; padding:24px 16px 48px; } h1 { font-size
 .tabs { display:flex; gap:2px; border-bottom:1px solid var(--line); margin:10px 0 16px; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin }
 .tab { border:0; background:transparent; color:var(--muted); font:inherit; padding:8px 12px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap }
 .tab.on { color:var(--fg); border-bottom-color:var(--accent); font-weight:600 } .tab b { font-weight:500; color:var(--muted); font-size:12px }
-.panel[hidden], .tools[hidden] { display:none } .tools { display:flex; gap:8px; margin:0 0 12px }
+.panel[hidden], .tools[hidden], [hidden] { display:none !important } .tools { display:flex; gap:8px; margin:0 0 12px; flex-wrap:wrap; align-items:center }
+select { padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); font:inherit; max-width:100% }
+label.tg { display:flex; gap:6px; align-items:center; color:var(--muted); font-size:14px; cursor:pointer; white-space:nowrap }
+tr.grp td { background:var(--chip); font-size:13px; padding:6px 12px } tr.grp b { color:var(--accent) }
+.areanote { color:var(--accent); font-size:13px; margin:0 0 10px }
 input[type=search] { flex:1 1 240px; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); font:inherit }
 .chips { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px } .chip { border:1px solid var(--line); background:var(--chip); color:var(--fg); border-radius:999px; padding:4px 10px; cursor:pointer; font:inherit; font-size:13px } .chip.on { border-color:var(--accent); color:var(--accent) }
 .tablewrap { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:10px } table { width:100%; border-collapse:collapse; min-width:680px }
@@ -293,25 +333,96 @@ ul.path { gap:2px } #toast { position:fixed; bottom:16px; left:50%; transform:tr
 
 JS = """
 const tabs = [...document.querySelectorAll('.tab')];
+const q = document.getElementById('q'), sel = document.getElementById('area'), grp = document.getElementById('group');
+const AREAS = JSON.parse(document.getElementById('areas').textContent);
+const rank = {}; AREAS.forEach((a, i) => rank[a.k] = i);
+const areaLabel = k => k in rank ? `#${rank[k] + 1} · ${AREAS[rank[k]].c} · ${AREAS[rank[k]].n} problema(s)` : 'sem área';
+AREAS.forEach((a, i) => { const o = document.createElement('option'); o.value = a.k; o.textContent = `#${i + 1} · centro ${a.c} · ${a.n} problema(s) — ${a.w}`; sel.appendChild(o); });
+let folder = '', cur = 'dash';
+// cada linha: áreas (das localizações ou data-areas) e a principal (a que mais aparece; empate = a mais carregada)
+const rows = [...document.querySelectorAll('.panel tbody tr')];
+rows.forEach((r, i) => {
+  r._i = i;
+  const ks = [...r.querySelectorAll('li[data-area]')].map(li => li.dataset.area).concat(r.dataset.areas ? r.dataset.areas.split(' ') : []);
+  r._areas = new Set(ks);
+  const c = {}; ks.forEach(k => c[k] = (c[k] || 0) + 1);
+  r._main = Object.keys(c).sort((a, b) => (c[b] - c[a]) || ((rank[a] ?? 1e9) - (rank[b] ?? 1e9)))[0] || '';
+});
 function show(id) {
+  cur = id;
   tabs.forEach(t => t.classList.toggle('on', t.dataset.tab === id));
   document.querySelectorAll('.panel').forEach(p => p.hidden = p.id !== 'p-' + id);
-  document.getElementById('tools').hidden = id === 'dash';
+  q.hidden = id === 'dash';
   try { localStorage.setItem('ht-tab', id); } catch (_) {}
+}
+function regroup() {
+  document.querySelectorAll('tr.grp').forEach(h => h.remove());
+  document.querySelectorAll('.panel tbody').forEach(tb => {
+    const rs = [...tb.rows];
+    rs.sort(grp.checked ? (a, b) => ((rank[a._main] ?? 1e9) - (rank[b._main] ?? 1e9)) || (a._i - b._i) : (a, b) => a._i - b._i);
+    rs.forEach(r => tb.appendChild(r));
+    if (!grp.checked) return;
+    const cols = tb.closest('table').querySelectorAll('thead th').length;
+    let last = null;
+    rs.forEach(r => {
+      if (r._main === last) return;
+      last = r._main;
+      const h = document.createElement('tr'); h.className = 'grp'; h._main = r._main;
+      h.innerHTML = `<td colspan="${cols}"><b>Área ${areaLabel(r._main)}</b></td>`;
+      tb.insertBefore(h, r);
+    });
+  });
+}
+function apply() {
+  const t = q.value.toLowerCase(), a = sel.value;
+  rows.forEach(r => {
+    const pan = r.closest('.panel').id;
+    const txt = pan === 'p-dash' || ((!folder || !r.dataset.folder || r.dataset.folder === folder) && (!t || (r.dataset.name || '').includes(t) || (r.dataset.folder || '').includes(t) || r.textContent.toLowerCase().includes(t)));
+    r.hidden = !(txt && (!a || r._areas.has(a)));
+  });
+  // localizações fora da área somem de todas as listas (cartões do painel, caminho do leak, exemplos)
+  document.querySelectorAll('li[data-area]').forEach(li => li.hidden = !!a && li.dataset.area !== a);
+  document.querySelectorAll('tr.grp').forEach(h => {
+    let n = h.nextElementSibling, vis = 0;
+    while (n && !n.classList.contains('grp')) { if (!n.hidden) vis++; n = n.nextElementSibling; }
+    h.hidden = !vis;
+    const b = h.querySelector('b'); if (b) b.nextSibling ? b.nextSibling.textContent = ` · ${vis} linha(s)` : b.insertAdjacentText('afterend', ` · ${vis} linha(s)`);
+  });
+  // tabela sem nada visível: some e dá lugar a um aviso
+  document.querySelectorAll('.panel .tablewrap').forEach(w => {
+    const any = [...w.querySelectorAll('tbody tr:not(.grp)')].some(r => !r.hidden);
+    w.hidden = !any;
+    let n = w.nextElementSibling;
+    if (!n || !n.classList.contains('none')) { n = document.createElement('p'); n.className = 'none sub'; n.textContent = 'Nada nesta área / filtro.'; w.after(n); }
+    n.hidden = any;
+  });
+  // número da aba: com filtro de área, quantas linhas da aba caem nela
+  tabs.forEach(tb => {
+    const b = tb.querySelector('b'); if (!b) return;
+    if (b.dataset.all === undefined) b.dataset.all = b.textContent;
+    const pr = [...document.querySelectorAll('#p-' + tb.dataset.tab + ' tbody tr:not(.grp)')];
+    b.textContent = a ? `${pr.filter(r => !r.hidden).length} na área` : b.dataset.all;
+  });
+  const note = document.getElementById('areanote');
+  note.hidden = !a; note.textContent = a ? `Mostrando só a área ${areaLabel(a)} em todas as abas.` : '';
+  try { localStorage.setItem('ht-area', a); localStorage.setItem('ht-group', grp.checked ? '1' : ''); } catch (_) {}
 }
 tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.tab)));
 document.querySelectorAll('[data-goto]').forEach(b => b.addEventListener('click', () => { show(b.dataset.goto); window.scrollTo(0, 0); }));
-try { const s = localStorage.getItem('ht-tab'); if (s && document.getElementById('p-' + s)) show(s); } catch (_) {}
-const q = document.getElementById('q'); let folder = '';
-function apply() {
-  const t = q.value.toLowerCase();
-  document.querySelectorAll('.panel:not(#p-dash) tbody tr').forEach(r => r.hidden = !((!folder || !r.dataset.folder || r.dataset.folder === folder) && (!t || (r.dataset.name || '').includes(t) || (r.dataset.folder || '').includes(t) || r.textContent.toLowerCase().includes(t))));
-}
+document.querySelectorAll('[data-area-go]').forEach(b => b.addEventListener('click', () => { sel.value = b.dataset.areaGo; apply(); window.scrollTo(0, 0); }));
 q.addEventListener('input', apply);
+sel.addEventListener('change', apply);
+grp.addEventListener('change', () => { regroup(); apply(); });
 document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
   folder = folder === c.dataset.folder ? '' : c.dataset.folder;
   document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x.dataset.folder === folder)); apply();
 }));
+try {
+  const s = localStorage.getItem('ht-tab'); if (s && document.getElementById('p-' + s)) show(s);
+  const a = localStorage.getItem('ht-area'); if (a && a in rank) sel.value = a;
+  grp.checked = localStorage.getItem('ht-group') === '1';
+} catch (_) {}
+show(cur); regroup(); apply();
 const toast = document.getElementById('toast');
 document.addEventListener('click', e => {
   const b = e.target.closest('button[data-copy]'); if (!b) return;
@@ -325,7 +436,9 @@ document.addEventListener('click', e => {
 """
 
 
-def write(rep: L.Report, path: Path, map_name: str, cluster_radius: float = 256.0) -> Path:
+def write(rep: L.Report, path: Path, map_name: str, cluster_radius: float = 256.0, area_size: float = 1024.0) -> Path:
+    global AREA
+    AREA = float(area_size)
     tex, reg, n_tex, n_reg = _tab_textures(rep, cluster_radius)
     mdl, n_mdl = _tab_models(rep)
     tj, n_tj = _tab_tjunctions(rep, cluster_radius)
@@ -337,6 +450,7 @@ def write(rep: L.Report, path: Path, map_name: str, cluster_radius: float = 256.
               ("geo", "Geometria", n_geo, geo), ("ent", "Entidades", n_ent, ent)]
     tabs = "".join(f'<button class="tab{" on" if k == 0 else ""}" data-tab="{pid}">{escape(t)}{f" <b>{n}</b>" if n is not None else ""}</button>'
                    for k, (pid, t, n, _) in enumerate(panels))
+    areas_json = json.dumps(_areas(rep)).replace("</", "<\\/")
     body = "".join(f'<section class="panel" id="p-{pid}"{"" if k == 0 else " hidden"}>{html}</section>' for k, (pid, _, _, html) in enumerate(panels))
     page = f"""<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -344,10 +458,15 @@ def write(rep: L.Report, path: Path, map_name: str, cluster_radius: float = 256.
 <h1>Lint: {escape(map_name)}</h1>
 <p class="sub">{escape(datetime.now().strftime("%d/%m/%Y %H:%M"))} · fontes: {escape(str(rep.stats.get("recursos", "")))}</p>
 <div class="tabs">{tabs}</div>
-<div class="tools" id="tools" hidden><input type="search" id="q" placeholder="Filtrar a aba (nome, pasta, texto)"></div>
+<div class="tools" id="tools"><input type="search" id="q" placeholder="Filtrar a aba (nome, pasta, texto)" hidden>
+<select id="area" title="Área = bloco de {AREA:.0f}u; vale pra todas as abas"><option value="">Todas as áreas</option></select>
+<label class="tg"><input type="checkbox" id="group"> Agrupar por área</label></div>
+<p class="areanote" id="areanote" hidden></p>
 {body}
 <p class="sub" style="margin-top:18px"><b>setpos</b> copia um comando pro console do jogo (64u acima do ponto); <b>xyz</b> copia as coordenadas pro Hammer++ (Ctrl+Shift+G).</p>
-</main><div id="toast">copiado</div><script>{JS}</script></body></html>"""
+</main><div id="toast">copiado</div>
+<script type="application/json" id="areas">{areas_json}</script>
+<script>{JS}</script></body></html>"""
     path = Path(path)
     path.write_text(page, encoding="utf-8")
     return path

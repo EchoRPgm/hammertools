@@ -1,5 +1,9 @@
 """`ht fix`: consertos automáticos e seguros no mapa. Grava sempre um VMF novo (o fonte não é tocado).
 
+fade: prop_static sem distância de desaparecer ganha fademindist/fademaxdist pelo tamanho do modelo (lint.FADE_TABLE);
+props encaixados em parede (janela, batente) e modelos >= 512u ficam sem fade de propósito.
+detail-small (opcional): brushes de mundo pequenos/finos longe do vazio viram func_detail (lint checagem perf).
+
 shaders: face de brush com material de modelo (VertexLitGeneric) não recebe lightmap e a luz sai errada (muda
 com a distância). Cria uma cópia LightmappedGeneric do material com os mesmos parâmetros de textura em
 materials/<prefixo>/<caminho original>.vmt e troca nas faces de brush (overlays/decals/props não mudam).
@@ -72,3 +76,24 @@ def write_materials(res: FixResult, content_dir: Path) -> list[Path]:
         p.write_text(text)
         written.append(p)
     return written
+
+
+def fix_fades(v: VMF, res: lint.Resources) -> int:
+    """Aplica o fade sugerido pela checagem perf nos prop_static sem fade. Devolve quantos mudou."""
+    rep = lint.run(v, res, {"perf"})
+    by_id = {e.id: e for e in v.entities}
+    n = 0
+    for eid, fmin, fmax in rep.data.get("perf_fade", []):
+        e = by_id.get(eid)
+        if e is not None:
+            e["fademindist"] = str(fmin)
+            e["fademaxdist"] = str(fmax)
+            n += 1
+    return n
+
+
+def fix_small_world(v: VMF, res: lint.Resources) -> int:
+    """Brushes de mundo pequenos/finos longe do vazio -> func_detail (menos cortes na árvore BSP)."""
+    from hammertools import bspcheck
+    rep = lint.run(v, res, {"perf"})
+    return bspcheck.to_detail(v, rep.data.get("perf_detail", []))

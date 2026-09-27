@@ -34,7 +34,7 @@ from hammertools.core import geom
 from hammertools.core import vmf as vmfio
 
 MAX_EXAMPLES = 5
-ALL_CHECKS = ("markers", "outputs", "logic", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid", "tjunctions", "phantom")
+ALL_CHECKS = ("markers", "outputs", "logic", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid", "tjunctions", "phantom", "perf")
 
 # texturas de ferramenta que NÃO selam o mapa (brush com qualquer face dessas não conta pro selo)
 NONSEAL_TOOLS = {
@@ -345,7 +345,10 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
     if "tjunctions" in checks:
         _tjunctions(v, rep)
 
-    if "leak" in checks or "nodraw" in checks:
+    if "perf" in checks:
+        _prop_fades(v, res, rep)
+
+    if "leak" in checks or "nodraw" in checks or "perf" in checks:
         try:
             import numpy  # noqa: F401
             import scipy  # noqa: F401
@@ -353,6 +356,8 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
             for c in ("leak", "nodraw"):
                 if c in checks:
                     rep.skipped[c] = "precisa de numpy e scipy (pip install numpy scipy)"
+            if "perf" in checks:
+                rep.stats["mundo -> detail"] = "pulado: precisa de numpy e scipy"
         else:
             _voxel_checks(v, res, rep, checks, voxel)
     return rep
@@ -681,6 +686,144 @@ def _logic(v: VMF, rep: Report) -> None:
             dfs(e, out, e, out, 0.0, {(id(e), out)}, [f"{e['classname']} '{e.get('targetname', '')}'.{out}"])
 
 
+# fade de prop pelo tamanho do modelo (maior dimensão): parecido com o que o rp_surdonoso já usa (mediana 2200) e
+# com o gm_fork (97% dos props com fade). Modelo >= 512u (prédio, árvore gigante) não some.
+FADE_TABLE = ((32, 1500), (128, 2500), (256, 3500), (512, 5000))
+PROP_CLASSES = ("prop_static", "prop_dynamic", "prop_dynamic_override", "prop_physics", "prop_physics_multiplayer")
+
+
+def fade_for(size: float | None) -> int | None:
+    """fademaxdist sugerido pra um modelo com essa maior dimensão (None = não precisa sumir)."""
+    if size is None:
+        return 2500
+    for limit, dist in FADE_TABLE:
+        if size < limit:
+            return dist
+    return None
+
+
+def _prop_fades(v: VMF, res: Resources, rep: Report) -> None:
+    """Props sem distância de desaparecer: são desenhados até o fim do mapa visível. Agrupa por modelo."""
+    by_model: dict[str, list] = defaultdict(list)
+    fix = []
+    embedded = 0
+    B = 256.0
+    world: dict[tuple, list] = defaultdict(list)
+    for b in list(v.brushes) + [b for e in v.by_class["func_detail"] for b in e.solids]:   # parede: mundo ou detail
+        if all(x.mat.lower().startswith("tools/") for x in b.sides):
+            continue
+        blo, bhi = b.get_bbox()
+        for bx in range(int(blo.x // B), int(bhi.x // B) + 1):
+            for by in range(int(blo.y // B), int(bhi.y // B) + 1):
+                world[(bx, by)].append((blo, bhi))
+
+    def is_embedded(e, info) -> bool:
+        """Prop atravessando a espessura de um brush de mundo (janela, batente, peça de fachada): se sumir, abre buraco."""
+        from srctools import Angle, Matrix
+        o = _origin(e)
+        if o is None or not info or "mins" not in info:
+            return False
+        try:
+            m = Matrix.from_angle(Angle.from_str(e.get("angles", "0 0 0")))
+        except ValueError:
+            return False
+        mn, mx = info["mins"], info["maxs"]
+        corners = [Vec(x, y, z) @ m + o for x in (mn.x, mx.x) for y in (mn.y, mx.y) for z in (mn.z, mx.z)]
+        lo = Vec(min(c.x for c in corners), min(c.y for c in corners), min(c.z for c in corners))
+        hi = Vec(max(c.x for c in corners), max(c.y for c in corners), max(c.z for c in corners))
+        h = max(hi.z - lo.z, 1.0)
+        touch = set()   # (eixo, lado) em que um brush de mundo encosta no prop
+        cands = {id(b): b for bx in (int(lo.x // B), int(hi.x // B)) for by in (int(lo.y // B), int(hi.y // B))
+                 for b in world.get((bx, by), ())}.values()
+        for blo, bhi in cands:
+            ox = min(hi.x, bhi.x) - max(lo.x, blo.x)
+            oy = min(hi.y, bhi.y) - max(lo.y, blo.y)
+            oz = min(hi.z, bhi.z) - max(lo.z, blo.z)
+            if oz <= 0.5 * h:
+                continue
+            if ox > 1 and oy > 1:
+                return True   # atravessa a espessura de um brush (peça de fachada)
+            # encosta num lado: sobrepõe no outro eixo horizontal e a distância no eixo é <= 2u
+            for a, other_ov in ((0, oy), (1, ox)):
+                if other_ov <= 1:
+                    continue
+                if abs(bhi[a] - lo[a]) <= 2 or (blo[a] < lo[a] <= bhi[a] + 2 and bhi[a] <= lo[a] + 2):
+                    touch.add((a, -1))
+                if abs(blo[a] - hi[a]) <= 2:
+                    touch.add((a, 1))
+        # preenche um vão: brush encostado dos dois lados opostos do mesmo eixo (janela entre batentes)
+        return any((a, -1) in touch and (a, 1) in touch for a in (0, 1))
+
+    for e in v.entities:
+        if e["classname"] not in PROP_CLASSES or not e.get("model"):
+            continue
+        try:
+            if float(e.get("fademaxdist", 0) or 0) > 0:
+                continue
+        except ValueError:
+            pass
+        info = res.model_info(e["model"]) if res.model_info else None
+        size = None
+        if info and "mins" in info:
+            d = info["maxs"] - info["mins"]
+            size = max(d.x, d.y, d.z) * float(e.get("modelscale", 1) or 1)
+        dist = fade_for(size)
+        if dist is None:
+            continue
+        if is_embedded(e, info):
+            embedded += 1
+            continue
+        by_model[e["model"].lower()].append((e, dist))
+        if e["classname"] == "prop_static":
+            fix.append((e.id, int(dist * 0.8), dist))
+    for mdl, lst in sorted(by_model.items(), key=lambda kv: -len(kv[1])):
+        e, dist = lst[0]
+        rep.add("aviso", "perf", f"{len(lst)} prop(s) '{mdl}' sem distância de desaparecer (sugerido {int(dist * 0.8)}/{dist}u)",
+                _origin(e), group="sem fade", name=mdl, count=len(lst), examples=[(_origin(x), x["classname"]) for x, _ in lst[:MAX_EXAMPLES] if _origin(x)])
+    rep.data["perf_fade"] = fix
+    rep.stats["props sem fade"] = sum(len(x) for x in by_model.values())
+    rep.stats["props encaixados na parede (sem fade de propósito)"] = embedded
+
+
+def _small_world(v: VMF, rep: Report, labels, outside, idx, vs: float) -> None:
+    """Brushes de mundo pequenos ou finos, longe do vazio (não fazem parte do selo) e fora de areaportal: como mundo
+    eles picotam a árvore BSP e a visibilidade à toa; como func_detail não. Só aviso/sugestão (ht fix --detail-small)."""
+    portals = [s.get_bbox() for e in v.entities if e["classname"] in ("func_areaportal", "func_areaportalwindow") for s in e.solids]
+    ids = []
+    for s in v.brushes:
+        if any(x.is_disp for x in s.sides) or all(x.mat.lower().startswith("tools/") for x in s.sides):
+            continue
+        lo, hi = s.get_bbox()
+        d = hi - lo
+        mx, mn = max(d.x, d.y, d.z), min(d.x, d.y, d.z)
+        if not (mx <= 64 or (mn <= 8 and mx <= 256)):
+            continue
+        if any(all(plo[a] - 1 <= hi[a] and lo[a] <= phi[a] + 1 for a in range(3)) for plo, phi in portals):
+            continue
+        near_void = False
+        x = lo.x - vs
+        while x <= hi.x + vs and not near_void:
+            y = lo.y - vs
+            while y <= hi.y + vs and not near_void:
+                z = lo.z - vs
+                while z <= hi.z + vs:
+                    i = idx(Vec(x, y, z))
+                    if i is None or labels[i] == outside:
+                        near_void = True
+                        break
+                    z += vs
+                y += vs
+            x += vs
+        if near_void:
+            continue
+        ids.append(s.id)
+    rep.data["perf_detail"] = ids
+    if ids:
+        rep.add("aviso", "perf", f"{len(ids)} brush(es) de mundo pequenos/finos longe do vazio deveriam ser func_detail "
+                f"(picotam a árvore BSP e a visibilidade); ht fix --detail-small converte", None, group="mundo -> detail", count=len(ids))
+    rep.stats["mundo -> detail"] = len(ids)
+
+
 MODEL_SHADERS = {"vertexlitgeneric", "vertexlitgeneric_dx6", "eyerefract", "eyes", "teeth", "character"}
 
 
@@ -799,6 +942,9 @@ def _voxel_checks(v: VMF, res: Resources, rep: Report, checks: set, voxel: float
     if "nodraw" in checks:
         n = _nodraw(v, rep, labels, playable, idx, vs, res)
         rep.stats["nodraw visíveis"] = n
+
+    if "perf" in checks:
+        _small_world(v, rep, labels, outside, idx, vs)
 
 
 def _ray_entry(planes, o: Vec, d: Vec) -> float | None:
@@ -1111,7 +1257,7 @@ def apply_tjfix(rep: Report, fix: dict, stale: bool = False) -> None:
 LABELS = {
     "markers": "marcadores incompletos", "outputs": "outputs órfãos", "textures": "texturas inexistentes",
     "models": "modelos", "leak": "leak", "nodraw": "nodraw visível", "duplicates": "brushes duplicados",
-    "logic": "lógica de entidades", "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions", "phantom": "faces fantasma/vazadas",
+    "logic": "lógica de entidades", "perf": "desempenho", "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions", "phantom": "faces fantasma/vazadas",
 }
 
 

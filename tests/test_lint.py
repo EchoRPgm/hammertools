@@ -491,3 +491,22 @@ def test_logic_checks():
     assert any("'vidro' está em 2 templates" in m for m in msgs)
     loops = [m for m in msgs if "laço" in m]
     assert len(loops) == 1 and "loop" in loops[0] and "timer" not in loops[0]
+
+
+def test_perf_prop_fade_and_embedded_window():
+    from hammertools import fix
+    v = _room()
+    v.create_ent("prop_static", origin="0 0 0", model="models/caixa.mdl")                  # solta no chão: ganha fade
+    # janela no vão entre duas paredes (batentes) em y=-64..-48 e y=48..64
+    v.add_brush(v.make_prism(Vec(200, -64, 0), Vec(216, -48, 128), "dev/dev_measuregeneric01b").solid)
+    v.add_brush(v.make_prism(Vec(200, 48, 0), Vec(216, 64, 128), "dev/dev_measuregeneric01b").solid)
+    v.create_ent("prop_static", origin="208 0 64", model="models/janela.mdl")               # encaixada: sem fade
+    sizes = {"models/caixa.mdl": (Vec(-12, -12, 0), Vec(12, 12, 20)), "models/janela.mdl": (Vec(-4, -48, -48), Vec(4, 48, 48))}
+    res = FakeRes()
+    res.model_info = lambda m: {"static": True, "mins": sizes[m.lower()][0], "maxs": sizes[m.lower()][1]}
+    rep = lint.run(v, res, {"perf"})
+    msgs = [i.msg for i in _checks(rep, "perf")]
+    assert any("caixa.mdl" in m and "1200/1500" in m for m in msgs) and not any("janela" in m for m in msgs)
+    assert fix.fix_fades(v, res) == 1
+    caixa = next(e for e in v.entities if e.get("model") == "models/caixa.mdl")
+    assert (caixa["fademindist"], caixa["fademaxdist"]) == ("1200", "1500")

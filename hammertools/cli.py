@@ -122,7 +122,7 @@ def cmd_lint(args) -> int:
     if bad:
         print(f"checagem desconhecida: {', '.join(sorted(bad))} (válidas: {', '.join(lint.ALL_CHECKS)})", file=sys.stderr)
         return 2
-    need_res = checks & {"textures", "models", "leak", "nodraw"}
+    need_res = checks & {"textures", "models", "leak", "nodraw", "perf"}
     res = lint.Resources.from_game(args.game, args.bsp, args.extra or ()) if need_res else lint.Resources()
     compiled = Path(args.compiled) if args.compiled else None
     if compiled is None and "phantom" in checks:
@@ -278,6 +278,10 @@ def cmd_fix(args) -> int:
     for old, new in r.replaced.items():
         print(f"  {old} -> {new}")
     print(f"{len(r.replaced)} material(is) de modelo trocados em {r.faces} face(s) de brush")
+    if not args.no_fade:
+        print(f"{fix.fix_fades(v, res)} prop_static ganharam distância de desaparecer")
+    if args.detail_small:
+        print(f"{fix.fix_small_world(v, res)} brush(es) de mundo pequenos -> func_detail")
     if args.dry_run:
         return 0
     content = Path(args.content) if args.content else lint._find_game(args.game) / "addons" / f"{src.stem}_content"
@@ -332,11 +336,13 @@ def main(argv=None) -> int:
     p.add_argument("--dry-run", action="store_true", help="só lista, não grava")
     p.add_argument("--max", type=int, default=30)
     p.set_defaults(fn=cmd_content)
-    p = sub.add_parser("fix", help="consertos automáticos seguros num VMF novo (material de modelo em brush)")
+    p = sub.add_parser("fix", help="consertos automáticos seguros num VMF novo (material de modelo em brush, fade de props; --detail-small)")
     p.add_argument("vmf"); p.add_argument("-o", "--out", help="padrão: <mapa>_fix.vmf")
     p.add_argument("--game"); p.add_argument("--bsp", help="BSP com conteúdo embutido (pra achar os .vmt)")
     p.add_argument("--content", help="pasta onde gravar os .vmt novos (padrão: <jogo>/addons/<mapa>_content)")
     p.add_argument("--prefix", help="pasta dos materiais novos dentro de materials/ (padrão: <mapa>_fix)")
+    p.add_argument("--no-fade", action="store_true", help="não mexe na distância de desaparecer dos prop_static")
+    p.add_argument("--detail-small", action="store_true", help="converte brushes de mundo pequenos/finos longe do vazio em func_detail")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_fix)
     p = sub.add_parser("optimize", help="junta blocos retangulares fatiados com a mesma textura (menos t-junctions) num VMF novo")

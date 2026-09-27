@@ -368,6 +368,13 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
 
     if "perf" in checks:
         _prop_fades(v, res, rep)
+        from hammertools.fix import hidden_detail_faces
+        hid = hidden_detail_faces(v)
+        rep.stats["faces de detail escondidas"] = len(hid)
+        if hid:
+            rep.add("aviso", "perf", f"{len(hid)} face(s) de func_detail totalmente escondidas por outros brushes: o vbsp não "
+                    f"descarta face de detail, elas gastam faces e vértices à toa (ht fix --nodraw-hidden; o ht-vbsp faz se "
+                    f"estourar vértices)", None, group="detail escondido", count=len(hid))
 
     if "leak" in checks or "nodraw" in checks or "perf" in checks:
         try:

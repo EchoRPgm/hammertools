@@ -97,3 +97,41 @@ def fix_small_world(v: VMF, res: lint.Resources) -> int:
     from hammertools import bspcheck
     rep = lint.run(v, res, {"perf"})
     return bspcheck.to_detail(v, rep.data.get("perf_detail", []))
+
+
+def hidden_detail_faces(v: VMF) -> list:
+    """Faces de func_detail totalmente cobertas por outro brush visível (mundo ou detail): o vbsp descarta as faces do
+    MUNDO escondidas por CSG, mas as de detail continuam gerando faces e vértices. Amostras espalhadas pela face
+    (centro, 1/3 e 2/3 até cada vértice e perto dos cantos), 0,5u à frente de cada uma, todas dentro de outro brush."""
+    from collections import defaultdict
+    from hammertools.core import geom
+    world = [s for s in v.brushes if lint._visible(s) and not any(x.is_disp for x in s.sides)]
+    detail = [s for e in v.by_class["func_detail"] for s in e.solids]
+    B = 256.0
+    buckets = defaultdict(list)
+    for s in world + detail:
+        lo, hi = s.get_bbox()
+        for bx in range(int(lo.x // B), int(hi.x // B) + 1):
+            for by in range(int(lo.y // B), int(hi.y // B) + 1):
+                for bz in range(int(lo.z // B), int(hi.z // B) + 1):
+                    buckets[(bx, by, bz)].append(s)
+    out = []
+    for s in detail:
+        for side, poly in geom.face_polys(s):
+            if len(poly) < 3 or side.mat.lower().startswith("tools/") or side.is_disp:
+                continue
+            n, _ = geom.outward(side)
+            ctr = geom.centroid(poly)
+            samples = [ctr] + [ctr + (vx - ctr) * t for vx in poly for t in (1 / 3, 2 / 3, 0.97)]
+            if all(any(o is not s and o.point_inside(q) for o in buckets.get((int(q.x // B), int(q.y // B), int(q.z // B)), ()))
+                   for q in (pt + n * 0.5 for pt in samples)):
+                out.append((s, side))
+    return out
+
+
+def nodraw_hidden_detail(v: VMF) -> int:
+    """Põe nodraw nas faces de detail escondidas (não muda nada na tela; economiza faces e vértices)."""
+    faces = hidden_detail_faces(v)
+    for _, side in faces:
+        side.mat = "tools/toolsnodraw"
+    return len(faces)

@@ -245,3 +245,41 @@ def test_hint_box_for_phantom_pair_matches_validated_fix():
     assert bspcheck.hint_boxes([big, small]) == [(Vec(3249, -10970, -376), Vec(3257, -10826, -256))]
     # sem par: pra trás da face
     assert bspcheck.hint_boxes([big]) == [(Vec(3249, -11066, -376), Vec(3257, -10826, -256))]
+
+
+def test_hidden_detail_faces_and_nodraw():
+    from srctools import VMF, Vec
+    from srctools.vmf import Entity
+    from hammertools import fix
+    v = VMF()
+    wall = v.make_prism(Vec(0, 0, 0), Vec(16, 128, 128), "dev/dev_measuregeneric01b").solid
+    v.add_brush(wall)
+    # tábua de detail entrando 4u na parede: a face de trás fica escondida dentro dela
+    board = v.make_prism(Vec(12, 32, 32), Vec(24, 96, 96), "wood/tabua").solid
+    v.add_ent(Entity(v, {"classname": "func_detail"}, solids=[board]))
+    from hammertools.core import geom
+    hid = fix.hidden_detail_faces(v)
+    assert len(hid) == 1 and geom.outward(hid[0][1])[0].x < -0.5   # a face de trás, dentro da parede
+    assert fix.nodraw_hidden_detail(v) == 1
+    assert sum(1 for s in board.sides if s.mat == "tools/toolsnodraw") == 1
+
+
+def test_wrapper_reduces_verts_before_tjunctions(room, tmp_path, monkeypatch, capsys):
+    import json
+    from srctools import Vec
+    from srctools.vmf import Entity
+    src = tmp_path / "mapsrc" / "m.vmf"; src.parent.mkdir()
+    board = room.make_prism(Vec(-512, 0, 0), Vec(-500, 64, 64), "wood/tabua").solid   # entra na parede -x da sala
+    room.add_ent(Entity(room, {"classname": "func_detail"}, solids=[board]))
+    vmfio.save(room, src)
+    fake = tmp_path / "vbsp.py"
+    fake.write_text("import sys, pathlib\np = pathlib.Path(sys.argv[-1])\n"
+                    "if p.with_suffix('.vmf').read_text().lower().count('wood/tabua') >= 6: print('Too many unique verts, max = 65536'); sys.exit(1)\n"
+                    "p.with_suffix('.bsp').write_text('ok')\n")
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    monkeypatch.setenv("HT_NO_PHANTOM", "1")
+    assert vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]) == 0
+    out = capsys.readouterr().out
+    assert "teto de vértices" in out and "escondidas -> nodraw" in out
+    verts = json.loads(src.with_suffix(".tjfix.json").read_text())["verts"]
+    assert verts["nodraw"] == 1 and verts["ok"]

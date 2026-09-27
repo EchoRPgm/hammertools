@@ -403,6 +403,8 @@ def cmd_fix(args) -> int:
         print(f"{fix.fix_fades(v, res)} prop_static ganharam distância de desaparecer")
     if args.detail_small:
         print(f"{fix.fix_small_world(v, res)} brush(es) de mundo pequenos -> func_detail")
+    if args.nodraw_hidden:
+        print(f"{fix.nodraw_hidden_detail(v)} face(s) de detail escondidas -> nodraw")
     if args.dry_run:
         return 0
     content = Path(args.content) if args.content else lint._find_game(args.game) / "addons" / f"{src.stem}_content"
@@ -494,6 +496,7 @@ def main(argv=None) -> int:
     p.add_argument("--prefix", help="pasta dos materiais novos dentro de materials/ (padrão: <mapa>_fix)")
     p.add_argument("--no-fade", action="store_true", help="não mexe na distância de desaparecer dos prop_static")
     p.add_argument("--detail-small", action="store_true", help="converte brushes de mundo pequenos/finos longe do vazio em func_detail")
+    p.add_argument("--nodraw-hidden", action="store_true", help="nodraw nas faces de detail escondidas por outros brushes (menos faces/vértices)")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_fix)
     p = sub.add_parser("optimize", help="junta blocos retangulares fatiados com a mesma textura (menos t-junctions) num VMF novo")
@@ -542,6 +545,37 @@ def _run_streaming(cmd: list[str]) -> tuple[int, str]:
         sys.stdout.flush()
         lines.append(line)
     return p.wait(), "".join(lines)
+
+
+def _fix_verts(real: Path, args: list[str], out: Path) -> tuple[int, str, dict]:
+    """Estourou o teto de vértices únicos (65536, formato do BSP). Em ordem, recompilando depois de cada passo, só no
+    build/: (1) nodraw nas faces de detail escondidas por outros brushes (o vbsp não descarta essas); (2) junta blocos
+    fatiados de mesma textura (ht optimize). Devolve (rc, saída do vbsp, registro)."""
+    from hammertools import fix, optimize
+    rep = {"nodraw": 0, "merged": 0, "ok": False}
+    print("\nht-vbsp: estourou o teto de vértices do vbsp (65536). Reduzindo só no build/:", flush=True)
+    rc, text = 1, "too many unique verts"
+    for step in ("nodraw", "optimize"):
+        v = vmfio.load(out)
+        if step == "nodraw":
+            n = fix.nodraw_hidden_detail(v)
+            rep["nodraw"] = n
+            print(f"ht-vbsp: {n} face(s) de detail escondidas -> nodraw; recompilando.", flush=True)
+        else:
+            n = sum(optimize.optimize(v).merged.values())
+            rep["merged"] = n
+            print(f"ht-vbsp: {n} bloco(s) fatiados juntados; recompilando.", flush=True)
+        if not n:
+            continue
+        vmfio.save(v, out)
+        rc, text = _run_streaming([str(real), *args[:-1], str(out.with_suffix(""))])
+        if "too many unique verts" not in text.lower():
+            rep["ok"] = True
+            print(f"ht-vbsp: coube nos vértices depois de: {step}.", flush=True)
+            break
+    if not rep["ok"]:
+        print("ht-vbsp: ainda passa do teto de vértices; o próximo passo é tirar geometria do BSP (ht prop) ou simplificar o mapa.", flush=True)
+    return rc, text, rep
 
 
 PHANTOM_MIN_AREA = 16.0     # o laço confere e desfaz se vazar; lasca sem brush de outra textura no plano fica pro lint
@@ -741,8 +775,13 @@ def vbsp_main(argv=None) -> int:
 
     cmd = [str(real), *args[:-1], str(out.with_suffix(""))]
     rc, text = _run_streaming(cmd)
+    verts_info = None
+    if "too many unique verts" in text.lower():
+        rc, text, verts_info = _fix_verts(real, args, out)
     notjunc = "-notjunc" in (a.lower() for a in args)
     info = {"result": "notjunc" if notjunc else "direto"}
+    if verts_info:
+        info["verts"] = verts_info
     if "too many t-junctions" in text.lower() and not notjunc:
         rc, info = _fix_tjunctions(real, args, out)
     if rc == 0 and "-onlyents" not in (a.lower() for a in args) and os.environ.get("HT_NO_PHANTOM") != "1":

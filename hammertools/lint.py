@@ -141,6 +141,10 @@ class Resources:
                 elif len(head) >= 156 and head[:4] == b"IDST":
                     flags = int.from_bytes(head[152:156], "little")  # studiohdr_t.flags
                     info = {"static": bool(flags & 0x10)}  # STUDIOHDR_FLAGS_STATIC_PROP
+                    # .phy: o 4º int do cabeçalho é o checksum do .mdl (studiohdr_t.checksum, offset 8)
+                    phy = read(key[:-4] + ".phy", 16)
+                    if phy and len(phy) >= 16:
+                        info["phy_mismatch"] = struct.unpack_from("<i", phy, 12)[0] != struct.unpack_from("<i", head, 8)[0]
                     # studiohdr_t: hull_min/max em 104/116, view_bbmin/max em 128/140 (view zerado = usa o hull)
                     hull = struct.unpack_from("<6f", head, 104)
                     view = struct.unpack_from("<6f", head, 128)
@@ -340,6 +344,9 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
                     rep.add("erro", "models", f"{e['classname']}: modelo inexistente '{mdl}'", _origin(e), group=_folder(mdl.lower().removeprefix("models/"), 2), name=mdl.lower())
                 elif e["classname"] == "prop_static" and not info.get("static", True):
                     rep.add("aviso", "models", f"prop_static com modelo que não é static prop '{mdl}' (vira prop_dynamic ou some)", _origin(e), name=mdl.lower())
+                elif info.get("phy_mismatch"):
+                    rep.add("aviso", "models", f"colisão '{mdl[:-4]}.phy' não bate com o .mdl (checksum diferente): o jogo ignora a "
+                            f"colisão e o vrad a sombra pela colisão; recompile o modelo com o .phy junto", _origin(e), name=mdl.lower())
 
     if "duplicates" in checks:
         seen: dict[frozenset, Solid] = {}

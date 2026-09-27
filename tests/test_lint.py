@@ -550,3 +550,11 @@ def test_cordon_helper_brushes_detected():
     v.add_brush(helper)
     assert lint.cordon_helper_brushes(v) == [helper.id]
     assert any("brush(es) de cordon" in i.msg for i in _checks(lint.run(v, checks={"markers"}), "markers"))
+
+
+def test_phy_checksum_mismatch_flagged():
+    v = _room()
+    v.create_ent("prop_static", origin="0 0 0", model="models/caixa.mdl")
+    res = FakeRes()
+    res.model_info = lambda m: {"static": True, "phy_mismatch": True}
+    assert any("não bate com o .mdl" in i.msg for i in _checks(lint.run(v, res, {"models"}), "models"))

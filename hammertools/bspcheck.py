@@ -96,31 +96,51 @@ def phantom_faces(v: VMF, bsp_path: str | Path, min_area: float = 16.0) -> list[
     return out
 
 
+def _bbox(pts):
+    return (Vec(min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)),
+            Vec(max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
+
+
 def hint_boxes(phantoms: list[dict], depth: float = 8.0) -> list[tuple[Vec, Vec]]:
-    """Caixas de hint pra cobrir as faces fantasma: a face estendida `depth` unidades pra trás (contra a normal),
-    no eixo dominante; faces coplanares dos dois lados viram uma caixa só."""
-    boxes: list[list[Vec]] = []
-    for f in phantoms:
-        pts, n = f["points"], f["normal"]
-        lo = Vec(min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts))
-        hi = Vec(max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts))
+    """Caixas de hint pras faces fantasma. Par coplanar com normais opostas (o vbsp costuma gerar a fantasma dos
+    dois lados): a MENOR das duas é a que cobre o vão; a caixa tem o tamanho dela e vai `depth` unidades no
+    sentido da normal dela (rp_surdonoso: x 3249..3257 sobre a entrada da escada, validado no vbsp). Face sem
+    par: `depth` unidades pra trás dela."""
+    used: set[int] = set()
+    boxes: list[tuple[Vec, Vec]] = []
+    for i, f in enumerate(phantoms):
+        if i in used:
+            continue
+        n = f["normal"]
         ax = max(range(3), key=lambda a: abs(n[a]))
-        if n[ax] > 0:
-            lo[ax] = hi[ax] - depth
+        lo, hi = _bbox(f["points"])
+        pair = None
+        for j in range(i + 1, len(phantoms)):
+            g = phantoms[j]
+            if j in used or g["normal"].dot(n) > -0.999:
+                continue
+            glo, ghi = _bbox(g["points"])
+            if abs(glo[ax] - lo[ax]) < 0.5 and all(glo[a] <= hi[a] and ghi[a] >= lo[a] for a in range(3) if a != ax):
+                pair = j
+                break
+        if pair is not None:
+            used.add(pair)
+            small = min((f, phantoms[pair]), key=lambda x: x["area"])
+            lo, hi = _bbox(small["points"])
+            sign = 1 if small["normal"][ax] > 0 else -1
         else:
-            hi[ax] = lo[ax] + depth
+            sign = -1 if n[ax] > 0 else 1   # sem par: pra trás da face
+        plane = lo[ax]
+        if sign > 0:
+            lo[ax], hi[ax] = plane, plane + depth
+        else:
+            lo[ax], hi[ax] = plane - depth, plane
         for a in range(3):
             if hi[a] - lo[a] < 1:
                 hi[a] = lo[a] + 1
-        # junta com caixa que já cobre a mesma região (as duas faces da mesma fantasma)
-        for b in boxes:
-            if all(lo[a] <= b[1][a] and hi[a] >= b[0][a] for a in range(3)):
-                b[0] = Vec(min(b[0].x, lo.x), min(b[0].y, lo.y), min(b[0].z, lo.z))
-                b[1] = Vec(max(b[1].x, hi.x), max(b[1].y, hi.y), max(b[1].z, hi.z))
-                break
-        else:
-            boxes.append([lo, hi])
-    return [(Vec(round(b[0].x), round(b[0].y), round(b[0].z)), Vec(round(b[1].x), round(b[1].y), round(b[1].z))) for b in boxes]
+        used.add(i)
+        boxes.append((Vec(round(lo.x), round(lo.y), round(lo.z)), Vec(round(hi.x), round(hi.y), round(hi.z))))
+    return boxes
 
 
 def add_hints(v: VMF, boxes) -> list[int]:

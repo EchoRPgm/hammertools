@@ -219,3 +219,14 @@ def test_wrapper_phantom_fix_reverts_when_recompile_fails(room, tmp_path, monkey
     assert src.with_suffix(".bsp").read_text() == "bom"
     assert "toolshint" not in (tmp_path / "mapsrc" / "build" / "m.vmf").read_text().lower()  # build restaurado
     assert json.loads(src.with_suffix(".tjfix.json").read_text())["phantom"]["hints"] == []
+
+
+def test_hint_box_for_phantom_pair_matches_validated_fix():
+    """Par da entrada da escada do rp_surdonoso: a caixa tem que ser exatamente a validada no vbsp."""
+    from srctools import Vec
+    from hammertools import bspcheck
+    big = {"area": 28820, "normal": Vec(1, 0, 0), "points": [Vec(3257, -11066, -376), Vec(3257, -11066, -256), Vec(3257, -10826, -256), Vec(3257, -10826, -376)]}
+    small = {"area": 17280, "normal": Vec(-1, 0, 0), "points": [Vec(3257, -10970, -256), Vec(3257, -10970, -376), Vec(3257, -10826, -376), Vec(3257, -10826, -256)]}
+    assert bspcheck.hint_boxes([big, small]) == [(Vec(3249, -10970, -376), Vec(3257, -10826, -256))]
+    # sem par: pra trás da face
+    assert bspcheck.hint_boxes([big]) == [(Vec(3249, -11066, -376), Vec(3257, -10826, -256))]

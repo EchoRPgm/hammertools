@@ -566,8 +566,8 @@ def _tjunctions(v: VMF, rep: Report, top: int = 40, eps: float = 0.1) -> None:
             total += idx
             scored.append((idx, extra, s, side, poly, owner, points))
     scored.sort(key=lambda t: -t[0])
-    # a soma superestima (~2x no rp_surdonoso: o vbsp faz CSG e só triangula o que não fecha em leque),
-    # então vale como ranking, não como veredito; o número real está no log do vbsp
+    # a soma é teto (o vbsp faz CSG e só triangula o que não fecha em leque), então vale como ranking, não
+    # como veredito. O "N indices" do erro do vbsp é onde ele parou ao estourar, não o total do mapa.
     rep.stats["t-junctions: índices estimados (teto)"] = f"{total} (limite do vbsp {MAX_PRIMINDICES})"
     rep.stats["faces com t-junction"] = len(scored)
     rep.data["tjunctions"] = [{"idx": idx, "extra": extra, "solid": s.id, "face": side.id, "mat": side.mat, "owner": owner,

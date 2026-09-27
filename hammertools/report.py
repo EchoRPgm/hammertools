@@ -163,7 +163,7 @@ def _tab_tjunctions(rep: L.Report, radius: float) -> tuple[str, int]:
                     f'<td class="n">{f["extra"]}</td><td class="n">{f["idx"]}</td>'
                     f'<td><ul>{_loc(f["center"], "centro da face")}{"".join(_loc(p, d) for p, d in f["points"])}</ul></td></tr>')
     head = (f'<div class="stats"><div class="stat"><b>{len(faces)}</b><span>faces com t-junction</span></div>'
-            f'<div class="stat"><b>{total}</b><span>índices estimados (teto; o vbsp costuma dar ~metade)</span></div>'
+            f'<div class="stat"><b>{total}</b><span>índices estimados (teto: não desconta o que o vbsp remove)</span></div>'
             f'<div class="stat"><b>65536</b><span>limite do vbsp</span></div></div>'
             '<p class="sub">Como resolver à mão: nas regiões abaixo, junte blocos vizinhos que formam uma peça só '
             '(piso, parede, rodapé fatiados), alinhe emendas pra coincidirem com os vértices vizinhos, ou transforme acabamentos em prop. '

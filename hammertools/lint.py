@@ -243,11 +243,12 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
             rep.skipped["phantom"] = "precisa do BSP compilado deste VMF (--compiled, ou <mapa>.bsp mais novo que o VMF ao lado dele)"
         else:
             from hammertools import bspcheck
-            for f in bspcheck.phantom_faces(v, compiled):
+            for f in bspcheck.world_face_problems(v, compiled):
+                what = ("face fantasma: o vbsp desenhou uma superfície que não existe no VMF (não aparece no Hammer, dá pra atravessar)"
+                        if f["kind"] == "fantasma" else f"textura vazada: devia ser '{f['expected']}' (o vbsp usou a de um brush coplanar vizinho)")
                 rep.add("erro" if f["area"] >= 256 else "aviso", "phantom",
-                        f"face fantasma {f['material']} (~{f['area']:.0f}u²): o vbsp desenhou uma superfície que não existe no VMF "
-                        f"(não aparece no Hammer, dá pra atravessar); conserto: hint cobrindo a região (o ht-vbsp faz sozinho)",
-                        f["center"], group=f["material"].lower(), name=f["material"].lower())
+                        f"{f['material']} (~{f['area']:.0f}u²) {what}; conserto: acabamentos de textura diferente nesse plano "
+                        f"viram func_detail (o ht-vbsp faz sozinho)", f["center"], group=f["kind"], name=f["material"].lower())
 
     if "markers" in checks:
         for g in vmfio.group_markers(vmfio.markers(v)).values():
@@ -1034,7 +1035,7 @@ def apply_tjfix(rep: Report, fix: dict, stale: bool = False) -> None:
 LABELS = {
     "markers": "marcadores incompletos", "outputs": "outputs órfãos", "textures": "texturas inexistentes",
     "models": "modelos", "leak": "leak", "nodraw": "nodraw visível", "duplicates": "brushes duplicados",
-    "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions", "phantom": "faces fantasma",
+    "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions", "phantom": "faces fantasma/vazadas",
 }
 
 

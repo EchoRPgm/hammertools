@@ -392,14 +392,18 @@ PHANTOM_ROUNDS = 2
 
 
 def _fix_phantoms(real: Path, opts: list[str], out: Path) -> tuple[int, dict]:
-    """Faces fantasma (superfície que o vbsp desenhou sem existir no VMF): cobre cada uma com um brush de hint
-    (hint nas 6 faces, força o vbsp a cortar ali) no VMF do build/ e recompila com as mesmas opções. Até 2
-    rodadas; se a recompilação falhar, volta pro resultado anterior. Nunca mexe no fonte."""
+    """Faces do mundo desenhadas errado (fantasma: superfície que não existe no VMF; vazada: textura de outro brush
+    coplanar). Causa no vbsp: FindPortalSide usa a textura da primeira face coplanar da folha. Conserto: no plano
+    do problema, os brushes de mundo de textura minoritária viram func_detail (faces próprias, sem esse caminho),
+    só no build/, e recompila com as mesmas opções; até 2 rodadas, volta pro anterior se falhar ou vazar."""
     from hammertools import bspcheck
     saved = [".bsp", ".prt", ".lin", ".log", ".vmf"]
-    rep = {"found": 0, "hints": [], "left": 0}
+    rep = {"found": 0, "detail": [], "left": 0}
+
+    def problems():
+        return [f for f in bspcheck.world_face_problems(vmfio.load(out), out.with_suffix(".bsp")) if f["area"] >= PHANTOM_MIN_AREA]
     try:
-        found = [f for f in bspcheck.phantom_faces(vmfio.load(out), out.with_suffix(".bsp")) if f["area"] >= PHANTOM_MIN_AREA]
+        found = problems()
     except Exception as e:  # BSP ilegível: não arrisca
         return 0, {"erro": str(e)}
     rep["found"] = rep["left"] = len(found)
@@ -408,33 +412,37 @@ def _fix_phantoms(real: Path, opts: list[str], out: Path) -> tuple[int, dict]:
             break
         for f in found:
             c = f["center"]
-            print(f"ht-vbsp: face fantasma {f['material']} (~{f['area']:.0f}u²) em setpos {c.x:.0f} {c.y:.0f} {c.z + 64:.0f}", flush=True)
+            what = "fantasma" if f["kind"] == "fantasma" else f"vazada (devia ser {f['expected']})"
+            print(f"ht-vbsp: face {what} {f['material']} (~{f['area']:.0f}u²) em setpos {c.x:.0f} {c.y:.0f} {c.z + 64:.0f}", flush=True)
+        v = vmfio.load(out)
+        ids = bspcheck.detail_candidates(v, found)
+        if not ids:
+            print("ht-vbsp: nenhum brush de mundo pra separar ali; fica pro lint.", flush=True)
+            break
         for ext in saved:  # guarda o resultado bom atual
             if out.with_suffix(ext).exists():
                 shutil.copy2(out.with_suffix(ext), out.with_name(out.stem + "_ok" + ext))
-        v = vmfio.load(out)
-        boxes = bspcheck.hint_boxes(found)
-        bspcheck.add_hints(v, boxes)
+        bspcheck.to_detail(v, ids)
         vmfio.save(v, out)
-        print(f"ht-vbsp: {len(boxes)} hint(s) cobrindo as faces fantasma; recompilando.", flush=True)
+        print(f"ht-vbsp: {len(ids)} acabamento(s) de mundo -> func_detail ({', '.join(map(str, ids))}); recompilando.", flush=True)
         rc, text = _run_streaming([str(real), *opts, str(out.with_suffix(""))])
         low = text.lower()
         if rc != 0 or not out.with_suffix(".bsp").exists() or "too many" in low or "leaked" in low:
-            print("ht-vbsp: a recompilação com hint falhou; fico com a compilação anterior.", flush=True)
+            print("ht-vbsp: a recompilação falhou ou vazou; fico com a compilação anterior.", flush=True)
             for ext in saved:
                 f = out.with_name(out.stem + "_ok" + ext)
                 if f.exists():
                     shutil.move(f, out.with_suffix(ext))
             return 0, rep
-        rep["hints"] += [[list(lo), list(hi)] for lo, hi in boxes]
-        found = [f for f in bspcheck.phantom_faces(vmfio.load(out), out.with_suffix(".bsp")) if f["area"] >= PHANTOM_MIN_AREA]
+        rep["detail"] += ids
+        found = problems()
         rep["left"] = len(found)
     for ext in saved:
         f = out.with_name(out.stem + "_ok" + ext)
         if f.exists():
             f.unlink()
     if rep["found"]:
-        print(f"ht-vbsp: faces fantasma: {rep['found']} achada(s), {rep['left']} restante(s) (hints só no build/).", flush=True)
+        print(f"ht-vbsp: faces do mundo com problema: {rep['found']} achada(s), {rep['left']} restante(s) (detail só no build/).", flush=True)
     return 0, rep
 
 

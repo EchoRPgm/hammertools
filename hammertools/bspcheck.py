@@ -3,8 +3,14 @@
 Face fantasma: face desenhada no BSP (modelo do mundo) que não está sobre nenhuma face VISÍVEL de brush do
 VMF. O vbsp cria essas faces em certos arranjos da árvore BSP (sensível a ela: tirar um piso do outro lado
 do mapa pode fazer sumir ou aparecer). No jogo: parede/chão que não existe no Hammer e dá pra atravessar
-(rp_surdonoso: entrada da escada em 3257 -10898 -316 com CONCRETEWALL001). Conserto validado: brush de hint
-(hint nas 6 faces) cobrindo a região, que força o vbsp a cortar ali.
+(rp_surdonoso: entrada da escada em 3257 -10898 -316 com CONCRETEWALL001).
+
+Causa (código do vbsp, src/utils/vbsp/portals.cpp, FindPortalSide): as faces do MUNDO nascem dos portais da
+árvore BSP, e a textura de cada uma é a da PRIMEIRA face de brush coplanar que o vbsp acha naquela folha.
+Quando brushes de mundo com texturas diferentes ficam no mesmo plano e a árvore não corta nas divisas, uma
+textura cobre as outras ("textura vazada") e pode até cobrir um vão (face fantasma). Hint só muda onde a árvore
+corta: funcionou numa caixa e piorou em outra. Conserto estável (validado no vbsp): os acabamentos de textura
+diferente no plano viram func_detail, cujas faces saem das próprias faces do brush (sem FindPortalSide).
 
 Ignora: displacements, água (o vbsp gera a superfície dos dois lados), modelos de entidade (coordenadas
 locais), skybox. Plano do brush casa por normal (> 0,999) e distância do centro da face ao plano (< 1u),
@@ -12,6 +18,7 @@ porque o vbsp arredonda planos quase axiais.
 """
 from __future__ import annotations
 
+import re
 import struct
 from collections import defaultdict
 from pathlib import Path
@@ -99,6 +106,100 @@ def phantom_faces(v: VMF, bsp_path: str | Path, min_area: float = 16.0) -> list[
 def _bbox(pts):
     return (Vec(min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)),
             Vec(max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
+
+
+def _norm_mat(t: str) -> str:
+    """Nome do material como no VMF: tira o prefixo maps/<mapa>/ e o sufixo _x_y_z de cubemap e _wvt_patch."""
+    t = t.lower()
+    m = re.match(r"maps/[^/]+/(.+?)(_-?\d+_-?\d+_-?\d+)?$", t)
+    t = m.group(1) if m else t
+    return re.sub(r"_wvt_patch$", "", t)
+
+
+def world_face_problems(v: VMF, bsp_path: str | Path, min_area: float = 16.0) -> list[dict]:
+    """Faces do mundo desenhadas errado: 'fantasma' (sem face de brush visível no lugar) e 'vazada' (só brushes
+    de MUNDO no lugar e nenhum com a textura desenhada). Faces de detail/entidade sobrepostas não contam: o
+    FindPortalSide só atinge o mundo."""
+    index: dict[tuple, list] = defaultdict(list)
+    for e in [None] + list(v.entities):
+        for s in (v.brushes if e is None else e.solids):
+            for side, poly in geom.face_polys(s):
+                if len(poly) < 3 or side.mat.lower().startswith("tools/"):
+                    continue
+                n, p = geom.outward(side)
+                index[(round(n.x, 1), round(n.y, 1), round(n.z, 1))].append((poly, n, n.dot(p), side.mat.lower(), s, e is None))
+    out = []
+    for fi, mat, pts, n in _read_faces(bsp_path):
+        t = _norm_mat(mat)
+        if "water" in t or t.startswith("tools/"):
+            continue
+        ctr = sum(pts, Vec()) / len(pts)
+        hits = []
+        for sg in (1, -1):
+            nn = n * sg
+            hits += [h for h in index.get((round(nn.x, 1), round(nn.y, 1), round(nn.z, 1)), ())
+                     if h[1].dot(nn) > 0.999 and abs(h[1].dot(ctr) - h[2]) < 1.0 and _on_poly(ctr, h[0], h[1])]
+        if not hits:
+            kind = "fantasma"
+        elif all(h[5] for h in hits) and all(h[3] != t for h in hits):
+            kind = "vazada"
+        else:
+            continue
+        area = sum(Vec.cross(pts[i] - pts[0], pts[i + 1] - pts[0]).mag() for i in range(1, len(pts) - 1)) / 2
+        if area >= min_area:
+            out.append({"face": fi, "material": mat, "kind": kind, "area": area, "center": ctr, "normal": n, "points": pts,
+                        "expected": hits[0][3] if hits else ""})
+    out.sort(key=lambda f: -f["area"])
+    return out
+
+
+def detail_candidates(v: VMF, problems: list[dict]) -> list[int]:
+    """Brushes de MUNDO a virar func_detail pra acabar com o vazamento: nos planos dos problemas, os brushes com
+    face visível na região (bbox da face problema + 1u); fica no mundo o grupo de textura dominante (maior área
+    na região), os outros viram detail. rp_surdonoso: tijolo fica, faixa de concreto e batentes de metal viram
+    detail (validado no vbsp)."""
+    chosen: set[int] = set()
+    for f in problems:
+        n = f["normal"]
+        lo, hi = _bbox(f["points"])
+        lo, hi = lo - Vec(1, 1, 1), hi + Vec(1, 1, 1)
+        area_by_mat: dict[str, float] = defaultdict(float)
+        brushes_by_mat: dict[str, set] = defaultdict(set)
+        for s in v.brushes:
+            slo, shi = s.get_bbox()
+            if not all(slo[a] <= hi[a] and shi[a] >= lo[a] for a in range(3)):
+                continue
+            for side, poly in geom.face_polys(s):
+                if len(poly) < 3 or side.mat.lower().startswith("tools/"):
+                    continue
+                sn, sp = geom.outward(side)
+                if abs(sn.dot(n)) < 0.999 or abs(sn.dot(f["center"]) - sn.dot(sp)) > 1.0:
+                    continue
+                plo, phi = _bbox(poly)
+                if not all(plo[a] <= hi[a] and phi[a] >= lo[a] for a in range(3)):
+                    continue
+                a = sum(Vec.cross(poly[i] - poly[0], poly[i + 1] - poly[0]).mag() for i in range(1, len(poly) - 1)) / 2
+                area_by_mat[side.mat.lower()] += a
+                brushes_by_mat[side.mat.lower()].add(s.id)
+        if len(area_by_mat) < 2:
+            continue
+        keep = max(area_by_mat, key=area_by_mat.get)
+        for m, ids in brushes_by_mat.items():
+            if m != keep:
+                chosen |= ids - brushes_by_mat[keep]
+    return sorted(chosen)
+
+
+def to_detail(v: VMF, ids) -> int:
+    """Move os brushes de mundo escolhidos pra um func_detail novo. Devolve quantos moveu."""
+    from srctools.vmf import Entity
+    ids = set(ids)
+    sols = [s for s in v.brushes if s.id in ids]
+    for s in sols:
+        v.remove_brush(s)
+    if sols:
+        v.add_ent(Entity(v, {"classname": "func_detail"}, solids=sols))
+    return len(sols)
 
 
 def hint_boxes(phantoms: list[dict], depth: float = 8.0) -> list[tuple[Vec, Vec]]:

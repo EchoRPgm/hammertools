@@ -22,7 +22,7 @@ from hammertools import lint as L
 
 # ordem de prioridade no painel: o que quebra o mapa primeiro
 PRIORITY = [
-    ("phantom", "erro", "Faces fantasma", "Superfície que o vbsp desenhou sem existir no VMF: não aparece no Hammer e dá pra atravessar. O ht-vbsp cobre com hint e recompila sozinho."),
+    ("phantom", "erro", "Faces fantasma / textura vazada", "O vbsp desenhou uma superfície que não existe no VMF (não aparece no Hammer, dá pra atravessar) ou com a textura de um brush vizinho. O ht-vbsp converte os acabamentos desse plano em func_detail e recompila sozinho."),
     ("leak", "erro", "Leak: o mapa vaza pro vazio", "Sem selo, o vbsp não gera VIS e a luz sai errada. Siga o caminho (pointfile) e tape o buraco."),
     ("markers", "erro", "Marcadores ht_* incompletos", "Falta o par (início/fim) de um gerador: a peça não é gerada."),
     ("outputs", "erro", "Outputs órfãos", "I/O mirando nome que não existe: o evento não acontece no jogo."),

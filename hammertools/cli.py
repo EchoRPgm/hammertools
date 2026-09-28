@@ -125,7 +125,7 @@ def cmd_lint(args) -> int:
     need_res = checks & {"textures", "models", "leak", "nodraw", "perf"}
     res = lint.Resources.from_game(args.game, args.bsp, args.extra or ()) if need_res else lint.Resources()
     compiled = Path(args.compiled) if args.compiled else None
-    if compiled is None and "phantom" in checks:
+    if compiled is None and checks & {"phantom", "lightstyles"}:
         guess = Path(args.vmf).with_suffix(".bsp")  # o ht-vbsp copia o .bsp pra junto do fonte
         if guess.exists() and guess.stat().st_mtime >= Path(args.vmf).stat().st_mtime:
             compiled = guess

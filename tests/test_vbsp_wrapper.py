@@ -283,3 +283,32 @@ def test_wrapper_reduces_verts_before_tjunctions(room, tmp_path, monkeypatch, ca
     assert "teto de vértices" in out and "escondidas -> nodraw" in out
     verts = json.loads(src.with_suffix(".tjfix.json").read_text())["verts"]
     assert verts["nodraw"] == 1 and verts["ok"]
+
+
+def _styled_bsp(tmp_path, light_origin):
+    """tiny.bsp com a face 0 levando uma página clara do estilo 5 e a luz do mapa com style 5 em `light_origin`."""
+    import logging
+    import struct
+    from srctools.bsp import BSP, BSP_LUMPS as L
+    logging.getLogger("srctools").setLevel(logging.ERROR)
+    b = BSP(str(Path(__file__).parent / "data" / "tiny.bsp"))
+    faces = bytearray(b.lumps[L.FACES].data)
+    for i in range(len(faces) // 56):
+        struct.pack_into("<4Bi", faces, i * 56 + 16, 0, 255, 255, 255, -1)
+        struct.pack_into("<ii", faces, i * 56 + 36, 0, 0)
+    struct.pack_into("<4Bi", faces, 16, 0, 5, 255, 255, 0)
+    b.lumps[L.FACES].data = bytes(faces)
+    b.lumps[L.LIGHTING].data = bytes([200, 200, 200, 0, 190, 190, 190, 0])   # base e página do estilo 5
+    light = next(e for e in b.ents.entities if e["classname"] == "light")
+    light["style"] = "5"
+    light["origin"] = light_origin
+    out = tmp_path / "styled.bsp"
+    b.save(str(out))
+    return out
+
+
+def test_bad_lightstyle_face_flagged_when_no_styled_light_near(tmp_path):
+    from hammertools import bspcheck
+    far = bspcheck.bad_lightstyle_faces(_styled_bsp(tmp_path, "9000 9000 9000"))
+    assert [(f["face"], f["style"]) for f in far] == [(0, 5)]
+    assert bspcheck.bad_lightstyle_faces(_styled_bsp(tmp_path, "0 0 0")) == []

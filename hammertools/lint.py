@@ -34,7 +34,7 @@ from hammertools.core import geom
 from hammertools.core import vmf as vmfio
 
 MAX_EXAMPLES = 5
-ALL_CHECKS = ("markers", "outputs", "logic", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid", "tjunctions", "phantom", "perf")
+ALL_CHECKS = ("markers", "outputs", "logic", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid", "tjunctions", "phantom", "lightstyles", "perf")
 
 # texturas de ferramenta que NÃO selam o mapa (brush com qualquer face dessas não conta pro selo)
 NONSEAL_TOOLS = {
@@ -253,6 +253,19 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
                 rep.add("erro" if f["area"] >= 256 else "aviso", "phantom",
                         f"{f['material']} (~{f['area']:.0f}u²) {what}; conserto: acabamentos de textura diferente nesse plano "
                         f"viram func_detail (o ht-vbsp faz sozinho)", f["center"], group=f["kind"], name=f["material"].lower())
+
+    if "lightstyles" in checks:
+        if compiled is None:
+            rep.skipped["lightstyles"] = "precisa do BSP compilado deste VMF (--compiled, ou <mapa>.bsp mais novo que o VMF ao lado dele)"
+        else:
+            from hammertools import bspcheck
+            for f in bspcheck.bad_lightstyle_faces(compiled):
+                w, h, _t = sorted(f["size"], reverse=True)
+                rep.add("erro", "lightstyles",
+                        f"face ~{w:.0f}x{h:.0f} com luz do estilo {f['style']} ({f['page']:.0f}, base {f['base']:.0f}) sem nenhuma luz "
+                        f"desse estilo a menos de {f['dist']:.0f}u: no jogo a face inteira clareia/pisca (retângulo de luz). "
+                        f"Erro do vrad do GMod com -fast; refazer a luz sem -fast (vrad normal ou -final)", f["center"],
+                        group=f"estilo {f['style']}", name=f"estilo {f['style']}")
 
     if "markers" in checks:
         for g in vmfio.group_markers(vmfio.markers(v)).values():
@@ -1430,7 +1443,7 @@ def apply_tjfix(rep: Report, fix: dict, stale: bool = False) -> None:
 LABELS = {
     "markers": "marcadores incompletos", "outputs": "outputs órfãos", "textures": "texturas inexistentes",
     "models": "modelos", "leak": "leak", "nodraw": "nodraw visível", "duplicates": "brushes duplicados",
-    "logic": "lógica de entidades", "perf": "desempenho", "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions", "phantom": "faces fantasma/vazadas",
+    "logic": "lógica de entidades", "perf": "desempenho", "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions", "phantom": "faces fantasma/vazadas", "lightstyles": "luz com estilo vazada",
 }
 
 

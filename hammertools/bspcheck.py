@@ -252,3 +252,66 @@ def add_hints(v: VMF, boxes) -> list[int]:
         v.add_brush(s)
         ids.append(s.id)
     return ids
+
+
+# --------------------------------------------------------------------------- lightstyles
+# Luz com estilo (piscando/pulsando: `style` 1..12; luz com nome: 32+) ganha uma página de lightmap à parte em
+# cada face que ela alcança, somada no jogo com a intensidade animada. O vrad do GMod às vezes grava na página do
+# estilo a luz da página base (sol/céu) em faces que nenhuma luz daquele estilo alcança: no jogo a face inteira
+# fica clara e pisca, com borda reta na divisa da face. Medido no rp_surdonoso_w_tj com o mesmo BSP: vrad win64
+# -fast = 154 faces, vrad normal (win64 ou 32 bits) = 1, BSP publicado = 1. A página de um estilo só pode ter luz se houver luz daquele estilo perto.
+STYLE_FAR = 512.0     # nenhuma luz do estilo a menos disso da caixa da face
+STYLE_MIN = 20.0      # luminância média da página (0..255 por canal)
+
+
+def bad_lightstyle_faces(bsp_path: str | Path, far: float = STYLE_FAR, min_lum: float = STYLE_MIN) -> list[dict]:
+    import logging
+    import numpy as np
+    from srctools.bsp import BSP, BSP_LUMPS as L
+    logging.getLogger("srctools").setLevel(logging.ERROR)
+    b = BSP(str(bsp_path))
+    F = b.get_lump(L.FACES); TI = b.get_lump(L.TEXINFO)
+    LT = np.frombuffer(b.get_lump(L.LIGHTING), dtype=np.uint8)
+    V = np.frombuffer(b.get_lump(L.VERTEXES), dtype=np.float32).reshape(-1, 3)
+    E = np.frombuffer(b.get_lump(L.EDGES), dtype=np.uint16).reshape(-1, 2)
+    SE = np.frombuffer(b.get_lump(L.SURFEDGES), dtype=np.int32)
+    lights: dict[int, list] = defaultdict(list)
+    for e in b.ents.entities:
+        st = e["style", "0"]
+        if e["classname"] in ("light", "light_spot") and st.isdigit() and int(st) and e["origin", ""]:
+            lights[int(st)].append(np.array(tuple(Vec.from_str(e["origin"]))))
+
+    def lum(lo: int, n: int, k: int) -> float:
+        a = LT[lo + k * n * 4: lo + (k + 1) * n * 4].reshape(-1, 4).astype(np.float64)
+        if not len(a):
+            return 0.0
+        return float((a[:, :3] * (2.0 ** a[:, 3].astype(np.int8))[:, None]).mean())
+
+    out = []
+    for fi in range(len(F) // 56):
+        styles = struct.unpack_from("<4B", F, fi * 56 + 16)
+        lo = struct.unpack_from("<i", F, fi * 56 + 20)[0]
+        if lo < 0 or styles[1] == 255:
+            continue
+        ti = struct.unpack_from("<h", F, fi * 56 + 10)[0]
+        pages = 4 if ti >= 0 and struct.unpack_from("<i", TI, ti * 72 + 64)[0] & 0x800 else 1   # SURF_BUMPLIGHT
+        sw, sh = struct.unpack_from("<ii", F, fi * 56 + 36)
+        n = (sw + 1) * (sh + 1)
+        fe, ne = struct.unpack_from("<ih", F, fi * 56 + 4)
+        se = SE[fe:fe + ne]
+        pts = V[np.where(se >= 0, E[np.abs(se), 0], E[np.abs(se), 1])]
+        lo3, hi3 = pts.min(0), pts.max(0)
+        for slot in range(1, 4):
+            st = styles[slot]
+            if st == 255:
+                break
+            page = lum(lo, n, slot * pages)
+            if page < min_lum:
+                continue
+            dist = min((float(np.linalg.norm(np.maximum(lo3 - o, 0) + np.maximum(o - hi3, 0))) for o in lights.get(st, [])),
+                       default=float("inf"))
+            if dist > far:
+                c = (lo3 + hi3) / 2
+                out.append({"face": fi, "style": st, "page": page, "base": lum(lo, n, 0), "dist": dist,
+                            "center": Vec(*map(float, c)), "size": tuple(float(x) for x in hi3 - lo3)})
+    return out

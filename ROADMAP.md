@@ -80,10 +80,10 @@ duto quadrado atravessando a parede de duas salas com cotovelo; duto quadrado e 
 
 ## Instalação e atualização (Windows)
 
-- **Usuário**: baixe `install.ps1` do último release (página de Releases do repo) e rode `powershell -ExecutionPolicy Bypass -File install.ps1 -Token <token>` com o Hammer++ fechado. Instala o uv (sem admin), o Python 3.12 gerenciado e o `ht` (com numpy/scipy), grava o token em `%LOCALAPPDATA%\hammertools\token` e roda `ht setup`.
+- **Usuário**: baixe `install.ps1` do último release (github.com/EchoRPgm/hammertools/releases) e rode `powershell -ExecutionPolicy Bypass -File install.ps1` com o Hammer++ fechado. Instala o uv (sem admin), o Python 3.12 gerenciado e o `ht` (com numpy/scipy) e roda `ht setup`. `-Token` é opcional (só limite da API).
 - **`ht setup`**: acha o GMod pela Steam (registro + `libraryfolders.vdf`, qualquer disco), grava o FGD em cp1252, aponta o `BSP` do gameconfig do Hammer++ pro `ht-vbsp.exe`, põe o FGD nos `GameDataN`, cria `ht-lint.cmd` e as sequências "ht lint"/"ht final". Idempotente; com o Hammer++ aberto ele desfaz o gameconfig ao fechar.
 - **Atualização**: no fim de cada comando `ht` (nunca no `ht-vbsp`), 1 consulta por dia ao último release; instala o wheel novo no mesmo ambiente (`uv pip install --python <python do ht>`; no Windows renomeia os `ht*.exe` em uso antes) e roda `ht setup --refresh`. `ht update` força; `ht update --auto off` só avisa; `HT_NO_UPDATE=1` desliga. Checkout do git nunca se atualiza.
-- **Repo privado**: o release só é visível com token (fine-grained, "Contents: read" neste repo). O download do asset segue um 302 pra URL assinada que recusa `Authorization`: urllib e PowerShell 5.1 repassam o header, então os dois baixam em duas etapas (Location sem seguir, depois sem token).
+- **Repo público desde 2026-10-03** (histórico reescrito com `git filter-repo --replace-text` pra tirar a chave do Windows-MCP do `vm-share/setup.ps1`, que agora recebe `-AuthKey`). Token é opcional. O download do asset segue um 302 pra URL assinada que recusa `Authorization`: com token, urllib e PowerShell 5.1 repassariam o header, então os dois baixam em duas etapas (Location sem seguir, depois sem token).
 - **Publicar**: `tools/release.sh X.Y.Z` (árvore limpa + testes, grava `__version__`, commit `chore(release)`, tag `vX.Y.Z`, push). `.github/workflows/release.yml` confere tag = versão, roda os testes, gera wheel/sdist e cria o release com notas automáticas + `install.ps1`.
 
 ## Como usar (Hammer++)

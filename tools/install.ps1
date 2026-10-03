@@ -1,12 +1,12 @@
 # Instalação do hammertools no Windows (Hammer++ do GMod), a partir do último release do GitHub.
-# PowerShell (sem admin): powershell -ExecutionPolicy Bypass -File install.ps1 -Token <token de leitura>
-# (repo privado: fine-grained token só com "Contents: read" neste repo). Feche o Hammer++ antes.
+# PowerShell (sem admin), com o Hammer++ fechado: powershell -ExecutionPolicy Bypass -File install.ps1
+# -Token é opcional (repo público; serve só pra fugir do limite de 60 consultas/hora da API sem login).
 # Depois disso o `ht` se atualiza sozinho (1x por dia) ou com `ht update`.
 param([string]$Token = $env:HT_GITHUB_TOKEN, [string]$Game = "")
 $ErrorActionPreference = "Stop"
 $repo = "EchoRPgm/hammertools"
-if (-not $Token) { throw "passe -Token <token> (ou defina HT_GITHUB_TOKEN)" }
-$h = @{ Authorization = "Bearer $Token"; "User-Agent" = "hammertools-install"; "X-GitHub-Api-Version" = "2022-11-28" }
+$h = @{ "User-Agent" = "hammertools-install"; "X-GitHub-Api-Version" = "2022-11-28" }
+if ($Token) { $h.Authorization = "Bearer $Token" }
 
 # uv (gerencia o Python 3.12 e o ambiente do ht; não precisa de Python instalado nem de admin)
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
@@ -21,7 +21,7 @@ $dir = Join-Path $env:TEMP "ht-install"; New-Item -ItemType Directory -Force $di
 $whl = Join-Path $dir $asset.name
 # a API responde 302 pra uma URL assinada que recusa o header Authorization: pega o Location sem seguir
 $req = [Net.HttpWebRequest]::Create($asset.url); $req.AllowAutoRedirect = $false
-$req.Headers["Authorization"] = "Bearer $Token"; $req.Accept = "application/octet-stream"; $req.UserAgent = "hammertools-install"
+if ($Token) { $req.Headers["Authorization"] = "Bearer $Token" }; $req.Accept = "application/octet-stream"; $req.UserAgent = "hammertools-install"
 $resp = $req.GetResponse(); $loc = $resp.Headers["Location"]; $resp.Close()
 if ($loc) { Invoke-WebRequest $loc -OutFile $whl -UseBasicParsing } else { Invoke-WebRequest $asset.url -Headers ($h + @{ Accept = "application/octet-stream" }) -OutFile $whl -UseBasicParsing }
 Write-Host "== hammertools $($rel.tag_name)" -ForegroundColor Cyan
@@ -31,9 +31,11 @@ uv tool update-shell | Out-Null
 $bin = (uv tool dir --bin).Trim()
 $ht = Join-Path $bin "ht.exe"
 
-# token pro auto-update (fica só nesta conta do Windows)
-$cfg = Join-Path $env:LOCALAPPDATA "hammertools"; New-Item -ItemType Directory -Force $cfg | Out-Null
-Set-Content -Path (Join-Path $cfg "token") -Value $Token -NoNewline
+# token opcional pro auto-update (fica só nesta conta do Windows)
+if ($Token) {
+  $cfg = Join-Path $env:LOCALAPPDATA "hammertools"; New-Item -ItemType Directory -Force $cfg | Out-Null
+  Set-Content -Path (Join-Path $cfg "token") -Value $Token -NoNewline
+}
 
 if ($Game) { & $ht setup --game $Game } else { & $ht setup }
 & $ht --version

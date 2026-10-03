@@ -1,6 +1,6 @@
 # hammertools — contexto para o Claude
 
-Geradores de geometria e entidades para o Hammer++ (Garry's Mod). Marcadores `ht_*` no editor → CLI Python reescreve o VMF. Repo privado: github.com/EchoRPgm/hammertools.
+Geradores de geometria e entidades para o Hammer++ (Garry's Mod). Marcadores `ht_*` no editor → CLI Python reescreve o VMF. Repo público: github.com/EchoRPgm/hammertools (não commitar segredos nem notas pessoais).
 
 **Leia `ROADMAP.md` primeiro**: status por item, arquitetura, como usar no Hammer++ e as notas técnicas que custaram a descobrir (srctools, ladders, trem, cubemaps, leaks). Este arquivo só complementa.
 

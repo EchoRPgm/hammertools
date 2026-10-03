@@ -8,8 +8,8 @@ Automático: no fim de cada comando `ht` (nunca no `ht-vbsp`, pra não mexer no 
 consulta por dia, timeout curto e silencioso sem rede. Desliga com `ht update --auto off` ou env HT_NO_UPDATE=1.
 Checkout do git (desenvolvimento) nunca se atualiza sozinho.
 
-Repo privado: precisa de um token de leitura (fine-grained, só "Contents: read" neste repo), procurado em
-HT_GITHUB_TOKEN, GITHUB_TOKEN, arquivo `token` na pasta de config (`ht update --token ...` grava) e `gh auth token`.
+Repo público: funciona sem token. Se houver um (HT_GITHUB_TOKEN, GITHUB_TOKEN, arquivo `token` na pasta de config
+gravado por `ht update --token ...`, ou `gh auth token`), é usado: limite maior da API e repo privado, se voltar a ser.
 """
 from __future__ import annotations
 
@@ -271,7 +271,7 @@ def cmd_update(args) -> int:
         rel = latest_release(timeout=15)
     except urllib.error.HTTPError as e:
         hint = {401: " (token inválido: `ht update --token <token>`)", 403: " (token sem acesso ou limite da API)",
-                404: " (nenhum release publicado, ou repo privado sem token: `ht update --token <token>`)"}.get(e.code, "")
+                404: " (nenhum release publicado)"}.get(e.code, "")
         print(f"ht update: GitHub respondeu {e.code}{hint}", file=sys.stderr)
         return 1
     except (urllib.error.URLError, OSError) as e:

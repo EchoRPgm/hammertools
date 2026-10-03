@@ -4,8 +4,9 @@ O release (`.github/workflows/release.yml`, disparado por tag `vX.Y.Z`) publica 
 release, baixa o wheel e instala por cima no MESMO ambiente que está rodando (venv do `uv tool` ou pip), depois
 refaz a integração com o Hammer++ (`ht setup --refresh`: FGD e sequências mudam junto com o pacote).
 
-Automático: no fim de cada comando `ht` (nunca no `ht-vbsp`, pra não mexer no meio de um compile), no máximo uma
-consulta por dia, timeout curto e silencioso sem rede. Desliga com `ht update --auto off` ou env HT_NO_UPDATE=1.
+Automático: (1) no início de cada compile (`ht-vbsp`, consulta sempre, timeout de 3 s; com versão nova instala e
+compila já com ela, ver `before_compile`); (2) no fim de cada comando `ht`, no máximo uma consulta por dia. Sem rede
+segue em silêncio. Desliga com `ht update --auto off` ou env HT_NO_UPDATE=1.
 Checkout do git (desenvolvimento) nunca se atualiza sozinho.
 
 Repo público: funciona sem token. Se houver um (HT_GITHUB_TOKEN, GITHUB_TOKEN, arquivo `token` na pasta de config
@@ -254,6 +255,36 @@ def auto(log=lambda m: print(m, file=sys.stderr)) -> None:
             log(f"ht: versão nova {rel['tag']} (instalada {__version__}); rode `ht update`")
     except Exception:  # auto-update nunca derruba o comando que o usuário rodou
         pass
+
+
+COMPILE_TIMEOUT = 3.0
+
+
+def before_compile(argv: list[str], log=print) -> int | None:
+    """Início do `ht-vbsp`: consulta o release a CADA compile (timeout curto). Com versão nova, instala e roda o
+    compile com o código novo num processo filho (este já carregou o antigo) e devolve o código de saída dele; o
+    Hammer++ espera este processo, então vvis/vrad só começam depois. None = segue o compile aqui mesmo (sem
+    versão nova, offline, auto desligado ou qualquer erro: atualizar nunca impede o compile)."""
+    try:
+        if os.environ.get("HT_NO_UPDATE") == "1" or dev_install():
+            return None
+        rel = check(force=True, timeout=COMPILE_TIMEOUT)
+        if not rel:
+            return None
+        if not load_state().get("auto", True):
+            log(f"ht-vbsp: versão nova {rel['tag']} (instalada {__version__}); rode `ht update`")
+            return None
+        log(f"ht-vbsp: atualizando {__version__} -> {rel['tag']} antes de compilar ...")
+        if not apply(rel, log):
+            return None
+        log("ht-vbsp: entidades novas do FGD só aparecem depois de reabrir o Hammer++")
+        sys.stdout.flush()
+        env = dict(os.environ, HT_NO_UPDATE="1")
+        code = "import sys; from hammertools.cli import vbsp_main; sys.exit(vbsp_main())"
+        return subprocess.call([sys.executable, "-c", code, *argv], env=env)
+    except Exception as e:  # noqa: BLE001
+        log(f"ht-vbsp: auto-update falhou ({e}); compilando com a versão {__version__}")
+        return None
 
 
 def cmd_update(args) -> int:

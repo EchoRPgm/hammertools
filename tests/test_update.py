@@ -173,3 +173,33 @@ def test_patch_gameconfig_without_gmod_reports_and_keeps_text():
     from pathlib import PureWindowsPath as W
     new, changes = setup_hammer.patch_gameconfig(GAMECONFIG, W("E:/outro/garrysmod"), W("C:/ht-vbsp.exe"), W("C:/h.fgd"))
     assert new == GAMECONFIG and "nenhum jogo" in changes[0]
+
+
+def test_before_compile_updates_then_compiles_with_new_code(monkeypatch):
+    monkeypatch.setattr(update, "dev_install", lambda: False)
+    update.save_state({"last_check": 9e18, "latest": None})       # cache diário não vale pro compile
+    monkeypatch.setattr(update, "latest_release", lambda timeout: REL)
+    monkeypatch.setattr(update, "apply", lambda rel, log=print: True)
+    calls = []
+    monkeypatch.setattr(update.subprocess, "call", lambda cmd, env=None: calls.append((cmd, env)) or 7)
+    assert update.before_compile(["-game", "g", "mapa"], log=lambda m: None) == 7
+    cmd, env = calls[0]
+    assert cmd[-3:] == ["-game", "g", "mapa"] and "vbsp_main" in cmd[2] and env["HT_NO_UPDATE"] == "1"
+
+
+def test_before_compile_offline_or_failed_install_keeps_compiling(monkeypatch):
+    monkeypatch.setattr(update, "dev_install", lambda: False)
+    def offline(timeout):
+        raise OSError("sem rede")
+    monkeypatch.setattr(update, "latest_release", offline)
+    assert update.before_compile(["mapa"], log=lambda m: None) is None
+    monkeypatch.setattr(update, "latest_release", lambda timeout: REL)
+    monkeypatch.setattr(update, "apply", lambda rel, log=print: False)
+    monkeypatch.setattr(update.subprocess, "call", lambda *a, **k: pytest.fail("instalação falhou: compila aqui"))
+    assert update.before_compile(["mapa"], log=lambda m: None) is None
+
+
+def test_before_compile_respects_child_flag(monkeypatch):
+    monkeypatch.setenv("HT_NO_UPDATE", "1")
+    monkeypatch.setattr(update, "check", lambda **k: pytest.fail("filho não consulta de novo"))
+    assert update.before_compile(["mapa"]) is None

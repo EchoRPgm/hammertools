@@ -742,6 +742,10 @@ def vbsp_main(argv=None) -> int:
     if not args:
         print("uso: ht-vbsp [opções do vbsp] -game <gamedir> <path\\file>", file=sys.stderr)
         return 2
+    from hammertools import update
+    rc = update.before_compile(args)
+    if rc is not None:
+        return rc
     map_arg = Path(args[-1])
     src = map_arg if map_arg.suffix.lower() == ".vmf" else map_arg.with_suffix(".vmf")
     gamedir = None

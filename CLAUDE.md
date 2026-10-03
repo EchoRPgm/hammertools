@@ -9,7 +9,7 @@ Geradores de geometria e entidades para o Hammer++ (Garry's Mod). Marcadores `ht
 - Sprints 1–5 prontos e validados no jogo: escada (com playerclip), cerca (brush/prop com bbox do .mdl), corrimão, escada de mão (func_useableladder), arco, tubo/duto com cotovelos curvos, escada em curva, porta, luzes em fila, elevador, spawn room, cabo, trilho curvo com trem automático e estações, terreno (displacement), zonas (`ht_zone`).
 - `ht_cubemaps` desativado (reflexos ruins no jogo); gerador existe, fora da fixture.
 - Sprint 6: **lint completo pronto** (`ht lint`: texturas/modelos com VPK+addons+BSP, leak por voxel com pointfile, nodraw, duplicados, sobreposições, grid, I/O, t-junctions, faces fantasma e `lightstyles` com `--compiled`) com relatório HTML geral (`--html`, aba Painel primeiro); `ht content` (monta o addon de conteúdo do mapa); `ht optimize` (junta blocos fatiados); ht-vbsp conserta t-junctions sozinho ao estourar (converte os func_detail que mais custam em func_brush no build/; `-notjunc` só se não couber) e conserta faces fantasma/textura vazada convertendo os acabamentos do plano em func_detail; `ht fix` (material de modelo em brush). Pendente: abrir rp_surdonoso_w no Hammer++ da VM (Windows-MCP desconectado; precisa `/mcp`). Próximo: `ht detail` (mapa pronto), `ht lightmap`, `ht rename`; sprint 7 = `ht diff`, `ht retexture`, `ht pack`.
-- 127 testes (`.venv/bin/python -m pytest -q`), leak test (`tools/leaktest.sh`, 5 mapas) e lint da fixture limpos.
+- 138 testes (`.venv/bin/python -m pytest -q`), leak test (`tools/leaktest.sh`, 5 mapas) e lint da fixture limpos.
 
 ## Fluxo de trabalho
 
@@ -18,6 +18,7 @@ Geradores de geometria e entidades para o Hammer++ (Garry's Mod). Marcadores `ht
 - **Deploy**: `tools/fixture.py` (regenera o mapa de teste), `tools/deploy.sh [--no-compile] [--reload]` (pacote + FGD em cp1252 + compile + preview; `--reload` recarrega no GMod da VM). Hammer++ só relê FGD/sequências ao reabrir.
 - **Mapa de teste**: `maps/test_stairs.vmf` gerado por `tools/fixture.py`. Laranja = pendente de validação, cinza claro = validado (dicionário `STATUS` no script). Compilado fica em `garrysmod\maps\test_stairs.bsp` na VM; pra testar no Linux, copiar com `qga-get.sh` pra `~/.local/share/Steam/steamapps/common/GarrysMod/garrysmod/maps/`.
 - **Commits**: conventional commits em português, push direto na `main`.
+- **Release**: `tools/release.sh X.Y.Z` (tag dispara `.github/workflows/release.yml`); público-alvo é Windows fora da VM (`tools/install.ps1` + `ht setup` + auto-update). `tools/deploy.sh` é só o deploy de desenvolvimento na VM. Detalhes em ROADMAP "Instalação e atualização".
 
 ## GMod no Linux (host)
 

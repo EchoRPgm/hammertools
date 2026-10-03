@@ -416,8 +416,19 @@ def cmd_fix(args) -> int:
 
 
 def main(argv=None) -> int:
+    from hammertools import __version__, setup_hammer, update
     ap = argparse.ArgumentParser(prog="ht", description="hammertools: marcadores ht_* -> geometria")
+    ap.add_argument("--version", action="version", version=f"hammertools {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("update", help="atualiza pelo último release do GitHub (automático 1x por dia no fim dos comandos)")
+    p.add_argument("--check", action="store_true", help="só diz se há versão nova")
+    p.add_argument("--auto", choices=("on", "off"), help="liga/desliga o auto-update")
+    p.add_argument("--token", help="grava o token de leitura do GitHub (repo privado)")
+    p.set_defaults(fn=update.cmd_update)
+    p = sub.add_parser("setup", help="integra ao Hammer++ do GMod: FGD, atalho do lint e sequências 'ht lint'/'ht final'")
+    p.add_argument("--game", help="pasta GarrysMod (padrão: a da Steam)")
+    p.add_argument("--refresh", action="store_true", help=argparse.SUPPRESS)
+    p.set_defaults(fn=setup_hammer.cmd_setup)
     p = sub.add_parser("build", help="gera geometria dos marcadores num novo VMF")
     p.add_argument("vmf"); p.add_argument("-o", "--out"); p.add_argument("--game", help="pasta com gameinfo.txt (ou env HT_GAME) pra ler modelos")
     p.add_argument("--cubemaps", action="store_true", help="também planta um env_cubemap sob cada luz (sem repetir vizinhos)"); p.set_defaults(fn=cmd_build)
@@ -506,7 +517,10 @@ def main(argv=None) -> int:
     p.add_argument("--no-measure", action="store_true", help="não calcula t-junctions antes/depois (mais rápido)")
     p.set_defaults(fn=cmd_optimize)
     args = ap.parse_args(argv)
-    return args.fn(args)
+    rc = args.fn(args)
+    if args.cmd not in ("update", "setup"):
+        update.auto()
+    return rc
 
 
 if __name__ == "__main__":

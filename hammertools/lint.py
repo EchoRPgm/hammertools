@@ -193,8 +193,47 @@ def _mountable_games(gamedir: Path) -> list[Path]:
     return out
 
 
+def steam_roots() -> list[Path]:
+    """Pastas da Steam: a do registro (Windows; pode estar em qualquer disco) e as padrão."""
+    roots = []
+    if os.name == "nt":
+        try:
+            import winreg
+            for hive, key, name in ((winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamPath"),
+                                    (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath")):
+                try:
+                    with winreg.OpenKey(hive, key) as k:
+                        roots.append(Path(winreg.QueryValueEx(k, name)[0]))
+                except OSError:
+                    continue
+        except ImportError:
+            pass
+    roots += [Path("C:/Program Files (x86)/Steam"), Path.home() / ".local/share/Steam", Path.home() / ".steam/steam"]
+    out = []
+    for r in roots:
+        if r not in out:
+            out.append(r)
+    return out
+
+
+def steam_library_dirs(roots: list[Path] | None = None) -> list[Path]:
+    """Bibliotecas da Steam (libraryfolders.vdf: o GMod pode estar em D:\\SteamLibrary etc.)."""
+    libs = []
+    for root in roots if roots is not None else steam_roots():
+        vdf = root / "steamapps" / "libraryfolders.vdf"
+        found = [root]
+        if vdf.exists():
+            text = vdf.read_text(encoding="utf-8", errors="replace")
+            found += [Path(m.replace("\\\\", "\\")) for m in re.findall(r'"path"\s+"([^"]+)"', text)]
+        for lib in found:
+            if lib not in libs:
+                libs.append(lib)
+    return libs
+
+
 def _find_game(gamedir) -> Path | None:
-    for cand in [gamedir, os.environ.get("HT_GAME"), *DEFAULT_GAME_DIRS]:
+    steam = [lib / "steamapps" / "common" / "GarrysMod" / "garrysmod" for lib in steam_library_dirs()]
+    for cand in [gamedir, os.environ.get("HT_GAME"), *DEFAULT_GAME_DIRS, *steam]:
         if cand and (Path(cand) / "gameinfo.txt").exists():
             return Path(cand)
     return None

@@ -1,0 +1,31 @@
+# Release: `tools/release.sh X.Y.Z` cria a tag vX.Y.Z; aqui testa, gera o wheel e publica o release
+# (o `ht update` dos usuários baixa o wheel do último release).
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: versão da tag = versão do pacote
+        run: |
+          v=$(python -c "import re;print(re.search(r'__version__ = \"(.+?)\"', open('hammertools/__init__.py').read())[1])")
+          test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != __version__ $v"; exit 1; }
+      - name: testes
+        run: |
+          pip install -e ".[lint]" pytest
+          pytest -q
+      - name: wheel
+        run: |
+          pip install build
+          python -m build
+      - name: publica
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: gh release create "$GITHUB_REF_NAME" dist/*.whl dist/*.tar.gz tools/install.ps1 --title "$GITHUB_REF_NAME" --generate-notes

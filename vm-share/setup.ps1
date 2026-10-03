@@ -1,5 +1,6 @@
 # Setup da VM pro Hammer++ + Windows-MCP. Rodar em PowerShell como admin:
-#   irm http://10.0.2.2:8090/setup.ps1 | iex
+#   & ([scriptblock]::Create((irm http://10.0.2.2:8090/setup.ps1))) -AuthKey <chave>
+param([Parameter(Mandatory)][string]$AuthKey)   # chave do Windows-MCP (a mesma do cliente MCP no host)
 $ErrorActionPreference = "Continue"
 $host_ = "http://10.0.2.2:8090"
 

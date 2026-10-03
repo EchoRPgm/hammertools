@@ -216,6 +216,8 @@ def apply(rel: dict, log=print) -> bool:
             return False
     log(f"ht update: instalado {rel['tag']} (era {__version__})")
     # a integração com o Hammer++ vem do pacote novo: roda num processo novo
+    sys.stdout.flush()
+    sys.stderr.flush()
     subprocess.run([sys.executable, "-m", "hammertools", "setup", "--refresh"])
     return True
 

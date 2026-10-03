@@ -113,6 +113,7 @@ def test_setup_writes_fgd_cp1252_and_sequences_once(tmp_path):
 
 def test_setup_refresh_without_hammer_is_noop(tmp_path, monkeypatch):
     monkeypatch.setattr(setup_hammer, "find_game_root", lambda game: None)
+    monkeypatch.setattr(setup_hammer.sys, "platform", "win32")
 
     class A:
         game = None
@@ -156,3 +157,19 @@ def test_steam_library_dirs_reads_libraryfolders(tmp_path):
         '\t"1"\n\t{\n\t\t"path"\t\t"D:\\\\SteamLibrary"\n\t}\n}\n')
     libs = lint.steam_library_dirs([root])
     assert libs[0] == root and Path("D:\\SteamLibrary") in libs
+
+
+def test_setup_refresh_outside_windows_touches_nothing(monkeypatch):
+    monkeypatch.setattr(setup_hammer.sys, "platform", "linux")
+    monkeypatch.setattr(setup_hammer, "find_game_root", lambda game: pytest.fail("não devia procurar o GMod"))
+
+    class A:
+        game = None
+        refresh = True
+    assert setup_hammer.cmd_setup(A()) == 0
+
+
+def test_patch_gameconfig_without_gmod_reports_and_keeps_text():
+    from pathlib import PureWindowsPath as W
+    new, changes = setup_hammer.patch_gameconfig(GAMECONFIG, W("E:/outro/garrysmod"), W("C:/ht-vbsp.exe"), W("C:/h.fgd"))
+    assert new == GAMECONFIG and "nenhum jogo" in changes[0]

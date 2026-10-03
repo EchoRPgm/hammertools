@@ -107,6 +107,8 @@ def patch_gameconfig(text: str, gamedir: Path, vbsp: Path, fgd: Path) -> tuple[s
              if len(path) == 3 and path[:2] == ("Configs", "Games") and key == "GameDir" and _same_path(val, gamedir)}
     edits: list[tuple[int, int, str]] = []
     changes: list[str] = []
+    if not games:
+        return text, [f"nenhum jogo com GameDir {gamedir} (configure o GMod no Hammer++ e rode `ht setup` de novo)"]
     for game in sorted(games):
         hpairs = [(k, v, a, b) for path, k, v, a, b in pairs if path == ("Configs", "Games", game, "Hammer")]
         bsp = next(((v, a, b) for k, v, a, b in hpairs if k == "BSP"), None)
@@ -166,7 +168,7 @@ def setup(game_root: Path, bin_dir: Path, log=print) -> bool:
     if gc.exists():
         raw = gc.read_bytes().decode("cp1252")
         new, changes = patch_gameconfig(raw, game_root / "garrysmod", vbsp, hdir / "hammertools.fgd")
-        if changes:
+        if new != raw:
             shutil.copy2(gc, gc.with_suffix(".txt.bak"))
             gc.write_bytes(new.encode("cp1252"))
         log("gameconfig: " + ("; ".join(changes) if changes else "já usa o ht-vbsp e o FGD") + f" ({gc})")
@@ -185,14 +187,25 @@ def setup(game_root: Path, bin_dir: Path, log=print) -> bool:
     return True
 
 
+def scripts_dir() -> Path:
+    """Pasta dos executáveis DESTA instalação (ht.exe/ht-vbsp.exe), não o primeiro `ht` do PATH."""
+    import sysconfig
+    return Path(sysconfig.get_path("scripts"))
+
+
 def cmd_setup(args) -> int:
+    if sys.platform != "win32":
+        if args.refresh:
+            return 0        # depois de um update fora do Windows: Hammer++ só existe no Windows
+        print("ht setup: o Hammer++ só roda no Windows", file=sys.stderr)
+        return 1
     root = find_game_root(args.game)
     if root is None:
         if args.refresh:
             return 0        # depois de um update, máquina sem GMod (ex.: Linux): nada a integrar
         print("ht setup: não achei o GMod; passe --game <pasta GarrysMod>", file=sys.stderr)
         return 1
-    bin_dir = Path(shutil.which("ht") or sys.argv[0]).resolve().parent
+    bin_dir = scripts_dir()
     ok = setup(root, bin_dir)
     if ok:
         print("pronto; reabra o Hammer++ (com ele aberto, ele regrava o gameconfig ao fechar e desfaz a mudança)")

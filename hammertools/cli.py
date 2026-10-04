@@ -623,13 +623,32 @@ def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str,
     else:
         rc, text = 0, "leaked"     # a grade grossa não vê a fresta: direto pro refino pelo pointfile
     # fresta menor que o voxel: o caminho que o vbsp gravou (.lin) diz onde; tampa com grade fina e recompila
+    removed_ents = []
     for _ in range(LEAK_REFINE):
         lin = out.with_suffix(".lin")
         if "leaked" not in text.lower() or not lin.exists():
             break
         v = vmfio.load(out)
-        made = seal.seal_at_pointfile(v, res, seal.read_pointfile(lin))
-        if not made:
+        pts = seal.read_pointfile(lin)
+        made = seal.seal_at_pointfile(v, res, pts)
+        # outros bolsões perto do mesmo caminho, sem esperar o vbsp mostrar um por compilação
+        coarse = seal.coarse_classifier(v, res)
+        region = seal.path_region(pts, coarse) if coarse else None
+        dropped = []
+        if region is not None:
+            pockets = seal.seal_pockets(v, res, region, coarse=coarse)
+            if pockets:
+                print(f"ht-vbsp: {len(pockets)} tampa(s) em bolsões com fresta perto do caminho do leak", flush=True)
+            made += pockets
+            dropped, other = seal.drop_outside_visuals(v, res, coarse, region)
+            if dropped:
+                removed_ents += dropped
+                print(f"ht-vbsp: {len(dropped)} entidade(s) de enfeite no vazio tirada(s) do build/ (no vazio não "
+                      "iluminam nem aparecem):", flush=True)
+                print("\n".join(f"  {c}  setpos {o.x:.0f} {o.y:.0f} {o.z:.0f}" for c, o in dropped), flush=True)
+            for c, o in other:
+                print(f"ht-vbsp: AVISO: {c} no vazio (não é enfeite, fica): setpos {o.x:.0f} {o.y:.0f} {o.z:.0f}", flush=True)
+        if not made and not dropped:
             break
         vmfio.save(v, out)
         boxes += made
@@ -641,7 +660,7 @@ def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str,
     print("ht-vbsp: " + ("AINDA VAZA depois das tampas; siga o pointfile" if still else
                          "selado. Feche esses vãos no Hammer quando puder (as tampas só existem no build/)") + "\n", flush=True)
     return rc, text, {"selado": not still, "tampas": [[list(map(round, lo)), list(map(round, hi))] for lo, hi in r.boxes],
-                      "voxel": r.voxel}
+                      "removidas": [[c, [round(o.x), round(o.y), round(o.z)]] for c, o in removed_ents]}
 
 
 def _fix_verts(real: Path, args: list[str], out: Path) -> tuple[int, str, dict]:
@@ -664,8 +683,14 @@ def _fix_verts(real: Path, args: list[str], out: Path) -> tuple[int, str, dict]:
             print(f"ht-vbsp: {n} bloco(s) fatiados juntados; recompilando.", flush=True)
         if not n:
             continue
+        before = out.with_name(out.stem + "_preverts.vmf")
+        shutil.copy2(out, before)
         vmfio.save(v, out)
         rc, text = _run_streaming([str(real), *args[:-1], str(out.with_suffix(""))])
+        if "leaked" in text.lower():        # o passo reabriu um leak (selo automático): volta e para
+            shutil.copy2(before, out)
+            print(f"ht-vbsp: {step} reabriu um leak; desfeito.", flush=True)
+            break
         if "too many unique verts" not in text.lower():
             rep["ok"] = True
             print(f"ht-vbsp: coube nos vértices depois de: {step}.", flush=True)
@@ -805,8 +830,8 @@ def _fix_tjunctions(real: Path, args: list[str], out: Path) -> tuple[int, dict]:
         shutil.copy2(base, out)
         print("\nht-vbsp: não coube nos tetos do vbsp convertendo detail; recompilando com -notjunc.\n"
               "ht-vbsp: efeito colateral possível: brilhos finos nas emendas (veja a aba T-junctions do `ht lint --html`).\n", flush=True)
-        rc, _ = _run_streaming([str(real), *args[:-1], "-notjunc", str(out.with_suffix(""))])
-        return rc, {"result": "notjunc"}
+        rc, text_nj = _run_streaming([str(real), *args[:-1], "-notjunc", str(out.with_suffix(""))])
+        return rc, {"result": "notjunc", "_text": text_nj}
     k, n, c = best
     for ext in saved + [".vmf"]:
         f = out.with_name(out.stem + "_best" + ext)
@@ -890,7 +915,7 @@ def vbsp_main(argv=None) -> int:
     if "leaked" in text.lower() and os.environ.get("HT_NO_SEAL") != "1":
         rc, text, seal_info = _fix_leak(real, cmd, out, gamedir)
     verts_info = None
-    if "too many unique verts" in text.lower():
+    if "too many unique verts" in text.lower() and "leaked" not in text.lower():   # vazando, o vbsp mantém todas as faces: contagem sem sentido
         rc, text, verts_info = _fix_verts(real, args, out)
     notjunc = "-notjunc" in (a.lower() for a in args)
     info = {"result": "notjunc" if notjunc else "direto"}
@@ -900,6 +925,11 @@ def vbsp_main(argv=None) -> int:
         info["seal"] = seal_info
     if "too many t-junctions" in text.lower() and not notjunc:
         rc, info = _fix_tjunctions(real, args, out)
+        # o vbsp só confere vértices depois das t-junctions: com -notjunc pode estourar o teto só agora
+        text_nj = info.pop("_text", "")
+        if "too many unique verts" in text_nj.lower() and "leaked" not in text_nj.lower():
+            rc, text, verts_info = _fix_verts(real, [*args[:-1], "-notjunc", args[-1]], out)
+            info["verts"] = verts_info
     if rc == 0 and "-onlyents" not in (a.lower() for a in args) and os.environ.get("HT_NO_PHANTOM") != "1":
         extra = ["-notjunc"] if info.get("result") == "notjunc" and not notjunc else []
         rc, info["phantom"] = _fix_phantoms(real, [*args[:-1], *extra], out)
@@ -916,9 +946,12 @@ def vbsp_main(argv=None) -> int:
     # tampas de leak (visgroup ht_seal do build/) viram cache: a próxima compilação começa delas
     if seal_info and os.environ.get("HT_NO_SEAL") != "1":
         from hammertools import seal
+        from srctools import Vec
         plugs = seal.plugs_in(vmfio.load(out))
-        if plugs:
-            seal.save_cache(cache, plugs)
+        removed = (seal.cached_removals(cache) if cache.exists() else []) + \
+            [(c, Vec(*o)) for c, o in seal_info.get("removidas", [])]
+        if plugs or removed:
+            seal.save_cache(cache, plugs, removed)
     for ext in (".bsp", ".prt", ".lin", ".log"):
         f = out.with_suffix(ext)
         if f.exists():

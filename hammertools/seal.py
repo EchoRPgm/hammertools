@@ -23,7 +23,12 @@ SEAL_VISGROUP = "ht_seal"     # tampas ficam nesse visgroup: o ht optimize não 
 
 
 def add_plug(v: VMF, lo: Vec, hi: Vec, material: str):
+    """Tampa arredondada PRA FORA até o inteiro: cresce menos de 1u e nunca deixa face fora do grid (a grade fina
+    é deslocada 0,25u; tampa em x,75 do lado de face inteira virava lasca nova de 0,25u e o vbsp vazava por ela)."""
+    import math
     from hammertools.core import vmf as vmfio
+    lo = Vec(*(max(-WORLD, math.floor(c + 1e-6)) for c in lo))
+    hi = Vec(*(min(WORLD, math.ceil(c - 1e-6)) for c in hi))
     solid = v.make_prism(lo, hi, mat=material).solid
     solid.visgroup_ids.add(vmfio._visgroup(v, SEAL_VISGROUP, (0, 160, 255)).id)
     v.add_brush(solid)
@@ -36,9 +41,18 @@ def plugs_in(v: VMF) -> list:
     return [(*s.get_bbox(), s.sides[0].mat) for s in v.brushes if s.visgroup_ids & ids]
 
 
-def save_cache(path, plugs) -> None:
+def save_cache(path, plugs, removed=()) -> None:
     import json
-    path.write_text(json.dumps([[list(map(float, lo)), list(map(float, hi)), m] for lo, hi, m in plugs]))
+    path.write_text(json.dumps({
+        "tampas": [[list(map(float, lo)), list(map(float, hi)), m] for lo, hi, m in plugs],
+        "removidas": [[c, [float(o.x), float(o.y), float(o.z)]] for c, o in removed],
+    }))
+
+
+def cached_removals(path) -> list:
+    import json
+    data = json.loads(path.read_text())
+    return [] if isinstance(data, list) else [(c, Vec(*o)) for c, o in data.get("removidas", [])]
 
 
 def apply_cache(v: VMF, path) -> tuple[int, int]:
@@ -46,9 +60,19 @@ def apply_cache(v: VMF, path) -> tuple[int, int]:
     entidade é velha (o mapa mudou ali) e fica de fora. Devolve (aplicadas, descartadas)."""
     import json
     from hammertools import lint
+    data = json.loads(path.read_text())
+    plugs = data if isinstance(data, list) else data.get("tampas", [])
+    # entidades de enfeite que estavam no vazio: tira as mesmas (classe e origem iguais)
+    for cls, o in ([] if isinstance(data, list) else data.get("removidas", [])):
+        o = Vec(*o)
+        for e in list(v.entities):
+            eo = lint._origin(e)
+            if e["classname"] == cls and eo is not None and (eo - o).mag() < 1.0:
+                v.remove_ent(e)
+                break
     origins = [o for o in (lint._origin(e) for e in v.entities) if o is not None]
     used = dropped = 0
-    for lo, hi, mat in json.loads(path.read_text()):
+    for lo, hi, mat in plugs:
         lo, hi = Vec(*lo), Vec(*hi)
         if any(all(lo[k] < o[k] < hi[k] for k in range(3)) for o in origins):
             dropped += 1
@@ -154,7 +178,29 @@ SEED_RADIUS = 2     # voxels em volta de cada entidade que nunca viram tampa
 TIE = 64            # capacidade de um voxel: TIE² (área) + TIE·profundidade (desempate); cabe em int32
 
 
-def cut_masks(blocked, src_mask, sink_mask, protect=None):
+def _neighbor_pairs(air, idx, conn: int):
+    """Pares (u, w) de voxels de ar vizinhos: 6 = pelas faces; 18 = faces e arestas (passagem na diagonal: a
+    fresta do vbsp anda torta em relação à grade e os voxels dela só se tocam pela aresta)."""
+    offs = [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
+    if conn == 18:
+        offs += [(1, 1, 0), (1, -1, 0), (1, 0, 1), (1, 0, -1), (0, 1, 1), (0, 1, -1)]
+    for d in offs:
+        a, b = [], []
+        for k in range(3):
+            if d[k] > 0:
+                a.append(slice(0, -d[k]))
+                b.append(slice(d[k], None))
+            elif d[k] < 0:
+                a.append(slice(-d[k], None))
+                b.append(slice(0, d[k]))
+            else:
+                a.append(slice(None))
+                b.append(slice(None))
+        m = air[tuple(a)] & air[tuple(b)]
+        yield idx[tuple(a)][m], idx[tuple(b)][m]
+
+
+def cut_masks(blocked, src_mask, sink_mask, protect=None, conn: int = 6):
     """Corte mínimo genérico: voxels de ar que separam `src_mask` de `sink_mask`. Capacidade de um voxel = área
     (TIE²) + desempate pela distância ao sumidouro (o corte fica no plano da abertura, não num funil pra dentro).
     `protect`: voxels que nunca entram no corte."""
@@ -173,16 +219,10 @@ def cut_masks(blocked, src_mask, sink_mask, protect=None):
     if protect is not None:
         cap[idx[protect & air]] = big
     rows, cols, caps = [np.arange(n, dtype=np.int32) * 2], [np.arange(n, dtype=np.int32) * 2 + 1], [cap]
-    for ax in range(3):
-        a = [slice(None)] * 3
-        b = [slice(None)] * 3
-        a[ax], b[ax] = slice(0, -1), slice(1, None)
-        m = air[tuple(a)] & air[tuple(b)]
-        u, w = idx[tuple(a)][m], idx[tuple(b)][m]
+    for u, w in _neighbor_pairs(air, idx, conn):
         rows += [u * 2 + 1, w * 2 + 1]
         cols += [w * 2, u * 2]
         caps += [np.full(len(u), big, np.int32)] * 2
-        del m, u, w
     sd = idx[src_mask & air]
     bi = idx[sink_mask & air & ~src_mask]
     rows += [np.full(len(sd), src, np.int32), bi * 2 + 1]
@@ -342,8 +382,7 @@ def _pass(v: VMF, res, vs: float | None, shift, material: str, r: SealResult) ->
         hi = np.clip(hi, -WORLD, WORLD)
         if np.any(hi - lo <= 0):
             continue
-        add_plug(v, Vec(*lo), Vec(*hi), material)
-        r.boxes.append((Vec(*lo), Vec(*hi)))
+        r.boxes.append(add_plug(v, Vec(*lo), Vec(*hi), material).get_bbox())
     return n_leaked, True
 
 
@@ -420,22 +459,20 @@ def crossing(points, classify, step: float = 4.0):
     return None
 
 
-def seal_at_pointfile(v: VMF, res, points, material: str = "tools/toolsnodraw") -> list:
-    """Tampa a fresta por onde o caminho do vbsp (pointfile) sai do mapa, com grade fina só em volta dela. Fonte e
-    sumidouro na borda do recorte vêm da grade grossa (lado de dentro x vazio). Devolve as caixas criadas.
-    Material nodraw: sela e o vbsp não gera face nenhuma (fresta de poucas unidades não aparece; skybox ali só
-    somaria vértices num mapa que costuma estar no teto)."""
+def coarse_classifier(v: VMF, res):
+    """Classe de um ponto na grade grossa ('in' lado de dentro / 'out' vazio / 'solid'), com `.volume(lo, shape,
+    fine)` pra classificar um recorte fino inteiro (0 sólido, 1 dentro, 2 vazio). None sem brush que sele."""
     import numpy as np
     from scipy import ndimage
-    from hammertools import lint
     g = _grid(v, res, None)
-    if g is None or len(points) < 2:
-        return []
+    if g is None:
+        return None
     solid, virtual, origin, vs = g
-    seeds = [c for c in _seeds(v, origin, vs, solid.shape) if not solid[c] and not virtual[c]]
     blocked = solid | virtual
     lab, _ = ndimage.label(~blocked)
-    inside = {int(lab[c]) for c in seeds if lab[c]} - _boundary_labels(lab)
+    # lado de dentro = todo ar fechado (não ligado à borda da grade). Sala fechada cujas entidades estão todas
+    # coladas na parede não tem semente, mas está selada: contá-la como vazio removia luzes do mapa principal
+    inside = set(range(1, int(lab.max()) + 1)) - _boundary_labels(lab)
     shape = np.array(solid.shape)
 
     def coarse(p):
@@ -451,7 +488,6 @@ def seal_at_pointfile(v: VMF, res, points, material: str = "tools/toolsnodraw") 
     inside_arr[list(inside)] = True
 
     def volume(lo, fshape, fine):
-        """Classe grossa de cada voxel fino do recorte: 0 sólido, 1 dentro, 2 vazio (fora da grade = vazio)."""
         idx, ok = [], []
         for k in range(3):
             i = np.floor((lo[k] + (np.arange(fshape[k]) + 0.5) * fine - origin[k]) / vs).astype(int)
@@ -461,7 +497,150 @@ def seal_at_pointfile(v: VMF, res, points, material: str = "tools/toolsnodraw") 
         cls = np.where(blocked[ix], 0, np.where(inside_arr[lab[ix]], 1, 2)).astype(np.int8)
         cls[~(ok[0][:, None, None] & ok[1][None, :, None] & ok[2][None, None, :])] = 2
         return cls
+
+    def near_out(p, cells: int = 2) -> bool:
+        """Ponto em voxel grosso sólido ou a até `cells` voxels de vazio: candidato a bolsão com fresta."""
+        i = np.floor((np.array([p.x, p.y, p.z]) - origin) / vs).astype(int)
+        lo, hi = np.maximum(i - cells, 0), np.minimum(i + cells + 1, shape)
+        if np.any(hi <= lo):
+            return True
+        sl = tuple(slice(lo[k], hi[k]) for k in range(3))
+        out = ~blocked[sl] & ~inside_arr[lab[sl]]
+        return bool(blocked[tuple(np.clip(i, 0, shape - 1))] or out.any())
+
     coarse.volume = volume
+    coarse.near_out = near_out
+    coarse.voxel = vs
+    return coarse
+
+
+# entidade que só enfeita (luz, sprite, prop) e ficou do lado do vazio depois do selo: no vazio ela não ilumina nem
+# mostra nada que se veja (face virada pro vazio não é desenhada), mas o vbsp conta como leak. Sai do build/.
+VISUAL_PREFIXES = ("light", "env_sprite", "env_lightglow", "prop_static", "prop_dynamic", "prop_physics",
+                   "point_spotlight", "beam_spotlight", "env_smokestack", "func_dustmotes")
+
+
+def outside_entities(v: VMF, res, coarse=None, region=None) -> list:
+    """Entidades pontuais do lado do vazio pela grade grossa (no vazio, ou enterradas sem nenhum vizinho de ar
+    do lado de dentro): [(entidade, origem)]."""
+    import numpy as np
+    from hammertools import lint
+    coarse = coarse or coarse_classifier(v, res)
+    if coarse is None:
+        return []
+    out = []
+    for e in v.entities:
+        if e.solids or e.hidden or e["classname"].startswith("ht_") or e["classname"].lower() in lint.VBSP_CONSUMED:
+            continue
+        o = lint._origin(e)
+        if o is None or (region is not None and not all(region[0][k] <= o[k] <= region[1][k] for k in range(3))):
+            continue
+        c = coarse(o)
+        if c == "in":
+            continue
+        if c == "solid":
+            step = coarse.voxel
+            near = [coarse(o + Vec(dx, dy, dz) * step) for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)]
+            if "in" in near or "out" not in near:
+                continue
+        out.append((e, o))
+    return out
+
+
+def drop_outside_visuals(v: VMF, res, coarse=None, region=None) -> tuple[list, list]:
+    """Tira do mapa as entidades visuais do lado do vazio (só dentro de `region`: perto do caminho do leak que o
+    vbsp mostrou; no mapa inteiro a grade grossa erra em parede grossa e laje). Devolve (removidas, outras)."""
+    removed, kept = [], []
+    for e, o in outside_entities(v, res, coarse, region):
+        if e["classname"].lower().startswith(VISUAL_PREFIXES):
+            v.remove_ent(e)
+            removed.append((e["classname"], o))
+        else:
+            kept.append((e["classname"], o))
+    return removed, kept
+
+
+POCKET_HALF = 128.0     # meio lado do recorte em volta de cada entidade na varredura de bolsões
+POCKET_FINE = 2.0
+
+
+POCKET_REGION = 512.0   # em volta do caminho do vbsp: onde procurar outros bolsões na mesma rodada
+
+
+def path_region(points, coarse) -> tuple | None:
+    """Caixa dos pontos do caminho que não estão no vazio grosso (as pontas no topo/fundo do mundo ficam de fora)."""
+    import numpy as np
+    pts = [p for p in points if coarse(p) != "out"]
+    if not pts:
+        return None
+    a = np.array([tuple(p) for p in pts])
+    return a.min(0) - POCKET_REGION, a.max(0) + POCKET_REGION
+
+
+def seal_pockets(v: VMF, res, region=None, material: str = "tools/toolsnodraw", log=None, coarse=None) -> list:
+    """Sem esperar o vbsp: cada entidade em voxel grosso sólido ou perto do vazio é testada num recorte fino
+    (2u, vizinhança de 18) em volta dela; se o bolsão dela encosta no vazio dentro do recorte, corte local ali.
+    No rp_surdonoso eram luminárias uma atrás da outra, cada uma num bolsão com fresta, e o vbsp só mostra uma por
+    compilação."""
+    import numpy as np
+    from scipy import ndimage
+    from hammertools import lint
+    coarse = coarse or coarse_classifier(v, res)
+    if coarse is None:
+        return []
+    st = ndimage.generate_binary_structure(3, 2)
+    cands = []
+    for e in v.entities:
+        if e["classname"].startswith("ht_") or e["classname"].lower() in lint.VBSP_CONSUMED or e.hidden:
+            continue
+        o = lint._origin(e)
+        if o is None or (region is not None and not all(region[0][k] <= o[k] <= region[1][k] for k in range(3))):
+            continue
+        if coarse.near_out(o):
+            cands.append(o)
+    sealing_all = [s for s in v.brushes if lint._seals(s, res)]
+    boxes_all = np.array([tuple(s.get_bbox()[0]) + tuple(s.get_bbox()[1]) for s in sealing_all]) if sealing_all \
+        else np.zeros((0, 6))
+    made = []
+    for o in cands:
+        lo = np.floor((np.array(tuple(o)) - POCKET_HALF) / POCKET_FINE) * POCKET_FINE + GRID_OFFSET
+        hi = lo + 2 * POCKET_HALF
+        fshape = tuple(int(x) for x in (hi - lo) / POCKET_FINE)
+        hit = np.all(boxes_all[:, 3:] >= lo, axis=1) & np.all(boxes_all[:, :3] <= hi, axis=1)
+        sealing = [sealing_all[i] for i in np.nonzero(hit)[0]]
+        fs = np.zeros(fshape, dtype=bool)
+        lint._rasterize(fs, lo, POCKET_FINE, sealing, expand=False)
+        ei = tuple(np.floor((np.array(tuple(o)) - lo) / POCKET_FINE).astype(int))
+        if fs[ei]:
+            continue
+        lab, _ = ndimage.label(~fs, structure=st)
+        comp = lab == lab[ei]
+        cls = coarse.volume(lo, fshape, POCKET_FINE)
+        out = comp & (cls == 2)
+        if not out.any():
+            continue                    # bolsão fechado (ou só ligado ao lado de dentro) neste recorte
+        j = np.argwhere(out)[0]
+        out_pt = Vec(*(lo + (j + 0.5) * POCKET_FINE))
+        got = _local_cut(v, res, (o, out_pt), coarse, POCKET_FINE, POCKET_HALF / 2, material, o, ())
+        if got and log:
+            log(f"  bolsão em {o.x:.0f} {o.y:.0f} {o.z:.0f}: {len(got)} tampa(s)")
+        made += got
+    return made
+
+
+def seal_at_pointfile(v: VMF, res, points, material: str = "tools/toolsnodraw") -> list:
+    """Tampa a fresta por onde o caminho do vbsp (pointfile) sai do mapa, com grade fina só em volta dela. Fonte e
+    sumidouro na borda do recorte vêm da grade grossa (lado de dentro x vazio). Devolve as caixas criadas.
+    Material nodraw: sela e o vbsp não gera face nenhuma (fresta de poucas unidades não aparece; skybox ali só
+    somaria vértices num mapa que costuma estar no teto)."""
+    import numpy as np
+    from scipy import ndimage
+    from hammertools import lint
+    if len(points) < 2:
+        return []
+    coarse = coarse_classifier(v, res)
+    if coarse is None:
+        return []
 
     # o pointfile do vbsp termina na entidade que vazou: orienta da entidade pro vazio
     origins = [o for o in (lint._origin(e) for e in v.entities) if o is not None]   # inclui func_door etc.
@@ -535,8 +714,7 @@ def _local_cut(v: VMF, res, seg, coarse, fine: float, margin: float, material: s
         bhi = np.clip(lo + q * fine, -WORLD, WORLD)
         if np.any(bhi - blo <= 0):
             continue
-        add_plug(v, Vec(*blo), Vec(*bhi), material)
-        made.append((Vec(*blo), Vec(*bhi)))
+        made.append(add_plug(v, Vec(*blo), Vec(*bhi), material).get_bbox())
     return made
 
 
@@ -574,10 +752,10 @@ def _crop_cut(v: VMF, res, lo, hi, coarse, fine: float, ent=None, path=()):
             src[i] = True
     if not src.any() or not snk.any():
         return None
-    cut = cut_masks(fblocked, src, snk)
+    cut = cut_masks(fblocked, src, snk, conn=18)
     if not cut.any():
         return None
-    flab, _ = ndimage.label(~(fblocked | cut))
+    flab, _ = ndimage.label(~(fblocked | cut), structure=ndimage.generate_binary_structure(3, 2))
     interior = np.isin(flab, np.unique(flab[src])[1:])
     return cut, fsolid, interior
 
@@ -643,8 +821,7 @@ def sliver_plugs(v: VMF, res, points, material: str = "tools/toolsnodraw") -> li
             if key in seen:
                 continue
             seen.add(key)
-            add_plug(v, Vec(*lo), Vec(*hi), material)
-            made.append((Vec(*lo), Vec(*hi)))
+            made.append(add_plug(v, Vec(*lo), Vec(*hi), material).get_bbox())
             break
     return made
 
@@ -691,6 +868,5 @@ def close_slivers(v: VMF, res, gap: float = SLIVER_GAP, material: str = "tools/t
                 if key in seen:
                     continue
                 seen.add(key)
-                add_plug(v, Vec(*lo), Vec(*hi), material)
-                made.append((Vec(*lo), Vec(*hi)))
+                made.append(add_plug(v, Vec(*lo), Vec(*hi), material).get_bbox())
     return made

@@ -141,7 +141,7 @@ def test_sliver_plug_fills_off_grid_gap():
     made = seal.sliver_plugs(v, lint.Resources(), path)
     assert len(made) == 1
     lo, hi = made[0]
-    assert (lo.x, hi.x) == (0, 32) and abs(lo.y - 499.6) < 1e-6 and hi.y == 500 and (lo.z, hi.z) == (0, 256)
+    assert (lo.x, hi.x) == (0, 32) and (lo.y, hi.y) == (499, 500) and (lo.z, hi.z) == (0, 256)   # arredondada pra fora
     assert v.brushes[-1].sides[0].mat == "tools/toolsnodraw"
 
 
@@ -155,7 +155,7 @@ def test_close_slivers_fills_all_sub_unit_gaps_at_once():
     _box(v, (240, 0, 0), (272, 64, 64))            # 8u: vão de verdade, fica
     made = seal.close_slivers(v, lint.Resources())
     spans = sorted((round(lo.x, 1), round(hi.x, 1), round(lo.y, 1), round(hi.y, 1)) for lo, hi in made)
-    assert spans == [(0, 32, 499.6, 500), (131.5, 132, 0, 64)]
+    assert spans == [(0, 32, 499, 500), (131, 132, 0, 64)]   # arredondadas pra fora
 
 
 def test_cache_roundtrip_drops_plugs_over_entities(tmp_path):

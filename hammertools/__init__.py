@@ -1,2 +1,2 @@
 """hammertools: marcadores ht_* no Hammer++ viram geometria/entidades via CLI `ht`."""
-__version__ = "0.2.3"
+__version__ = "0.3.0"

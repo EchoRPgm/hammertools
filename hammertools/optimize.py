@@ -105,7 +105,10 @@ def _collect(v: VMF) -> list[Box]:
             group = (owner, tuple(sorted(solid.visgroup_ids)), solid.group_id)
             boxes.append(Box(solid, container, group, faces, lo, hi))
 
+    seal_ids = {vg.id for vg in v.vis_tree if vg.name == "ht_seal"}   # tampas de leak do ht-vbsp: não mexe
     for s in v.brushes:
+        if s.visgroup_ids & seal_ids:
+            continue
         add(s, v.brushes, "mundo")
     for e in v.entities:
         if e["classname"] == "func_detail" and not e.hidden:

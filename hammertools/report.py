@@ -24,7 +24,7 @@ from hammertools import lint as L
 PRIORITY = [
     ("phantom", "erro", "Faces fantasma / textura vazada", "O vbsp desenhou uma superfície que não existe no VMF (não aparece no Hammer, dá pra atravessar) ou com a textura de um brush vizinho. O ht-vbsp converte os acabamentos desse plano em func_detail e recompila sozinho."),
     ("lightstyles", "erro", "Luz com estilo vazada", "O vrad gravou luz do sol/céu na página de uma luz que pisca/pulsa, numa face que nenhuma luz desse estilo alcança: no jogo a face inteira clareia ou pisca (retângulo de luz com borda reta). Acontece com o vrad do GMod em -fast; refazer a luz sem -fast (normal ou -final)."),
-    ("leak", "erro", "Leak: o mapa vaza pro vazio", "Sem selo, o vbsp não gera VIS e a luz sai errada. Siga o caminho (pointfile) e tape o buraco."),
+    ("leak", "erro", "Leak: o mapa vaza pro vazio", "Sem selo, o vbsp não gera VIS e a luz sai errada. O ht-vbsp tampa os vãos sozinho no build/ (toolsskybox no corte mínimo, com setpos de cada tampa); feche-os no Hammer seguindo o pointfile."),
     ("markers", "erro", "Marcadores ht_* incompletos", "Falta o par (início/fim) de um gerador: a peça não é gerada."),
     ("logic", "erro", "Laço de I/O / template quebrado", "Laço sem atraso trava o servidor; template sem alvo não recria nada."),
     ("outputs", "erro", "Outputs órfãos", "I/O mirando nome que não existe: o evento não acontece no jogo."),

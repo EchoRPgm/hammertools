@@ -44,6 +44,8 @@ NONSEAL_TOOLS = {
     "tools/toolsgrenadeclip", "tools/toolsdotted", "tools/toolsorigin", "tools/toolscontrolclip",
 }
 NODRAW = "tools/toolsnodraw"
+# entidades que o vbsp consome ao ler o mapa (viram lump e somem antes do teste de leak): não vazam
+VBSP_CONSUMED = {"info_overlay", "info_overlay_transition", "env_cubemap"}
 
 DEFAULT_GAME_DIRS = [
     Path.home() / ".local/share/Steam/steamapps/common/GarrysMod/garrysmod",
@@ -963,6 +965,8 @@ def _shader(res: Resources, mat: str) -> str:
 
 # --------------------------------------------------------------------------- voxel: leak e nodraw
 def _seals(s: Solid, res: Resources) -> bool:
+    if getattr(s, "hidden", False):       # oculto no Hammer (Ctrl+H): o vbsp não compila, não sela
+        return False
     if any(side.is_disp for side in s.sides):
         return False
     for side in s.sides:
@@ -1031,7 +1035,7 @@ def _voxel_checks(v: VMF, res: Resources, rep: Report, checks: set, voxel: float
     playable = set()
     leaked = []
     for e in v.entities:
-        if e.solids or e["classname"].startswith("ht_"):
+        if e.solids or e.hidden or e["classname"].startswith("ht_") or e["classname"].lower() in VBSP_CONSUMED:
             continue
         p = _origin(e)
         if p is None:

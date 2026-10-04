@@ -228,6 +228,35 @@ def cmd_content(args) -> int:
     return 0
 
 
+def _seal_report(r) -> list[str]:
+    lines = []
+    for lo, hi in r.boxes:
+        c = (lo + hi) / 2
+        lines.append(f"  tampa {hi.x - lo.x:.0f}x{hi.y - lo.y:.0f}x{hi.z - lo.z:.0f}  setpos {c.x:.0f} {c.y:.0f} {c.z:.0f}")
+    return lines
+
+
+def cmd_seal(args) -> int:
+    """Fecha os vãos de leak com toolsskybox num VMF novo."""
+    from hammertools import lint, seal
+    src = Path(args.vmf)
+    out = Path(args.out) if args.out else src.with_name(src.stem + "_sealed.vmf")
+    v = vmfio.load(src)
+    res = lint.Resources.from_game(args.game, None, ())
+    r = seal.seal(v, res, args.voxel)
+    if not r.sealed:
+        print(f"não consegui selar: {r.reason}", file=sys.stderr)
+        return 1
+    if not r.boxes:
+        print("não vaza; nada a fazer")
+        return 0
+    print(f"{r.leaked_before} entidade(s) alcançavam o vazio; {len(r.boxes)} tampa(s) de toolsskybox (voxel {r.voxel:.0f}):")
+    print("\n".join(_seal_report(r)))
+    vmfio.save(v, out)
+    print(f"gravado: {out}  (confira as tampas no jogo; o certo é fechar esses vãos no Hammer)")
+    return 0
+
+
 def cmd_optimize(args) -> int:
     """Junta blocos retangulares fatiados (reduz t-junctions) num VMF novo."""
     from hammertools import optimize
@@ -510,6 +539,10 @@ def main(argv=None) -> int:
     p.add_argument("--nodraw-hidden", action="store_true", help="nodraw nas faces de detail escondidas por outros brushes (menos faces/vértices)")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_fix)
+    p = sub.add_parser("seal", help="fecha os vãos de leak com toolsskybox num VMF novo (o ht-vbsp faz sozinho ao vazar)")
+    p.add_argument("vmf"); p.add_argument("-o", "--out"); p.add_argument("--game", help="pasta com gameinfo.txt (ou env HT_GAME)")
+    p.add_argument("--voxel", type=float, help="resolução (padrão: a mesma do lint)")
+    p.set_defaults(fn=cmd_seal)
     p = sub.add_parser("optimize", help="junta blocos retangulares fatiados com a mesma textura (menos t-junctions) num VMF novo")
     p.add_argument("vmf"); p.add_argument("-o", "--out", help="padrão: <mapa>_opt.vmf")
     p.add_argument("--game", help="pasta com gameinfo.txt (padrão: HT_GAME ou a instalação do GMod): diz quais materiais são translúcidos/água")
@@ -559,6 +592,56 @@ def _run_streaming(cmd: list[str]) -> tuple[int, str]:
         sys.stdout.flush()
         lines.append(line)
     return p.wait(), "".join(lines)
+
+
+LEAK_REFINE = 30    # recompilações guiadas pelo pointfile depois do selo grosso (cada uma acha uma fresta; o cache evita refazer)
+
+
+def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str, dict]:
+    """vbsp vazou: tampa os vãos no build/ com toolsskybox (corte mínimo entre as entidades e o vazio) e recompila."""
+    from hammertools import lint, seal
+    print("\nht-vbsp: LEAK: fechando os vãos automaticamente (só no build/; o fonte não muda) ...", flush=True)
+    v = vmfio.load(out)
+    try:
+        res = lint.Resources.from_game(str(gamedir) if gamedir else None, None, ())
+        r = seal.seal(v, res)
+    except Exception as e:  # selo automático nunca derruba o compile
+        print(f"ht-vbsp: selo automático falhou ({e}); siga o pointfile (Map > Load Pointfile)", flush=True)
+        return 0, "leaked", {"erro": str(e)}
+    boxes = list(r.boxes)
+    if r.boxes:
+        print(f"ht-vbsp: {len(r.boxes)} tampa(s) de toolsskybox ({r.leaked_before} entidade(s) alcançavam o vazio):", flush=True)
+        print("\n".join(_seal_report(r)) + "\n", flush=True)
+    # lascas de vértice fora do grid: todas de uma vez (o vbsp só mostra uma por compile)
+    slivers = seal.close_slivers(v, res)
+    if slivers:
+        boxes += slivers
+        print(f"ht-vbsp: {len(slivers)} lasca(s) de até {seal.SLIVER_GAP:g}u entre brushes fechadas com nodraw\n", flush=True)
+    if boxes:
+        vmfio.save(v, out)
+        rc, text = _run_streaming(cmd)
+    else:
+        rc, text = 0, "leaked"     # a grade grossa não vê a fresta: direto pro refino pelo pointfile
+    # fresta menor que o voxel: o caminho que o vbsp gravou (.lin) diz onde; tampa com grade fina e recompila
+    for _ in range(LEAK_REFINE):
+        lin = out.with_suffix(".lin")
+        if "leaked" not in text.lower() or not lin.exists():
+            break
+        v = vmfio.load(out)
+        made = seal.seal_at_pointfile(v, res, seal.read_pointfile(lin))
+        if not made:
+            break
+        vmfio.save(v, out)
+        boxes += made
+        print(f"ht-vbsp: fresta no caminho do leak: {len(made)} tampa(s) finas de nodraw:", flush=True)
+        print("\n".join(_seal_report(seal.SealResult(boxes=made))) + "\n", flush=True)
+        rc, text = _run_streaming(cmd)
+    r = seal.SealResult(boxes=boxes)
+    still = "leaked" in text.lower()
+    print("ht-vbsp: " + ("AINDA VAZA depois das tampas; siga o pointfile" if still else
+                         "selado. Feche esses vãos no Hammer quando puder (as tampas só existem no build/)") + "\n", flush=True)
+    return rc, text, {"selado": not still, "tampas": [[list(map(round, lo)), list(map(round, hi))] for lo, hi in r.boxes],
+                      "voxel": r.voxel}
 
 
 def _fix_verts(real: Path, args: list[str], out: Path) -> tuple[int, str, dict]:
@@ -792,7 +875,20 @@ def vbsp_main(argv=None) -> int:
         shutil.copy2(prev, out.with_suffix(".bsp"))
 
     cmd = [str(real), *args[:-1], str(out.with_suffix(""))]
+    cache = src.with_suffix(".seal.json")
+    if cache.exists() and os.environ.get("HT_NO_SEAL") != "1":
+        from hammertools import seal
+        v = vmfio.load(out)
+        used, dropped = seal.apply_cache(v, cache)
+        if used:
+            vmfio.save(v, out)
+        print(f"ht-vbsp: {used} tampa(s) de leak do cache {cache.name}" +
+              (f" ({dropped} velha(s) descartada(s): o mapa mudou ali)" if dropped else "") +
+              " (apague o arquivo pra refazer do zero)\n", flush=True)
     rc, text = _run_streaming(cmd)
+    seal_info = None
+    if "leaked" in text.lower() and os.environ.get("HT_NO_SEAL") != "1":
+        rc, text, seal_info = _fix_leak(real, cmd, out, gamedir)
     verts_info = None
     if "too many unique verts" in text.lower():
         rc, text, verts_info = _fix_verts(real, args, out)
@@ -800,6 +896,8 @@ def vbsp_main(argv=None) -> int:
     info = {"result": "notjunc" if notjunc else "direto"}
     if verts_info:
         info["verts"] = verts_info
+    if seal_info:
+        info["seal"] = seal_info
     if "too many t-junctions" in text.lower() and not notjunc:
         rc, info = _fix_tjunctions(real, args, out)
     if rc == 0 and "-onlyents" not in (a.lower() for a in args) and os.environ.get("HT_NO_PHANTOM") != "1":
@@ -815,6 +913,12 @@ def vbsp_main(argv=None) -> int:
         except Exception as e:  # BSP ilegível não impede o registro
             info["erro_bsp"] = str(e)
         src.with_suffix(".tjfix.json").write_text(json.dumps(info))
+    # tampas de leak (visgroup ht_seal do build/) viram cache: a próxima compilação começa delas
+    if seal_info and os.environ.get("HT_NO_SEAL") != "1":
+        from hammertools import seal
+        plugs = seal.plugs_in(vmfio.load(out))
+        if plugs:
+            seal.save_cache(cache, plugs)
     for ext in (".bsp", ".prt", ".lin", ".log"):
         f = out.with_suffix(ext)
         if f.exists():

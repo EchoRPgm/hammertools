@@ -343,6 +343,18 @@ def cmd_pack(args) -> int:
     for rel in (f"models/{autoprop.MODEL_DIR}/{ap}", f"materials/models/{autoprop.MODEL_DIR}/{ap}"):
         if (gd / rel).is_dir():
             sources.append(content.source_subdir(gd, rel))
+    # versões publicadas do mapa (Workshop e garrysmod/maps): o pakfile delas tem o conteúdo que já foi junto
+    if not args.no_published:
+        from hammertools.core.gma import find_addons
+        pub = content.map_bsps_in_addons(find_addons(gd), src.stem)
+        skip = {bsp_in.resolve(), out.resolve()}
+        for b in sorted((gd / "maps").glob("*.bsp")) if (gd / "maps").is_dir() else []:
+            st = b.stem.lower()
+            if b.resolve() not in skip and (src.stem.lower().startswith(st) or st.startswith(src.stem.lower())):
+                pub.append(content.source_bsp(b))
+        if pub:
+            print("BSPs publicados como fonte: " + ", ".join(s.name for s in pub))
+        sources += pub
     if not sources:
         # nada a embutir não é erro (o pack roda no fim da compilação do EchoHammer, mapa sem conteúdo próprio)
         print(f"nada a embutir: nenhuma fonte de conteúdo ({', '.join(map(str, dirs))}); `ht content` monta uma, ou passe --source")
@@ -566,6 +578,7 @@ def main(argv=None) -> int:
     p.add_argument("-o", "--out", help="padrão: <bsp>_packed.bsp; igual ao --bsp grava no próprio arquivo")
     p.add_argument("--game"); p.add_argument("--source", action="append", help="pasta com materials/ models/ sound/ (padrão: <jogo>/addons/<mapa>_content; os modelos do auto-prop entram sempre)")
     p.add_argument("--gma", action="append", help="addon .gma como fonte")
+    p.add_argument("--no-published", action="store_true", help="não usa os BSPs publicados do mapa (Workshop, garrysmod/maps) como fonte")
     p.add_argument("--no-css", action="store_true", help="embute também o que vem do CS:S (por padrão conta como montado)")
     p.add_argument("--dry-run", action="store_true"); p.add_argument("--max", type=int, default=20)
     p.set_defaults(fn=cmd_pack)

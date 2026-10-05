@@ -164,20 +164,29 @@ def optimize(v: VMF, classify: Callable[[str], str] = default_classify) -> Resul
 # que mais causam t-junctions em func_brush (agrupados por bloco, pra não estourar o teto de modelos) troca um
 # limite pelo outro na medida certa. Validado no rp_surdonoso: 400 func_detail -> 89 func_brush compila com o
 # FixTjuncs ligado; 200 não basta; todos (263 func_brush) estoura "Too many unique verts".
-def rank_detail_tjunctions(v: VMF) -> list[int]:
-    """Ids das entidades func_detail, da que mais custa em t-junctions pra que menos (só as com custo):
-    índices das faces dela + 3 índices por vértice dela no meio de aresta de outra face."""
+def detail_tjunction_costs(v: VMF) -> tuple[dict[int, float], float]:
+    """Custo estimado em índices de t-junction de cada func_detail (índices das faces dela + 3 por vértice dela no
+    meio de aresta de outra face) e o total estimado do mapa. A estimativa passa do real (~2x), mas é proporcional:
+    serve pra comparar e pra dividir o estouro que o vbsp informa."""
     from collections import defaultdict
     from hammertools import lint
     rep = lint.run(v, lint.Resources(), {"tjunctions"})
     ent_of = {s.id: e.id for e in v.by_class["func_detail"] for s in e.solids}
     cost: dict[int, float] = defaultdict(float)
+    total = 0.0
     for f in rep.data.get("tjunctions", []):
+        total += f["idx"]
         if f["solid"] in ent_of:
             cost[ent_of[f["solid"]]] += f["idx"]
         for sid, n in f.get("sources", {}).items():
             if sid in ent_of:
                 cost[ent_of[sid]] += 3 * n
+    return dict(cost), total
+
+
+def rank_detail_tjunctions(v: VMF) -> list[int]:
+    """Ids das entidades func_detail, da que mais custa em t-junctions pra que menos (só as com custo)."""
+    cost, _ = detail_tjunction_costs(v)
     return sorted(cost, key=lambda k: -cost[k])
 
 

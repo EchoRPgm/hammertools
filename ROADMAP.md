@@ -144,3 +144,7 @@ duto quadrado atravessando a parede de duas salas com cotovelo; duto quadrado e 
 - Escada afunilada (largura interpolada entre início e fim, crescendo ou estreitando; modos `stepped` e `smooth`).
 - Playerclip pra escada em curva (wedges por degrau).
 - Preview ao vivo é impossível sem plugin no binário; o ciclo é salvar → preview → reload.
+
+- **`ht lint --json`** (v0.4.0): resultado estruturado (`version`, `issues` com nível/checagem/mensagem/posição/exemplos/
+  ocorrências, `skipped`, `leak_path`, `ran`, `stats`) em stdout ou arquivo. É o que o EchoHammer usa no
+  "Check for problems".

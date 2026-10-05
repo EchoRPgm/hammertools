@@ -31,3 +31,32 @@ def test_pack_embeds_missing_content_stored(tmp_path):
     r2 = pack.pack(v, tmp_path / "out.bsp", tmp_path / "out2.bsp", [content.source_dir(tmp_path / "conteudo")],
                    lambda p: content.norm(p) in base, lambda p: b"")
     assert not r2.added and r2.kept == 2
+
+
+def test_pack_generated_embeds_autoprop_files_in_place(tmp_path):
+    from srctools.vmf import Entity
+    bsp = tmp_path / "m.bsp"
+    shutil.copy(DATA / "tiny.bsp", bsp)
+    game = tmp_path / "garrysmod"
+    vmt = game / "materials" / "models" / "ht_prop" / "m" / "dev_a.vmt"
+    vmt.parent.mkdir(parents=True)
+    vmt.write_text('"VertexLitGeneric" { "$basetexture" "dev/a" }')
+    mdl = game / "models" / "ht_prop" / "m" / "abc.mdl"
+    mdl.parent.mkdir(parents=True)
+    for ext in (".mdl", ".vvd", ".dx90.vtx", ".phy"):
+        mdl.with_suffix("").with_name("abc" + ext).write_bytes(b"x" * 16)
+    v = VMF()
+    v.add_ent(Entity(v, {"classname": "prop_static", "model": "models/ht_prop/m/abc.mdl", "origin": "0 0 0"}))
+    r = pack.pack_generated(v, bsp, game, "m")
+    names = set(BSP(str(bsp)).pakfile.namelist())
+    assert "models/ht_prop/m/abc.mdl" in names and "models/ht_prop/m/abc.vvd" in names
+    assert r.added and not bsp.with_name("m.bsp.tmp").exists()
+
+
+def test_content_dirs_matches_map_prefix(tmp_path):
+    from hammertools.cli import _content_dirs
+    (tmp_path / "addons" / "rp_x_content").mkdir(parents=True)
+    (tmp_path / "addons" / "outro_content").mkdir()
+    assert _content_dirs(tmp_path, "rp_x_new") == [tmp_path / "addons" / "rp_x_content"]
+    (tmp_path / "addons" / "rp_x_new_content").mkdir()
+    assert _content_dirs(tmp_path, "rp_x_new")[0] == tmp_path / "addons" / "rp_x_new_content"

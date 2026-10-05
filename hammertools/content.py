@@ -80,6 +80,16 @@ def source_dir(path: Path) -> Source:
     return Source(f"pasta {root}", lambda p: norm(p) in index, lambda p: index[norm(p)].read_bytes())
 
 
+def source_subdir(root: Path, rel: str) -> Source:
+    """Só uma subpasta do jogo (ex.: models/ht_prop/<mapa>), com caminhos relativos à raiz do jogo."""
+    base = Path(root) / rel
+    index: dict[str, Path] = {}
+    for f in base.rglob("*"):
+        if f.is_file():
+            index.setdefault(norm(f.relative_to(root).as_posix()), f)
+    return Source(f"pasta {base}", lambda p: norm(p) in index, lambda p: index[norm(p)].read_bytes())
+
+
 def source_gma(path: Path) -> Source:
     from hammertools.core.gma import GMA
     g = GMA(path)

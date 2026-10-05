@@ -94,3 +94,22 @@ def pack(v: VMF, bsp_path: Path, out: Path, sources: list[content.Source], base_
     if not dry_run:
         bsp.save(str(out))
     return out_res
+
+
+def pack_generated(v: VMF, bsp_path: Path, gamedir: Path, map_stem: str) -> PackResult:
+    """Embute só o que o auto-prop gerou (models/ e materials/ em ht_prop/<mapa>) no próprio BSP: esses arquivos não
+    existem no addon de conteúdo de ninguém. vvis e vrad preservam o pakfile, então pode rodar logo depois do vbsp."""
+    import os
+    from hammertools import autoprop
+    gamedir = Path(gamedir)
+    ap = autoprop.safe(map_stem)
+    sources = [content.source_subdir(gamedir, rel) for rel in (f"models/{autoprop.MODEL_DIR}/{ap}", f"materials/models/{autoprop.MODEL_DIR}/{ap}")
+               if (gamedir / rel).is_dir()]
+    if not sources:
+        return PackResult()
+    tmp = bsp_path.with_name(bsp_path.name + ".tmp")
+    r = pack(v, bsp_path, tmp, sources, lambda p: False, lambda p: None)
+    os.replace(tmp, bsp_path)
+    gen = f"/{autoprop.MODEL_DIR}/"
+    r.missing = {m for m in r.missing if gen in "/" + m}
+    return r

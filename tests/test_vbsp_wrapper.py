@@ -355,3 +355,18 @@ def test_lock_blocks_second_compile_of_same_map(room, tmp_path, monkeypatch, cap
     monkeypatch.setenv("HT_VBSP", sys.executable)
     assert vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]) == 0
     assert not src.with_suffix(".ht-vbsp.lock").exists()
+
+
+def test_ht_flags_become_env_and_are_not_passed_to_vbsp(room, tmp_path, monkeypatch):
+    import os
+    src = tmp_path / "m.vmf"
+    vmfio.save(room, src)
+    fake = tmp_path / "vbsp.py"
+    fake.write_text("import sys, pathlib; p = pathlib.Path(sys.argv[-1]); p.with_suffix('.bsp').write_text(' '.join(sys.argv[1:]))")
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    for k in ("HT_NO_SEAL", "HT_AUTOPROP"):
+        monkeypatch.delenv(k, raising=False)
+    assert vbsp_main([str(fake), "--ht-no-seal", "--ht-no-autoprop", "-game", str(tmp_path / "game"), str(src.with_suffix(""))]) == 0
+    assert os.environ["HT_NO_SEAL"] == "1" and os.environ["HT_AUTOPROP"] == "0"
+    assert "--ht-" not in src.with_suffix(".bsp").read_text()
+    monkeypatch.delenv("HT_NO_SEAL"); monkeypatch.delenv("HT_AUTOPROP")

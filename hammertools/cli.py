@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -306,9 +307,22 @@ def cmd_optimize(args) -> int:
     return 0
 
 
+def _content_dirs(gd: Path, stem: str) -> list[Path]:
+    """Addons de conteúdo do mapa: <mapa>_content ou um cujo nome (sem _content) é prefixo do mapa
+    (rp_surdonoso_w_content serve o rp_surdonoso_w_new). O mais específico primeiro."""
+    addons = gd / "addons"
+    exact = addons / f"{stem}_content"
+    found = [exact] if exact.is_dir() else []
+    if addons.is_dir():
+        for d in sorted(addons.iterdir(), key=lambda p: -len(p.name)):
+            if d.is_dir() and d.name.lower().endswith("_content") and d != exact and stem.lower().startswith(d.name[:-8].lower()):
+                found.append(d)
+    return found or [exact]
+
+
 def cmd_pack(args) -> int:
     """Embute no BSP compilado o conteúdo que o mapa usa e o GMod base não tem."""
-    from hammertools import content, lint, pack
+    from hammertools import autoprop, content, lint, pack
     src = Path(args.vmf)
     bsp_in = Path(args.bsp) if args.bsp else src.with_suffix(".bsp")
     if not bsp_in.exists():
@@ -316,14 +330,28 @@ def cmd_pack(args) -> int:
         return 2
     out = Path(args.out) if args.out else bsp_in.with_name(f"{bsp_in.stem}_packed.bsp")
     gd = lint._find_game(args.game)
-    dirs = [Path(d) for d in (args.source or [])] or [gd / "addons" / f"{src.stem}_content"]
+    # o que foi compilado é o build/ (auto-prop, tampas de leak...): é dele que saem as referências
+    built = src.parent / "build" / src.name
+    refs = built if built.exists() and built.stat().st_mtime >= src.stat().st_mtime else src
+    if refs != src:
+        print(f"referências de {refs} (o VMF que o ht-vbsp compilou)")
+    dirs = [Path(d) for d in (args.source or [])] or _content_dirs(gd, src.stem)
     sources = [content.source_dir(d) for d in dirs if Path(d).is_dir()]
     sources += [content.source_gma(Path(g)) for g in (args.gma or [])]
+    # modelos e materiais gerados pelo auto-prop ficam soltos no jogo (studiomdl grava lá)
+    ap = autoprop.safe(src.stem)
+    for rel in (f"models/{autoprop.MODEL_DIR}/{ap}", f"materials/models/{autoprop.MODEL_DIR}/{ap}"):
+        if (gd / rel).is_dir():
+            sources.append(content.source_subdir(gd, rel))
     if not sources:
         print(f"nenhuma fonte de conteúdo existe ({', '.join(map(str, dirs))}); rode `ht content` antes ou passe --source", file=sys.stderr)
         return 2
     has, read = pack.base_filesystem(gd, mount=not args.no_css)
-    r = pack.pack(vmfio.load(src), bsp_in, out, sources, has, read, dry_run=args.dry_run)
+    inplace = out.resolve() == bsp_in.resolve()
+    target = out.with_name(out.name + ".tmp") if inplace else out
+    r = pack.pack(vmfio.load(refs), bsp_in, target, sources, has, read, dry_run=args.dry_run)
+    if inplace and not args.dry_run:
+        os.replace(target, out)
     from collections import Counter
     kinds = Counter(p.split("/")[0] for p in r.added)
     print(f"{len(r.added)} arquivo(s) embutidos ({r.bytes_added / 1e6:.1f} MB): " + ", ".join(f"{k} {n}" for k, n in kinds.most_common()))
@@ -534,8 +562,8 @@ def main(argv=None) -> int:
     p.set_defaults(fn=cmd_diff)
     p = sub.add_parser("pack", help="embute no BSP compilado o conteúdo que o mapa usa e o GMod base não tem (pakfile)")
     p.add_argument("vmf"); p.add_argument("--bsp", help="BSP compilado (padrão: <mapa>.bsp)")
-    p.add_argument("-o", "--out", help="padrão: <bsp>_packed.bsp")
-    p.add_argument("--game"); p.add_argument("--source", action="append", help="pasta com materials/ models/ sound/ (padrão: <jogo>/addons/<mapa>_content)")
+    p.add_argument("-o", "--out", help="padrão: <bsp>_packed.bsp; igual ao --bsp grava no próprio arquivo")
+    p.add_argument("--game"); p.add_argument("--source", action="append", help="pasta com materials/ models/ sound/ (padrão: <jogo>/addons/<mapa>_content; os modelos do auto-prop entram sempre)")
     p.add_argument("--gma", action="append", help="addon .gma como fonte")
     p.add_argument("--no-css", action="store_true", help="embute também o que vem do CS:S (por padrão conta como montado)")
     p.add_argument("--dry-run", action="store_true"); p.add_argument("--max", type=int, default=20)
@@ -949,9 +977,30 @@ def _tj_plan(src: Path, out: Path) -> tuple[str, list[int], float] | None:
     return info["result"], list(info.get("detail_ids", [])), est
 
 
+# opções do ht-vbsp na linha de comando (o vbsp real não as vê): o mesmo que as variáveis de ambiente HT_*
+VBSP_FLAGS = {
+    "--ht-no-autoprop": ("HT_AUTOPROP", "0", "não converte detail em prop_static para caber nos tetos"),
+    "--ht-no-pack-props": ("HT_PACK_PROPS", "0", "não embute no BSP os modelos gerados pelo auto-prop"),
+    "--ht-no-seal": ("HT_NO_SEAL", "1", "não fecha leaks sozinho"),
+    "--ht-no-phantom": ("HT_NO_PHANTOM", "1", "não conserta faces fantasma / textura vazada"),
+    "--ht-tj-retry": ("HT_TJ_RETRY", "1", "recalcula as t-junctions em vez de repetir o que deu certo"),
+    "--ht-keep-preview": ("HT_KEEP_PREVIEW", "1", "mantém o preview dos geradores no fonte"),
+    "--ht-no-update": ("HT_NO_UPDATE", "1", "não procura versão nova do hammertools antes de compilar"),
+}
+
+
 def vbsp_main(argv=None) -> int:
     """Uma compilação por mapa de cada vez: duas no mesmo build/ se atrapalham (uma apaga o cache da outra)."""
     args = list(sys.argv[1:] if argv is None else argv)
+    if "--ht-help" in args:
+        print("opções do ht-vbsp (antes do caminho do mapa; o resto vai para o vbsp):")
+        for f, (env, _, desc) in VBSP_FLAGS.items():
+            print(f"  {f:22} {desc} (= {env})")
+        return 0
+    for f, (env, val, _) in VBSP_FLAGS.items():
+        if f in args:
+            args.remove(f)
+            os.environ[env] = val
     if not args:
         return _vbsp_main(args)
     m = Path(args[-1])
@@ -1154,6 +1203,16 @@ def _vbsp_main(args: list[str]) -> int:
             [(c, Vec(*o)) for c, o in seal_info.get("removidas", [])]
         if plugs or removed:
             seal.save_cache(cache, plugs, removed)
+    # modelos do auto-prop vão dentro do BSP (não existem no addon de conteúdo de ninguém); HT_PACK_PROPS=0 desliga
+    if rc == 0 and ap_info and ap_info.get("models") and gamedir and os.environ.get("HT_PACK_PROPS") != "0" \
+            and out.with_suffix(".bsp").exists():
+        try:
+            from hammertools import pack
+            pr = pack.pack_generated(vmfio.load(out), out.with_suffix(".bsp"), Path(gamedir), src.stem)
+            print(f"ht-vbsp: {len(pr.added)} arquivo(s) dos props gerados embutidos no BSP ({pr.bytes_added / 1e6:.1f} MB)"
+                  + (f"; {len(pr.missing)} faltando" if pr.missing else ""), flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"ht-vbsp: não consegui embutir os props gerados ({e}); rode `ht pack`", flush=True)
     for ext in (".bsp", ".prt", ".lin", ".log"):
         f = out.with_suffix(ext)
         if f.exists():

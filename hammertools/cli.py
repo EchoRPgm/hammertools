@@ -594,9 +594,23 @@ def _find_real_vbsp(gamedir: Path | None) -> Path | None:
     return None
 
 
+def _wine_cmd(cmd: list[str]) -> list[str]:
+    """Fora do Windows, um .exe (vbsp do GMod de Windows) roda pelo Wine: caminhos absolutos viram Z:\\... (o Wine monta
+    a raiz / em Z:). No Windows, ou para programa nativo, o comando fica igual."""
+    if os.name == "nt" or not cmd or not cmd[0].lower().endswith(".exe"):
+        return cmd
+    wine = shutil.which("wine") or shutil.which("wine64")
+    if wine is None:
+        return cmd
+    conv = lambda a: "Z:" + a.replace("/", "\\") if a.startswith("/") else a
+    return [wine, cmd[0], *map(conv, cmd[1:])]
+
+
 def _run_streaming(cmd: list[str]) -> tuple[int, str]:
     """Roda repassando a saída em tempo real (janela de compilação do Hammer) e devolve (rc, texto)."""
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1)
+    cmd = _wine_cmd(cmd)
+    env = dict(os.environ, WINEDEBUG=os.environ.get("WINEDEBUG", "-all"))
+    p = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1)
     lines = []
     for line in p.stdout:
         sys.stdout.write(line)

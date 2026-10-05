@@ -138,7 +138,6 @@ FAKE_COUNTS = (
 def _run_counts(room, tmp_path, monkeypatch, models_expr, **patch):
     import json
     from hammertools import cli, lint
-    monkeypatch.setattr(cli, "TJ_STEPS", (1, 2, 3))
     for k, val in patch.items():
         monkeypatch.setattr(cli, k, val)
     monkeypatch.setattr(lint, "bsp_counts", lambda p: json.loads(Path(p).read_text()))
@@ -151,17 +150,46 @@ def _run_counts(room, tmp_path, monkeypatch, models_expr, **patch):
     return rc, json.loads(src.with_suffix(".tjfix.json").read_text()), json.loads(src.with_suffix(".bsp").read_text()), tmp_path / "mapsrc" / "build" / "calls.txt"
 
 
-def test_tjfix_keeps_converting_until_index_margin(room, tmp_path, monkeypatch):
-    # 1 convertido: 65000 índices (passa, mas 99%); 2: 60000 (92%); 3: 55000 (84%) -> para no 3
-    rc, fix, bsp, _ = _run_counts(room, tmp_path, monkeypatch, "10")
-    assert rc == 0 and fix["func_detail"] == 3 and bsp["conv"] == 3 and bsp["indices"] == 55000
+def test_tjfix_computes_conversion_and_compiles_once(room, tmp_path, monkeypatch):
+    # o estouro (65550) e o custo estimado de cada func_detail dão o k; uma compilação só com ele
+    rc, fix, bsp, calls = _run_counts(room, tmp_path, monkeypatch, "10")
+    assert rc == 0 and fix["result"] == "convertido" and bsp["conv"] == fix["func_detail"] >= 1
+    assert bsp["indices"] <= 65536
+    assert calls.read_text() == "xx"  # a original + a calculada: nenhuma tentativa às cegas
+    assert fix["detail_ids"] and fix["est_idx"] > 0
 
 
-def test_tjfix_model_cap_keeps_best_previous(room, tmp_path, monkeypatch):
-    # modelos crescem 100 por conversão: 1 -> 900 (<= 921), 2 -> 1000 (passa da trava) => fica com a de 1, arquivos restaurados
-    rc, fix, bsp, _ = _run_counts(room, tmp_path, monkeypatch, "800 + 100 * conv")
-    assert rc == 0 and fix["func_detail"] == 1 and bsp["conv"] == 1
-    assert "func_brush" in (tmp_path / "mapsrc" / "build" / "m.vmf").read_text()  # build = a tentativa escolhida
+def test_tjfix_remembers_result_next_compile(room, tmp_path, monkeypatch):
+    # segunda compilação do mesmo mapa (sem mudar): repete a conversão gravada, sem estourar de novo
+    rc, fix, bsp, calls = _run_counts(room, tmp_path, monkeypatch, "10")
+    assert calls.read_text() == "xx"
+    src = tmp_path / "mapsrc" / "m.vmf"
+    fake = tmp_path / "vbsp.py"
+    assert vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]) == 0
+    assert calls.read_text() == "xxx"  # uma compilação só, já convertida
+    import json
+    again = json.loads(src.with_suffix(".tjfix.json").read_text())
+    assert again["result"] == "convertido" and again.get("memoria") and again["func_detail"] == fix["func_detail"]
+
+
+def test_tjfix_remembers_notjunc(room, tmp_path, monkeypatch):
+    # teto de modelos minúsculo: vira -notjunc; a próxima compilação já vai direto com -notjunc
+    rc, fix, bsp, calls = _run_counts(room, tmp_path, monkeypatch, "10", MAX_MODELS=2)
+    assert fix["result"] == "notjunc" and calls.read_text() == "xx"
+    src = tmp_path / "mapsrc" / "m.vmf"
+    assert vbsp_main([str(tmp_path / "vbsp.py"), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]) == 0
+    assert calls.read_text() == "xxx"
+    monkeypatch.setenv("HT_TJ_RETRY", "1")                 # pedir recálculo volta ao caminho normal
+    assert vbsp_main([str(tmp_path / "vbsp.py"), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]) == 0
+    assert calls.read_text() == "xxxxx"
+
+
+def test_tjfix_model_cap_after_compile_goes_notjunc(room, tmp_path, monkeypatch):
+    # o BSP da conversão calculada passa da trava de modelos: não tenta outra, vai de -notjunc com o build original
+    rc, fix, bsp, calls = _run_counts(room, tmp_path, monkeypatch, "1000")
+    assert rc == 0 and fix["result"] == "notjunc" and bsp == {"notjunc": 1}
+    assert calls.read_text() == "xxx"
+    assert "func_brush" not in (tmp_path / "mapsrc" / "build" / "m.vmf").read_text()
 
 
 def test_tjfix_predicted_models_skip_compile(room, tmp_path, monkeypatch):
@@ -312,3 +340,18 @@ def test_bad_lightstyle_face_flagged_when_no_styled_light_near(tmp_path):
     far = bspcheck.bad_lightstyle_faces(_styled_bsp(tmp_path, "9000 9000 9000"))
     assert [(f["face"], f["style"]) for f in far] == [(0, 5)]
     assert bspcheck.bad_lightstyle_faces(_styled_bsp(tmp_path, "0 0 0")) == []
+
+
+def test_lock_blocks_second_compile_of_same_map(room, tmp_path, monkeypatch, capsys):
+    import os
+    src = tmp_path / "m.vmf"
+    vmfio.save(room, src)
+    src.with_suffix(".ht-vbsp.lock").write_text(str(os.getpid()))   # "outra" compilação viva
+    assert vbsp_main([sys.executable, "-game", str(tmp_path / "game"), str(src.with_suffix(""))]) == 3
+    assert "já há uma compilação" in capsys.readouterr().err
+    src.with_suffix(".ht-vbsp.lock").write_text("999999999")       # trava velha (processo morto) não bloqueia
+    fake = tmp_path / "vbsp.py"
+    fake.write_text("import sys, pathlib; pathlib.Path(sys.argv[-1]).with_suffix('.bsp').write_text('ok')")
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    assert vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]) == 0
+    assert not src.with_suffix(".ht-vbsp.lock").exists()

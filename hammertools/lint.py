@@ -34,7 +34,7 @@ from hammertools.core import geom
 from hammertools.core import vmf as vmfio
 
 MAX_EXAMPLES = 5
-ALL_CHECKS = ("markers", "outputs", "logic", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid", "tjunctions", "phantom", "lightstyles", "perf")
+ALL_CHECKS = ("markers", "outputs", "logic", "extents", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid", "tjunctions", "phantom", "lightstyles", "perf")
 
 # texturas de ferramenta que NÃO selam o mapa (brush com qualquer face dessas não conta pro selo)
 NONSEAL_TOOLS = {
@@ -351,6 +351,21 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
 
     if "logic" in checks:
         _logic(v, rep)
+
+    if "extents" in checks:
+        from hammertools import extents
+        lim = extents.LIMIT
+        for s in v.brushes + [s for e in v.entities for s in e.solids]:
+            lo, hi = s.get_bbox()
+            if min(lo) < -lim or max(hi) > lim:
+                rep.add("erro", "extents", f"brush {s.id} vai até {min(lo):.0f}..{max(hi):.0f}: o mapa tem que ficar dentro de ±{lim} "
+                        f"(com o mundo encostando em ±{extents.ENGINE} o engine recusa o mapa: \"Map coordinate extents are too large\"); "
+                        "o ht-vbsp corta no build/, mas mova no mapa", (lo + hi) / 2)
+        for e in v.entities:
+            if e.get("origin"):
+                o = Vec.from_str(e["origin"])
+                if max(abs(o.x), abs(o.y), abs(o.z)) > lim:
+                    rep.add("erro", "extents", f"{e['classname']} fora de ±{lim} (o engine recusa o mapa perto da borda)", o)
 
     helpers = cordon_helper_brushes(v)
     if helpers:
@@ -1507,7 +1522,7 @@ def apply_tjfix(rep: Report, fix: dict, stale: bool = False) -> None:
 LABELS = {
     "markers": "marcadores incompletos", "outputs": "outputs órfãos", "textures": "texturas inexistentes",
     "models": "modelos", "leak": "leak", "nodraw": "nodraw visível", "duplicates": "brushes duplicados",
-    "logic": "lógica de entidades", "perf": "desempenho", "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions", "phantom": "faces fantasma/vazadas", "lightstyles": "luz com estilo vazada",
+    "logic": "lógica de entidades", "extents": "fora do limite de coordenadas", "perf": "desempenho", "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions", "phantom": "faces fantasma/vazadas", "lightstyles": "luz com estilo vazada",
 }
 
 

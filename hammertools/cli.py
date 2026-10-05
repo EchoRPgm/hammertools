@@ -901,6 +901,33 @@ def _fix_tjunctions(real: Path, args: list[str], out: Path, text: str = "") -> t
     return rc, {"result": "notjunc", "_text": text_nj, "est_idx": est_total}
 
 
+def _autoprop(out: Path, gamedir, real: Path, rec: dict) -> dict:
+    """Roda o auto-prop no build/ com a calibração do registro; nunca derruba a compilação."""
+    from hammertools import autoprop
+    if gamedir is None:
+        return {"models": 0, "erro": "sem -game"}
+    # a calibração da escolha que deu certo é reusada (a escolha é determinística: mesmo mapa = mesmos props, modelos
+    # e tampas de leak do cache); a "aprendida" no mapa já com props não vale para o mapa inteiro, então só serve de
+    # piso e nunca fica abaixo do padrão conservador
+    ap = rec.get("autoprop") or {}
+    calib = float(rec.get("ap_calib") or max(float(rec.get("calib") or 0), autoprop.CALIB_IDX))
+    vcalib = float(rec.get("ap_vcalib") or 0)
+    if not vcalib and ap.get("vcalib_used"):
+        vcalib = float(ap["vcalib_used"])
+    if not vcalib and rec.get("vertices") and rec.get("result") == "notjunc" and not ap:
+        # primeira vez: o mapa compilado da última vez é quase o mesmo -> real / estimativa de agora
+        est = autoprop.estimate(vmfio.load(out))
+        vcalib = rec["vertices"] / max(1, est.verts_total)
+    try:
+        vcalib = vcalib or autoprop.CALIB_VERTS
+        r = autoprop.apply(out, Path(gamedir), Path(real), calib, vcalib, log=lambda m: print(m, flush=True))
+        r["calib_used"], r["vcalib_used"] = round(calib, 4), round(vcalib, 4)
+        return r
+    except Exception as e:  # noqa: BLE001
+        print(f"ht-vbsp: auto-prop falhou ({e}); compilando sem.", flush=True)
+        return {"models": 0, "erro": str(e)}
+
+
 def _tj_plan(src: Path, out: Path) -> tuple[str, list[int], float] | None:
     """O que deu certo na última compilação deste mapa (<mapa>.tjfix.json), se o mapa não mudou o bastante pra
     valer recalcular (a estimativa de índices não caiu {TJ_MEMORY_DROP}). ("notjunc"|"convertido", ids, estimativa)."""
@@ -1013,8 +1040,16 @@ def _vbsp_main(args: list[str]) -> int:
         print(f"ht-vbsp: {used} tampa(s) de leak do cache {cache.name}" +
               (f" ({dropped} velha(s) descartada(s): o mapa mudou ali)" if dropped else "") +
               " (apague o arquivo pra refazer do zero)\n", flush=True)
+    # auto-prop: o mapa não coube nos tetos da última vez (precisou de -notjunc ou passou de 90% dos vértices):
+    # tira geometria de detail do BSP virando prop_static antes de compilar (HT_AUTOPROP=0 desliga)
+    ap_info = None
+    rec0 = _tj_record(out)
+    flags = {a.lower() for a in args}
+    if (os.environ.get("HT_AUTOPROP") != "0" and "-onlyents" not in flags and "-notjunc" not in flags and rec0
+            and (rec0.get("ap_calib") or rec0.get("result") == "notjunc" or rec0.get("vertices", 0) > 0.90 * LIMIT)):
+        ap_info = _autoprop(out, gamedir, real, rec0)
     # t-junctions: repete o que deu certo da última vez em vez de descobrir de novo compilando
-    plan = None if "-notjunc" in (a.lower() for a in args) or "-onlyents" in (a.lower() for a in args) else _tj_plan(src, out)
+    plan = None if ap_info and ap_info.get("models") else None if "-notjunc" in (a.lower() for a in args) or "-onlyents" in (a.lower() for a in args) else _tj_plan(src, out)
     planned = None
     if plan and plan[0] == "notjunc":
         args = [*args[:-1], "-notjunc", args[-1]]
@@ -1056,6 +1091,17 @@ def _vbsp_main(args: list[str]) -> int:
                 info["est_idx"], info["calib"] = est, round(idx / est, 4)
         except Exception:
             pass
+    if ap_info and ap_info.get("models") and "too many t-junctions" in text.lower() and not notjunc:
+        # ainda não coube: a calibração estava baixa; o teto mostra o mínimo real -> mais uma rodada, uma compilação
+        from hammertools import autoprop
+        est = autoprop.estimate(vmfio.load(out))
+        floor = LIMIT / max(1.0, est.idx_total)
+        print(f"ht-vbsp: auto-prop: ainda estoura; a calibração sobe para {floor * 1.15:.2f} e converto mais.", flush=True)
+        more = _autoprop(out, gamedir, real, {**rec0, "ap_calib": max(floor * 1.15, ap_info.get("calib_used", 0) * 1.15)})
+        ap_info["models"] += more.get("models", 0)
+        ap_info["calib_min"] = round(floor, 4)
+        if more.get("models"):
+            rc, text = _run_streaming(cmd)
     if "too many t-junctions" in text.lower() and not notjunc:
         if planned:
             print("ht-vbsp: a conversão da última vez não coube mais; recalculando.", flush=True)
@@ -1077,6 +1123,27 @@ def _vbsp_main(args: list[str]) -> int:
             info.update(bsp_counts(out.with_suffix(".bsp")))
         except Exception as e:  # BSP ilegível não impede o registro
             info["erro_bsp"] = str(e)
+        if ap_info:
+            info["autoprop"] = ap_info
+            if ap_info.get("models"):
+                fixed = info.get("result") != "notjunc"
+                info["ap_calib"] = ap_info.get("calib_used") if fixed else round(max(ap_info.get("calib_used", 0) * 1.15, ap_info.get("calib_min", 0) * 1.15), 4)
+                info["ap_vcalib"] = ap_info.get("vcalib_used")
+        elif rec0.get("ap_calib"):
+            info["ap_calib"], info["ap_vcalib"] = rec0["ap_calib"], rec0.get("ap_vcalib")
+        try:   # calibração do mapa compilado (estimativa x real), para o próximo auto-prop
+            from hammertools import autoprop
+            est = autoprop.estimate(vmfio.load(out))
+            if est.verts_total and info.get("vertices"):
+                info["vcalib"] = round(info["vertices"] / est.verts_total, 4)
+            if est.idx_total and info.get("indices"):
+                info["calib"] = round(info["indices"] / est.idx_total, 4)
+            elif ap_info and ap_info.get("calib_min"):
+                info["calib"] = round(ap_info["calib_min"] * 1.15, 4)
+            elif rec0.get("calib"):
+                info["calib"] = rec0["calib"]
+        except Exception:
+            pass
         src.with_suffix(".tjfix.json").write_text(json.dumps(info))
     # tampas de leak (visgroup ht_seal do build/) viram cache: a próxima compilação começa delas
     if seal_info and os.environ.get("HT_NO_SEAL") != "1":

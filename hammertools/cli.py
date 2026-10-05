@@ -648,6 +648,20 @@ def _wine_cmd(cmd: list[str]) -> list[str]:
     return [wine, cmd[0], *map(conv, cmd[1:])]
 
 
+SHADER_WARNED = False
+
+
+def _shader_warning(text: str) -> None:
+    """vbsp sem as DLLs de shader (cópia dos compiladores incompleta, comum pelo Wine): toda face sai SURF_NOLIGHT e o
+    vrad termina "ok" com o mapa sem luz."""
+    global SHADER_WARNED
+    if not SHADER_WARNED and "couldn't load shader dll" in text.lower():
+        SHADER_WARNED = True
+        print("\nht-vbsp: ATENÇÃO: o vbsp não carregou as DLLs de shader (stdshader_*.dll, game_shader_generic_garrysmod.dll "
+              "ao lado do vbsp.exe): TODAS as faces vão sair sem luz (o vrad termina sem erro e o mapa fica sem lightmap). "
+              "Copie essas DLLs do bin/win64 do GMod de Windows.\n", flush=True)
+
+
 def _run_streaming(cmd: list[str]) -> tuple[int, str]:
     """Roda repassando a saída em tempo real (janela de compilação do Hammer) e devolve (rc, texto)."""
     cmd = _wine_cmd(cmd)
@@ -658,7 +672,9 @@ def _run_streaming(cmd: list[str]) -> tuple[int, str]:
         sys.stdout.write(line)
         sys.stdout.flush()
         lines.append(line)
-    return p.wait(), "".join(lines)
+    text = "".join(lines)
+    _shader_warning(text)
+    return p.wait(), text
 
 
 def _run_vbsp(cmd: list[str]) -> tuple[int, str]:

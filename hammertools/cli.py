@@ -648,6 +648,18 @@ def _run_streaming(cmd: list[str]) -> tuple[int, str]:
     return p.wait(), "".join(lines)
 
 
+def _run_vbsp(cmd: list[str]) -> tuple[int, str]:
+    """Uma passada do vbsp no build/: antes, o que passou do limite de coordenadas (inclusive tampas de leak criadas
+    depois do primeiro corte) é cortado, senão o engine recusa o mapa ("Map coordinate extents are too large")."""
+    vmf = Path(cmd[-1]).with_suffix(".vmf")
+    if vmf.exists():
+        from hammertools import extents
+        v = vmfio.load(vmf)
+        if any(extents.clamp(v).values()):
+            vmfio.save(v, vmf)
+    return _run_streaming(cmd)
+
+
 LEAK_REFINE = 30    # recompilações guiadas pelo pointfile depois do selo grosso (cada uma acha uma fresta; o cache evita refazer)
 
 
@@ -673,7 +685,7 @@ def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str,
         print(f"ht-vbsp: {len(slivers)} lasca(s) de até {seal.SLIVER_GAP:g}u entre brushes fechadas com nodraw\n", flush=True)
     if boxes:
         vmfio.save(v, out)
-        rc, text = _run_streaming(cmd)
+        rc, text = _run_vbsp(cmd)
     else:
         rc, text = 0, "leaked"     # a grade grossa não vê a fresta: direto pro refino pelo pointfile
     # fresta menor que o voxel: o caminho que o vbsp gravou (.lin) diz onde; tampa com grade fina e recompila
@@ -708,7 +720,7 @@ def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str,
         boxes += made
         print(f"ht-vbsp: fresta no caminho do leak: {len(made)} tampa(s) finas de nodraw:", flush=True)
         print("\n".join(_seal_report(seal.SealResult(boxes=made))) + "\n", flush=True)
-        rc, text = _run_streaming(cmd)
+        rc, text = _run_vbsp(cmd)
     r = seal.SealResult(boxes=boxes)
     still = "leaked" in text.lower()
     print("ht-vbsp: " + ("AINDA VAZA depois das tampas; siga o pointfile" if still else
@@ -740,7 +752,7 @@ def _fix_verts(real: Path, args: list[str], out: Path) -> tuple[int, str, dict]:
         before = out.with_name(out.stem + "_preverts.vmf")
         shutil.copy2(out, before)
         vmfio.save(v, out)
-        rc, text = _run_streaming([str(real), *args[:-1], str(out.with_suffix(""))])
+        rc, text = _run_vbsp([str(real), *args[:-1], str(out.with_suffix(""))])
         if "leaked" in text.lower():        # o passo reabriu um leak (selo automático): volta e para
             shutil.copy2(before, out)
             print(f"ht-vbsp: {step} reabriu um leak; desfeito.", flush=True)
@@ -792,7 +804,7 @@ def _fix_phantoms(real: Path, opts: list[str], out: Path) -> tuple[int, dict]:
         bspcheck.to_detail(v, ids)
         vmfio.save(v, out)
         print(f"ht-vbsp: {len(ids)} acabamento(s) de mundo -> func_detail ({', '.join(map(str, ids))}); recompilando.", flush=True)
-        rc, text = _run_streaming([str(real), *opts, str(out.with_suffix(""))])
+        rc, text = _run_vbsp([str(real), *opts, str(out.with_suffix(""))])
         low = text.lower()
         if rc != 0 or not out.with_suffix(".bsp").exists() or "too many" in low or "leaked" in low:
             print("ht-vbsp: a recompilação falhou ou vazou; fico com a compilação anterior.", flush=True)
@@ -899,7 +911,7 @@ def _fix_tjunctions(real: Path, args: list[str], out: Path, text: str = "") -> t
         n = optimize.detail_to_brush(v, ranked[:k])
         vmfio.save(v, out)
         print(f"ht-vbsp: uma compilação: {k} func_detail -> {n} func_brush (~{models0 + n} modelos)", flush=True)
-        rc, text2 = _run_streaming([str(real), *args[:-1], str(out.with_suffix(""))])
+        rc, text2 = _run_vbsp([str(real), *args[:-1], str(out.with_suffix(""))])
         low = text2.lower()
         ok = rc == 0 and out.with_suffix(".bsp").exists() and "too many" not in low and "max_map" not in low
         c = {}
@@ -926,7 +938,7 @@ def _fix_tjunctions(real: Path, args: list[str], out: Path, text: str = "") -> t
     shutil.copy2(base, out)
     print("\nht-vbsp: recompilando com -notjunc (as t-junctions deste mapa não cabem no teto do vbsp).\n"
           "ht-vbsp: efeito colateral possível: brilhos finos nas emendas (veja a aba T-junctions do `ht lint --html`).\n", flush=True)
-    rc, text_nj = _run_streaming([str(real), *args[:-1], "-notjunc", str(out.with_suffix(""))])
+    rc, text_nj = _run_vbsp([str(real), *args[:-1], "-notjunc", str(out.with_suffix(""))])
     return rc, {"result": "notjunc", "_text": text_nj, "est_idx": est_total}
 
 
@@ -1062,6 +1074,15 @@ def _vbsp_main(args: list[str]) -> int:
             built.remove_brush(sol)
         vmfio.save(built, out)
         print(f"\nht-vbsp: {len(helpers)} brush(es) de cordon salvos no VMF removidos do build/ ({', '.join(map(str, helpers))}).\n", flush=True)
+    # limite de coordenadas do engine: com o mundo encostando em ±16384 o mapa não carrega
+    from hammertools import extents
+    ext = extents.clamp(built)
+    if any(ext.values()):
+        vmfio.save(built, out)
+        print("\nht-vbsp: perto da borda do mundo (o engine recusa o mapa: \"Map coordinate extents are too large\"):", flush=True)
+        for line in extents.report(ext):
+            print(f"ht-vbsp: {line}", flush=True)
+        print("ht-vbsp: corrigido só no build/; mova essa geometria para dentro no mapa.\n", flush=True)
     n_hidden = hidden_count(built)
     if n_hidden:
         print(f"\nht-vbsp: AVISO: {n_hidden} objeto(s) oculto(s) no Hammer não serão compilados (mostre tudo com "
@@ -1115,7 +1136,7 @@ def _vbsp_main(args: list[str]) -> int:
         vmfio.save(v, out)
         planned = {"result": "convertido", "func_detail": len(ids), "func_brush": n, "detail_ids": ids, "est_idx": plan[2], "memoria": True}
         print(f"ht-vbsp: repetindo a conversão que deu certo: {len(ids)} func_detail -> {n} func_brush.\n", flush=True)
-    rc, text = _run_streaming(cmd)
+    rc, text = _run_vbsp(cmd)
     seal_info = None
     if "leaked" in text.lower() and os.environ.get("HT_NO_SEAL") != "1":
         rc, text, seal_info = _fix_leak(real, cmd, out, gamedir)
@@ -1151,7 +1172,7 @@ def _vbsp_main(args: list[str]) -> int:
         ap_info["models"] += more.get("models", 0)
         ap_info["calib_min"] = round(floor, 4)
         if more.get("models"):
-            rc, text = _run_streaming(cmd)
+            rc, text = _run_vbsp(cmd)
     if "too many t-junctions" in text.lower() and not notjunc:
         if planned:
             print("ht-vbsp: a conversão da última vez não coube mais; recalculando.", flush=True)

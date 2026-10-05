@@ -344,8 +344,9 @@ def cmd_pack(args) -> int:
         if (gd / rel).is_dir():
             sources.append(content.source_subdir(gd, rel))
     if not sources:
-        print(f"nenhuma fonte de conteúdo existe ({', '.join(map(str, dirs))}); rode `ht content` antes ou passe --source", file=sys.stderr)
-        return 2
+        # nada a embutir não é erro (o pack roda no fim da compilação do EchoHammer, mapa sem conteúdo próprio)
+        print(f"nada a embutir: nenhuma fonte de conteúdo ({', '.join(map(str, dirs))}); `ht content` monta uma, ou passe --source")
+        return 0
     has, read = pack.base_filesystem(gd, mount=not args.no_css)
     inplace = out.resolve() == bsp_in.resolve()
     target = out.with_name(out.name + ".tmp") if inplace else out

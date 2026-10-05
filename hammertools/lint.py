@@ -255,6 +255,27 @@ class Issue:
     locations: list = field(default_factory=list)  # todas as ocorrências [(Vec, "descrição")] (pra agrupar por região)
 
 
+def _vec(v):
+    return None if v is None else [round(v.x, 3), round(v.y, 3), round(v.z, 3)]
+
+
+def report_json(rep: "Report") -> dict:
+    """Resultado do lint em JSON: problemas (nível, checagem, mensagem, posição, exemplos e ocorrências),
+    checagens puladas, caminho do leak e estatísticas. Formato estável para ferramentas externas."""
+    def loc(lst):
+        return [{"pos": _vec(p), "desc": d} for p, d in lst]
+    return {
+        "version": 1,
+        "issues": [{"level": i.level, "check": i.check, "msg": i.msg, "pos": _vec(i.pos), "group": i.group,
+                    "name": i.name, "count": i.count, "examples": loc(i.examples), "locations": loc(i.locations)}
+                   for i in rep.issues],
+        "skipped": rep.skipped,
+        "leak_path": [_vec(p) for p in rep.leak_path],
+        "ran": sorted(rep.ran),
+        "stats": {k: v for k, v in rep.stats.items() if isinstance(v, (int, float, str, bool))},
+    }
+
+
 @dataclass
 class Report:
     issues: list[Issue] = field(default_factory=list)

@@ -140,7 +140,15 @@ def cmd_lint(args) -> int:
         if fixp.exists():
             import json
             lint.apply_tjfix(rep, json.loads(fixp.read_text()), stale=fixp.stat().st_mtime < Path(args.vmf).stat().st_mtime)
-    print(lint.format_report(rep, args.max))
+    if args.json is not None:
+        import json as _json   # "json" é local mais acima nesta função (import condicional do tjfix)
+        out = lint.report_json(rep)
+        if args.json in ("", "-"):
+            print(_json.dumps(out, ensure_ascii=False))
+        else:
+            Path(args.json).write_text(_json.dumps(out, ensure_ascii=False), encoding="utf-8")
+    if args.json not in ("", "-"):
+        print(lint.format_report(rep, args.max))
     if args.html is not None:
         out = Path(args.html) if args.html else Path(args.vmf).with_suffix(".lint.html")
         lint.write_html(rep, out, Path(args.vmf).name, args.cluster_radius, args.area_size)
@@ -478,6 +486,9 @@ def main(argv=None) -> int:
     p.add_argument("--voxel", type=float, help="resolução do teste de leak/nodraw (padrão automático)")
     p.add_argument("--pointfile", action="store_true", help="grava <mapa>.lin com o caminho do leak")
     p.add_argument("--max", type=int, default=15, help="máximo de itens listados por categoria")
+    p.add_argument("--json", nargs="?", const="-", default=None, metavar="ARQUIVO",
+                   help="resultado estruturado (pro EchoHammer e outras ferramentas); sem arquivo ou '-' = stdout "
+                        "(e não imprime o texto)")
     p.add_argument("--html", nargs="?", const="", default=None, metavar="ARQUIVO",
                    help="gera o relatório geral (painel de prioridades + abas por checagem) e abre no navegador; padrão <mapa>.lint.html")
     p.add_argument("--no-open", action="store_true", help="com --html: só grava, não abre o navegador")

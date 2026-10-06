@@ -27,6 +27,14 @@ LINT_CMD = ('@echo off\r\nsetlocal\r\nset "in=%*"\r\nset "in=%in:"=%"\r\n:trim\r
             '"%~dp0ht.exe" lint "%in%.vmf" --pointfile --game "{gamedir}"\r\n')
 
 
+# compilação inteira pelo `ht compile` (vbsp, vvis, vrad com as flags certas, cópia): a sequência do Hammer++ não monta etapas
+COMPILE_CMD = ('@echo off\r\nsetlocal\r\nset "in=%*"\r\nset "in=%in:"=%"\r\n:trim\r\n'
+               'if "%in:~-1%"==" " (set "in=%in:~0,-1%" & goto trim)\r\n'
+               '"%~dp0ht.exe" compile "%in%.vmf" --rad final --game "{gamedir}"\r\n')
+# "ht final" de versões antigas do setup (etapas do Hammer++): trocada pela que chama o ht compile
+OLD_FINAL_MARK = "-final -StaticPropLighting -StaticPropPolys -TextureShadows"
+
+
 def _step(i: int, special: int, run: str | None, parms: str) -> str:
     r = f'\t\t\t"run"\t\t"{run}"\r\n' if run else ""
     return (f'\t\t"{i}"\r\n\t\t{{\r\n\t\t\t"enable"\t\t"1"\r\n\t\t\t"specialcmd"\t\t"{special}"\r\n{r}'
@@ -37,16 +45,11 @@ def _sequence(name: str, steps: list[str]) -> str:
     return f'\t"{name}"\r\n\t{{\r\n' + "".join(steps) + "\t}\r\n"
 
 
-def sequences(lint_cmd: Path) -> dict[str, str]:
-    g = "-game $gamedir $path\\$file"
+def sequences(lint_cmd: Path, compile_cmd: Path | None = None) -> dict[str, str]:
+    compile_cmd = compile_cmd or lint_cmd.with_name("ht-compile.cmd")
     return {
         "ht lint": _sequence("ht lint", [_step(1, 0, str(lint_cmd), "$path\\$file")]),
-        "ht final": _sequence("ht final", [
-            _step(0, 0, "$bsp_exe", g),
-            _step(1, 0, "$vis_exe", g),
-            _step(2, 0, "$light_exe", "-final -StaticPropLighting -StaticPropPolys -TextureShadows " + g),
-            _step(3, 257, None, "$path\\$file.bsp $bspdir\\$file.bsp"),
-        ]),
+        "ht final": _sequence("ht final", [_step(0, 0, str(compile_cmd), "$path\\$file")]),
     }
 
 
@@ -54,6 +57,14 @@ def add_sequences(cfg: str, seqs: dict[str, str]) -> tuple[str, list[str]]:
     """Insere as sequências que faltam logo após o cabeçalho. Devolve (texto, nomes adicionados)."""
     added = []
     for name, block in seqs.items():
+        head = f'\t"{name}"\r\n\t{{'
+        if head in cfg:
+            i = cfg.index(head)
+            j = cfg.index("\r\n\t}\r\n", i) + len("\r\n\t}\r\n")
+            if OLD_FINAL_MARK in cfg[i:j] and "$light_exe" in cfg[i:j]:      # a nossa antiga: atualiza
+                cfg = cfg[:i] + block + cfg[j:]
+                added.append(name)
+            continue
         if f'"{name}"' in cfg:
             continue
         if not HEADER.search(cfg):
@@ -163,6 +174,9 @@ def setup(game_root: Path, bin_dir: Path, log=print) -> bool:
     lint_cmd = bin_dir / "ht-lint.cmd"
     lint_cmd.write_bytes(LINT_CMD.format(gamedir=game_root / "garrysmod").encode("ascii", "replace"))
     log(f"atalho do lint: {lint_cmd}")
+    compile_cmd = bin_dir / "ht-compile.cmd"
+    compile_cmd.write_bytes(COMPILE_CMD.format(gamedir=game_root / "garrysmod").encode("ascii", "replace"))
+    log(f"atalho da compilação: {compile_cmd}")
     gc = hdir / GAMECONFIG
     vbsp = bin_dir / "ht-vbsp.exe"
     if gc.exists():
@@ -177,7 +191,7 @@ def setup(game_root: Path, bin_dir: Path, log=print) -> bool:
     cfg_path = hdir / SEQ_FILE
     if cfg_path.exists():
         raw = cfg_path.read_bytes().decode("cp1252")
-        new, added = add_sequences(raw, sequences(lint_cmd))
+        new, added = add_sequences(raw, sequences(lint_cmd, compile_cmd))
         if added:
             shutil.copy2(cfg_path, cfg_path.with_suffix(".cfg.bak"))
             cfg_path.write_bytes(new.encode("cp1252"))

@@ -540,8 +540,8 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
         + (". Ainda não basta pela estimativa." if not stats.get("suficiente", True) else "."))
     log(f"ht-vbsp: auto-prop: modelos em {mdl_dir} e materiais em {mat_dir} (inclua no conteúdo do mapa).")
     if made:
-        log("ht-vbsp: auto-prop: compile o vrad com -StaticPropLighting -StaticPropPolys (o EchoHammer põe sozinho): sem "
-            "isso o prop é iluminado só pela origem, dentro da própria colisão, e sai preto; e não faz sombra.")
+        log("ht-vbsp: auto-prop: o vrad precisa de -StaticPropLighting -StaticPropPolys (o `ht compile` põe sozinho; "
+            "compilando por fora, sem isso o prop sai preto e sem sombra).")
     return {"models": made, "falhas": failed, **stats}
 
 

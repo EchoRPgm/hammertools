@@ -629,6 +629,8 @@ def main(argv=None) -> int:
     p.add_argument("--dry-run", action="store_true", help="só mede, não grava")
     p.add_argument("--no-measure", action="store_true", help="não calcula t-junctions antes/depois (mais rápido)")
     p.set_defaults(fn=cmd_optimize)
+    from hammertools import compile as _compile
+    _compile.add_parser(sub)
     args = ap.parse_args(argv)
     rc = args.fn(args)
     if args.cmd not in ("update", "setup"):

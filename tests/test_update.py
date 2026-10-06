@@ -105,7 +105,9 @@ def test_setup_writes_fgd_cp1252_and_sequences_once(tmp_path):
     fgd.decode("cp1252")
     cfg = (h / setup_hammer.SEQ_FILE).read_bytes().decode("cp1252")
     assert cfg.count('"ht lint"') == 1 and cfg.count('"ht final"') == 1 and '"Default"' in cfg
-    assert "-final -StaticPropLighting" in cfg and str(bin_dir / "ht-lint.cmd") in cfg
+    # a compilação é do ht compile (independe das etapas do Hammer++)
+    assert str(bin_dir / "ht-compile.cmd") in cfg and "$light_exe" not in cfg and str(bin_dir / "ht-lint.cmd") in cfg
+    assert 'compile "%in%.vmf" --rad final' in (bin_dir / "ht-compile.cmd").read_text()
     assert str(root / "garrysmod") in (bin_dir / "ht-lint.cmd").read_text()
     setup_hammer.setup(root, bin_dir, log=lambda m: None)          # idempotente
     assert (h / setup_hammer.SEQ_FILE).read_bytes().decode("cp1252") == cfg
@@ -203,3 +205,14 @@ def test_before_compile_respects_child_flag(monkeypatch):
     monkeypatch.setenv("HT_NO_UPDATE", "1")
     monkeypatch.setattr(update, "check", lambda **k: pytest.fail("filho não consulta de novo"))
     assert update.before_compile(["mapa"]) is None
+
+
+def test_setup_replaces_old_final_sequence(tmp_path):
+    root, h = _fake_gmod(tmp_path)
+    old = setup_hammer._sequence("ht final", [setup_hammer._step(0, 0, "$light_exe", "-final -StaticPropLighting -StaticPropPolys -TextureShadows -game $gamedir $path\\$file")])
+    (h / setup_hammer.SEQ_FILE).write_bytes(('"Command Sequences"\r\n{\r\n' + old + '\t"Default"\r\n\t{\r\n\t}\r\n}\r\n').encode("cp1252"))
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    setup_hammer.setup(root, bin_dir, log=lambda m: None)
+    cfg = (h / setup_hammer.SEQ_FILE).read_bytes().decode("cp1252")
+    assert cfg.count('"ht final"') == 1 and "$light_exe" not in cfg and "ht-compile.cmd" in cfg and '"Default"' in cfg

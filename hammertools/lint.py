@@ -358,6 +358,17 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
                 rep.add("aviso", "logic", f"{e['classname']} '{e['targetname'] or e.id}' com angles {a}: o jogo gira o "
                         "modelo em volta da origin e o Hammer mostra sem girar (porta fora do lugar). O ht compile/ht-vbsp "
                         "zera no build", o)
+        # StormFox 2 (dia/noite, clima): luz sem nome some ao carregar o mapa (a engine remove), e sem ela o addon não
+        # escurece o sol; o env_tonemap_controller ele só usa se o mapa tiver
+        envs = v.by_class["light_environment"]
+        for e in envs:
+            if not e["targetname"]:
+                rep.add("aviso", "logic", "light_environment sem targetname: a engine remove a luz ao carregar o mapa e "
+                        "o StormFox 2 não consegue mudar o sol (dia/noite, clima). Dê um nome (ex.: sf_sun); o vrad grava "
+                        "a luz do céu num estilo trocável (lightmap maior)", _origin(e))
+        if envs and not v.by_class["env_tonemap_controller"]:
+            rep.add("aviso", "logic", "sem env_tonemap_controller: o StormFox 2 só usa o do mapa (não cria) e a exposição "
+                    "não acompanha dia/noite. Ponha um em qualquer lugar", _origin(next(iter(envs))))
 
     if "extents" in checks:
         from hammertools import extents

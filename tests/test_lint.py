@@ -601,3 +601,17 @@ def test_brush_entity_angles_are_flagged_and_zeroed_in_build(tmp_path):
     assert next(iter(w.by_class["func_door_rotating"]))["angles"] == "0 0 0"
     assert next(iter(w.by_class["prop_static"]))["angles"] == "0 90 0"
     assert fix.autofix_build(out, None, "m", log=lambda m: None) == 0
+
+
+def test_stormfox_light_environment_name_and_tonemap():
+    v = VMF()
+    v.create_ent("light_environment", origin="0 0 64")
+    msgs = [i.msg for i in lint.run(v, checks=["logic"]).issues]
+    assert any("light_environment sem targetname" in m for m in msgs)
+    assert any("sem env_tonemap_controller" in m for m in msgs)
+    env = next(iter(v.by_class["light_environment"]))
+    env["targetname"] = "sf_sun"
+    v.create_ent("env_tonemap_controller", origin="0 0 80")
+    msgs = [i.msg for i in lint.run(v, checks=["logic"]).issues]
+    assert not any("StormFox" in m for m in msgs)
+    assert v.by_class["light_environment"]          # a luz continua no mapa (o teste não a tirou do índice)

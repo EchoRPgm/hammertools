@@ -150,10 +150,23 @@ class Materials:
         return params
 
     def usable(self, mat: str) -> bool:
-        if mat.lower().startswith("tools/"):
-            return True          # some do modelo (só na colisão)
+        m = mat.lower()
+        if m.startswith("tools/"):
+            # só o nodraw: escada invisível, clip, skip, trigger... têm colisão/conteúdo próprio e ficam como brush
+            return m == "tools/toolsnodraw"
         p = self.params(mat)
-        return p is not None and p.get("shader", "") not in SKIP_SHADERS and "$basetexture" in p
+        if p is None or p.get("shader", "") not in SKIP_SHADERS and "$basetexture" not in p:
+            return False
+        # material com conteúdo especial (%compilenonsolid, %compileladder, %playerclip...) não vira prop
+        return p.get("shader", "") not in SKIP_SHADERS and not any(k.startswith(("%compile", "%playerclip")) for k in p)
+
+    def surfaceprop(self, mat: str) -> str:
+        return ((self.params(mat) or {}).get("$surfaceprop") or "default").lower()
+
+    def surfaceprop_of(self, s) -> str:
+        """$surfaceprop mais comum nas faces visíveis do solid (som de passo e de bala da colisão)."""
+        c = Counter(self.surfaceprop(sd.mat) for sd in s.sides if not sd.mat.lower().startswith("tools/"))
+        return c.most_common(1)[0][0] if c else "default"
 
     def size(self, mat: str) -> tuple[int, int]:
         import struct
@@ -194,13 +207,6 @@ class Cluster:
     solids: list = field(default_factory=list)      # (entidade func_detail, solid)
     idx: float = 0.0
     verts: int = 0
-
-    def key(self) -> str:
-        h = hashlib.sha1(b"autoprop-v3")     # muda junto com o formato do SMD: modelo velho não é reaproveitado
-        for _, s in sorted(self.solids, key=lambda t: t[1].id):
-            for sd in s.sides:
-                h.update(repr((tuple(map(tuple, sd.planes)), sd.mat.lower(), str(sd.uaxis), str(sd.vaxis))).encode())
-        return h.hexdigest()[:12]
 
 
 def candidates(v: VMF, mats: Materials) -> list[tuple[Entity, Solid]]:
@@ -286,20 +292,33 @@ def cluster_origin(cl: Cluster) -> Vec:
         lo, hi = s.get_bbox()
         d = hi - lo
         return d.x * d.y * d.z
-    _, big = max(cl.solids, key=lambda t: vol(t[1]))
+    # empate (degraus iguais) desempata pelo id: a ordem dos solids muda entre compilações, e a origem diferente com o
+    # mesmo modelo no cache punha a escada 128u abaixo, dentro da parede
+    _, big = max(cl.solids, key=lambda t: (vol(t[1]), -t[1].id))
     lo, hi = big.get_bbox()
     c = (lo + hi) / 2
     return Vec(round(c.x), round(c.y), round(c.z))
 
 
-def build_files(cl: Cluster, mats: Materials, map_name: str) -> tuple[Vec, dict[str, str], dict[str, str]]:
-    """(origem, arquivos {nome: texto} do SMD/QC, VMTs {nome do material de modelo: texto})."""
+def content_name(*parts: str) -> str:
+    """Nome do modelo = hash do que vai ser compilado: o cache nunca devolve um .mdl de outra geometria (antes era o hash
+    dos brushes, e a mesma lista de brushes com outra origem reaproveitava um modelo deslocado)."""
+    h = hashlib.sha1(b"autoprop-v5")
+    for p in parts:
+        h.update(p.encode())
+        h.update(b"\0")
+    return h.hexdigest()[:12]
+
+
+def build_files(cl: Cluster, mats: Materials, map_name: str) -> tuple[Vec, str, dict[str, str], dict[str, str]]:
+    """(origem, nome do modelo, arquivos {nome: texto} do SMD/QC, VMTs {nome do material de modelo: texto})."""
     origin = cluster_origin(cl)
     head = "version 1\nnodes\n0 \"root\" -1\nend\nskeleton\ntime 0\n0 0 0 0 0 0 0\nend\ntriangles\n"
-    ref, phys = [head], [head]
+    ref = [head]
     vmts: dict[str, str] = {}
     surfprops: Counter = Counter()
-    for piece, (_, s) in enumerate(cl.solids, 1):
+    # ordem estável (por id): a ordem dos solids no grupo muda entre compilações e mudaria o hash do conteúdo
+    for _, s in sorted(cl.solids, key=lambda t: t[1].id):
         for sd, poly in geom.face_polys(s):
             if len(poly) < 3:
                 continue
@@ -308,11 +327,6 @@ def build_files(cl: Cluster, mats: Materials, map_name: str) -> tuple[Vec, dict[
             # orientação anti-horária vista de fora (normal do triângulo do mesmo lado da face)
             if Vec.cross(loc[1] - loc[0], loc[2] - loc[0]).dot(n) < 0:
                 loc.reverse()
-            for k in range(1, len(loc) - 1):
-                phys.append("phys\n")
-                for p in (loc[0], loc[k], loc[k + 1]):
-                    q = _smd(p)
-                    phys.append(f"0 {_fmt(q.x)} {_fmt(q.y)} {_fmt(q.z)} 0 0 1 {piece} 0 1 0 1\n")
             mat = sd.mat.lower()
             if mat.startswith("tools/"):
                 continue
@@ -334,14 +348,74 @@ def build_files(cl: Cluster, mats: Materials, map_name: str) -> tuple[Vec, dict[
                     q = _smd(p)
                     ref.append(f"0 {_fmt(q.x)} {_fmt(q.y)} {_fmt(q.z)} {_fmt(rn.x)} {_fmt(rn.y)} {_fmt(rn.z)} {_fmt(u)} {_fmt(1 - vv)} 1 0 1\n")
     ref.append("end\n")
-    phys.append("end\n")
-    name = cl.key()
     folder = f"{MODEL_DIR}/{safe(map_name)}"
     sp = surfprops.most_common(1)[0][0] if surfprops else "default"
+    name = content_name("".join(ref), sp)
     qc = (f'$modelname "{folder}/{name}.mdl"\n$staticprop\n$surfaceprop "{sp}"\n$cdmaterials "models/{folder}/"\n'
-          f'$body "body" "ref.smd"\n$sequence "idle" "ref.smd"\n'
-          f'$collisionmodel "phys.smd"\n{{\n\t$concave\n\t$maxconvexpieces {max(1, len(cl.solids))}\n\t$mass 100\n}}\n')
-    return origin, {"ref.smd": "".join(ref), "phys.smd": "".join(phys), "model.qc": qc}, vmts
+          f'$body "body" "ref.smd"\n$sequence "idle" "ref.smd"\n')
+    # o modelo visível não tem colisão: o studiomdl funde peças de colisão encostadas num casco convexo (82 brushes
+    # viravam 48 peças e verga + batentes tampavam a porta). A colisão vai em modelos à parte (collision_models)
+    return origin, name, {"ref.smd": "".join(ref), "model.qc": qc}, vmts
+
+
+TOUCH = 0.5   # brushes a menos disso se tocam (no mesmo modelo de colisão o studiomdl os fundiria)
+
+
+def contact_colors(solids: list) -> list[int]:
+    """Cor de cada solid de modo que dois que se tocam nunca tenham a mesma (gulosa, maiores primeiro). Num modelo de
+    colisão só com peças que não se tocam o studiomdl mantém uma peça convexa por brush (35/35, 32/32... medido)."""
+    boxes = [s.get_bbox() for s in solids]
+    order = sorted(range(len(solids)), key=lambda i: -sum(boxes[i][1][k] - boxes[i][0][k] for k in range(3)))
+    color: dict[int, int] = {}
+    for i in order:
+        lo, hi = boxes[i]
+        used = {color[j] for j in color
+                if all(lo[k] - TOUCH <= boxes[j][1][k] and boxes[j][0][k] - TOUCH <= hi[k] for k in range(3))}
+        c = 0
+        while c in used:
+            c += 1
+        color[i] = c
+    return [color[i] for i in range(len(solids))]
+
+
+def collision_models(cl: Cluster, origin: Vec, mats: Materials, map_name: str) -> list[tuple[str, dict[str, str]]]:
+    """Modelos só de colisão do grupo, um por cor de contato: [(nome, arquivos)]. Corpo de um triângulo mínimo
+    (o prop fica com fade de 1u, nunca é desenhado); a colisão é exatamente a dos brushes e faz a sombra no vrad."""
+    head = "version 1\nnodes\n0 \"root\" -1\nend\nskeleton\ntime 0\n0 0 0 0 0 0 0\nend\ntriangles\n"
+    body = head + "colisao\n" + "".join(f"0 {x} 0 0 0 0 1 0 0 1 0 1\n" for x in ("0", "0.01", "0.02")) + "end\n"
+    solids = sorted(cl.solids, key=lambda t: t[1].id)
+    colors = contact_colors([s for _, s in solids])
+    out = []
+    folder = f"{MODEL_DIR}/{safe(map_name)}"
+    for c in sorted(set(colors)):
+        phys = [head]
+        sps: Counter = Counter()
+        pieces = 0
+        for (_, s), sc in zip(solids, colors):
+            if sc != c:
+                continue
+            pieces += 1
+            sps[mats.surfaceprop_of(s)] += 1
+            for sd, poly in geom.face_polys(s):
+                if len(poly) < 3:
+                    continue
+                n, _ = geom.outward(sd)
+                loc = [p - origin for p in poly]
+                if Vec.cross(loc[1] - loc[0], loc[2] - loc[0]).dot(n) < 0:
+                    loc.reverse()
+                for k in range(1, len(loc) - 1):
+                    phys.append("phys\n")
+                    for p in (loc[0], loc[k], loc[k + 1]):
+                        q = _smd(p)
+                        phys.append(f"0 {_fmt(q.x)} {_fmt(q.y)} {_fmt(q.z)} 0 0 1 {pieces} 0 1 0 1\n")
+        phys.append("end\n")
+        csp = sps.most_common(1)[0][0]
+        cname = content_name("".join(phys), body, csp, str(pieces)) + "_c"
+        qc = (f'$modelname "{folder}/{cname}.mdl"\n$staticprop\n$surfaceprop "{csp}"\n'
+              f'$cdmaterials "models/{folder}/"\n$body "body" "body.smd"\n$sequence "idle" "body.smd"\n'
+              f'$collisionmodel "phys.smd"\n{{\n\t$concave\n\t$maxconvexpieces {pieces}\n\t$mass 100\n}}\n')
+        out.append((cname, {"body.smd": body, "phys.smd": "".join(phys), "model.qc": qc}))
+    return out
 
 
 def find_studiomdl(real_vbsp: Path) -> Path | None:
@@ -376,56 +450,89 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
         return {"models": 0, **stats}
     map_name = out.stem
     work = out.parent / "ht_prop"
+    if os.name != "nt" and str(work.resolve()) != str(work.resolve()).lower():
+        # o studiomdl pelo Wine passa o caminho do .qc para minúsculas e o Z: diferencia: em ~/Projetos/... não acha
+        # o arquivo ("Error opening ...model.qc") e nenhum modelo compila. Trabalha numa pasta só de minúsculas
+        import tempfile
+        work = Path(tempfile.gettempdir()) / "ht-autoprop" / hashlib.sha1(str(out.resolve()).encode()).hexdigest()[:10]
     mat_dir = gamedir / "materials" / "models" / MODEL_DIR / safe(map_name)
     mdl_dir = gamedir / "models" / MODEL_DIR / safe(map_name)
     mat_dir.mkdir(parents=True, exist_ok=True)
+    # material do corpo de um triângulo dos modelos de colisão (nunca desenhados): invisível, só para não faltar
+    inv = mat_dir / "colisao.vmt"
+    inv_text = '"VertexLitGeneric"\n{\n\t"$basetexture" "tools/toolsnodraw"\n\t"$no_draw" "1"\n}\n'
+    if not inv.exists() or inv.read_text() != inv_text:
+        inv.write_text(inv_text)
     jobs = []
     for cl in chosen:
-        origin, files, vmts = build_files(cl, mats, map_name)
+        origin, name, files, vmts = build_files(cl, mats, map_name)
         for mname, text in vmts.items():
             f = mat_dir / f"{mname}.vmt"
             if not f.exists() or f.read_text() != text:
                 f.write_text(text)
-        name = cl.key()
-        d = work / name
-        d.mkdir(parents=True, exist_ok=True)
-        for fn, text in files.items():
-            (d / fn).write_text(text)
-        jobs.append((cl, origin, name, d))
+        models = [(name, files)] + collision_models(cl, origin, mats, map_name)
+        dirs = []
+        for mname, mfiles in models:
+            d = work / mname
+            d.mkdir(parents=True, exist_ok=True)
+            for fn, text in mfiles.items():
+                (d / fn).write_text(text)
+            dirs.append((mname, d))
+        jobs.append((cl, origin, name, dirs))
     run = run or (lambda cmd, cwd: subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, errors="replace",
                                                    env=dict(os.environ, WINEDEBUG="-all")).returncode)
     from hammertools.cli import _wine_cmd
 
-    def compile_one(job) -> bool:
-        cl, origin, name, d = job
-        mdl = mdl_dir / f"{name}.mdl"
+    def compile_one(item) -> bool:
+        mname, d = item
+        mdl = mdl_dir / f"{mname}.mdl"
         if mdl.exists():
             return True     # mesmo hash = mesmo conteúdo: já compilado
         cmd = _wine_cmd([str(studiomdl), "-game", str(gamedir), "-nop4", "-nox360", str(d / "model.qc")])
         run(cmd, str(d))
         return mdl.exists()
 
-    todo = sum(1 for j in jobs if not (mdl_dir / f"{j[2]}.mdl").exists())
-    log(f"ht-vbsp: auto-prop: {len(jobs)} grupo(s) -> prop_static ({todo} para compilar no studiomdl, o resto do cache)...")
+    items = [it for *_, dirs in jobs for it in dirs]
+    todo = sum(1 for m, _ in items if not (mdl_dir / f"{m}.mdl").exists())
+    log(f"ht-vbsp: auto-prop: {len(jobs)} grupo(s) -> prop_static + {len(items) - len(jobs)} modelo(s) de colisão "
+        f"({todo} para compilar no studiomdl, o resto do cache)...")
     with ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) // 2)) as pool:
-        ok = list(pool.map(compile_one, jobs))
+        compiled = dict(zip((m for m, _ in items), pool.map(compile_one, items)))
     made = 0
-    for (cl, origin, name, _), good in zip(jobs, ok):
-        if not good:
-            continue
-        for e, s in cl.solids:
-            e.solids.remove(s)
+    folder = f"models/{MODEL_DIR}/{safe(map_name)}"
+    for cl, origin, name, dirs in jobs:
+        if not all(compiled[m] for m, _ in dirs):
+            continue                # sem a colisão inteira o grupo fica como detail (prop sem colisão = parede que some)
+        for e, s_ in cl.solids:
+            e.solids.remove(s_)
             if not e.solids:
                 v.remove_ent(e)
-        v.add_ent(Entity(v, {"classname": "prop_static", "model": f"models/{MODEL_DIR}/{safe(map_name)}/{name}.mdl",
-                             "origin": f"{origin.x:g} {origin.y:g} {origin.z:g}", "angles": "0 0 0", "solid": "6",
-                             "skin": "0", "fademindist": "-1", "fadescale": "1", "disableshadows": "0"}))
+        org = f"{origin.x:g} {origin.y:g} {origin.z:g}"
+        # o visível desenha e faz a sombra pelos polígonos (vrad -StaticPropPolys), sem sombrear a si mesmo: a colisão
+        # tem a mesma forma e, fazendo sombra, deixava 32% dos vértices do prop pretos (medido no rp_surdonoso)
+        v.add_ent(Entity(v, {"classname": "prop_static", "model": f"{folder}/{name}.mdl", "origin": org, "angles": "0 0 0",
+                             "solid": "0", "skin": "0", "fademindist": "-1", "fadescale": "1", "disableshadows": "0",
+                             "disableselfshadowing": "1"}))
+        # colisão: uma peça convexa por brush, em modelos sem brushes encostados; nunca desenhados (fade de 1u)
+        for mname, _ in dirs[1:]:
+            v.add_ent(Entity(v, {"classname": "prop_static", "model": f"{folder}/{mname}.mdl", "origin": org,
+                                 "angles": "0 0 0", "solid": "6", "skin": "0", "fademindist": "0", "fademaxdist": "1",
+                                 "fadescale": "1", "disableshadows": "1"}))
         made += 1
     vmfio.save(v, out)
+    # modelos que nenhum prop deste build usa (nomes antigos, outra geometria) saem da pasta: o pack embute a pasta
+    used = {Path(e["model"]).stem for e in v.by_class["prop_static"] if e["model"].startswith(folder + "/")}
+    for f in mdl_dir.glob("*"):
+        stem = f.name.split(".")[0]
+        if re.fullmatch(r"[0-9a-f]{12}(_c)?", stem) and stem not in used:
+            f.unlink()
     failed = len(jobs) - made
     log(f"ht-vbsp: auto-prop: {made} prop_static no lugar de {sum(len(c.solids) for c, *_ in jobs if True)} solids de detail "
         f"(tira ~{stats.get('tira_idx', 0)} índices e ~{stats.get('tira_verts', 0)} vértices)"
         + (f"; {failed} grupo(s) não compilaram e ficaram como detail (log em {work})" if failed else "")
         + (". Ainda não basta pela estimativa." if not stats.get("suficiente", True) else "."))
     log(f"ht-vbsp: auto-prop: modelos em {mdl_dir} e materiais em {mat_dir} (inclua no conteúdo do mapa).")
+    if made:
+        log("ht-vbsp: auto-prop: compile o vrad com -StaticPropLighting -StaticPropPolys (o EchoHammer põe sozinho): sem "
+            "isso o prop é iluminado só pela origem, dentro da própria colisão, e sai preto; e não faz sombra.")
     return {"models": made, "falhas": failed, **stats}

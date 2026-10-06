@@ -55,7 +55,7 @@ def test_smd_rotated_and_origin_inside_detail(room):
     mats = autoprop.Materials(FakeRes())
     (e, s), = autoprop.candidates(room, mats)
     cl = autoprop.Cluster((0, 0, 0), [(e, s)])
-    origin, files, vmts = autoprop.build_files(cl, mats, "m")
+    origin, _name, files, vmts = autoprop.build_files(cl, mats, "m")
     lo, hi = s.get_bbox()
     assert lo.x <= origin.x <= hi.x and lo.y <= origin.y <= hi.y and lo.z <= origin.z <= hi.z
     pts = [tuple(map(float, l.split()[1:4])) for l in files["ref.smd"].splitlines() if l.startswith("0 ") and len(l.split()) == 12]
@@ -90,9 +90,19 @@ def test_apply_swaps_detail_for_props_with_fake_studiomdl(room, tmp_path, monkey
     info = autoprop.apply(out, game, vbsp, 1.0, 1.0, log=lambda m: None, run=fake_studiomdl)
     v = vmfio.load(out)
     props = [e for e in v.entities if e["classname"] == "prop_static"]
-    assert info["models"] == len(props) >= 1 and info["falhas"] == 0
+    assert info["models"] == len([p for p in props if p["solid"] == "0"]) >= 1 and info["falhas"] == 0
     assert all(p["model"].startswith("models/ht_prop/m/") for p in props)
     assert len(v.by_class["func_detail"]) < 4
+    visual = [p for p in props if p["solid"] == "0"]
+    coll = [p for p in props if p["solid"] == "6"]
+    # o visível não tem colisão (o studiomdl fundia peças e tampava portas); faz sombra, mas não em si mesmo
+    assert visual and all(p["disableshadows"] == "0" and p["disableselfshadowing"] == "1" for p in visual)
+    # a colisão vem de modelos à parte, nunca desenhados nem fazendo sombra, com a mesma origem do visível
+    assert coll and all(p["fademaxdist"] == "1" and p["disableshadows"] == "1" for p in coll)
+    assert {p["origin"] for p in coll} <= {p["origin"] for p in visual}
+    qcs = [q.read_text() for q in (tmp_path / "build").rglob("model.qc")]
+    assert any("$collisionmodel" not in q and "ref.smd" in q for q in qcs)
+    assert any("$collisionmodel" in q and "$maxconvexpieces" in q for q in qcs)
     assert (game / "materials" / "models" / "ht_prop" / "m" / "dev_a.vmt").exists()
     # de novo com o mesmo conteúdo: tudo do cache, nenhuma chamada ao studiomdl
     vmfio.save(room, out)
@@ -113,3 +123,42 @@ def test_model_vmt_keeps_backslash_paths_literal():
     assert '"$basetexture" "custom_textures/txt_chao"' in a
     assert '"$basetexture" "dunc_temp/vegas/w"' in b and '"$bumpmap" "dunc_temp/vegas/w_n"' in b
     assert "\t" not in a.replace('\t"$', '"$') and "\x0b" not in b
+
+
+def test_only_nodraw_among_tool_materials_goes_into_props():
+    """toolsinvisibleladder virava colisão sólida dentro do prop (escada de mão que não sobe e parede invisível)."""
+    res = FakeRes()
+    res.files["materials/glass/janela.vmt"] = b'"LightmappedGeneric" { "$basetexture" "dev/a" "%compilenonsolid" "1" }'
+    mats = autoprop.Materials(res)
+    assert mats.usable("TOOLS/TOOLSNODRAW")
+    for m in ("tools/toolsinvisibleladder", "tools/toolsplayerclip", "tools/toolsskip", "tools/toolstrigger", "glass/janela"):
+        assert not mats.usable(m), m
+    assert mats.usable("dev/a") and mats.surfaceprop("dev/a") == "metal"
+
+
+
+def test_contact_colors_never_put_touching_brushes_together():
+    """Batente esquerdo, verga e batente direito se tocam: no mesmo modelo de colisão viravam um casco só (porta)."""
+    from srctools import VMF
+    v = VMF()
+    def box(lo, hi):
+        return v.make_prism(Vec(*lo), Vec(*hi)).solid
+    jamb_l, lintel, jamb_r = box((0, 0, 0), (8, 8, 100)), box((0, 0, 100), (60, 8, 108)), box((52, 0, 0), (60, 8, 100))
+    far = box((500, 500, 0), (508, 508, 8))
+    colors = autoprop.contact_colors([jamb_l, lintel, jamb_r, far])
+    assert colors[0] != colors[1] and colors[2] != colors[1]
+    assert len(set(colors)) == 2           # os batentes não se tocam: podem dividir o modelo
+
+
+def test_same_group_in_any_order_gives_same_origin_and_model(room):
+    """A ordem dos solids no grupo mudava entre compilações: com degraus iguais a origem mudava e o cache reaproveitava o
+    modelo da outra origem (escada 128u abaixo, dentro da parede, no rp_surdonoso)."""
+    _room_with_details(room, n=4)
+    mats = autoprop.Materials(FakeRes())
+    cands = autoprop.candidates(room, mats)
+    a = autoprop.build_files(autoprop.Cluster((0, 0, 0), list(cands)), mats, "m")
+    b = autoprop.build_files(autoprop.Cluster((0, 0, 0), list(reversed(cands))), mats, "m")
+    assert a[0] == b[0] and a[1] == b[1] and a[2] == b[2]
+    ca = autoprop.collision_models(autoprop.Cluster((0, 0, 0), list(cands)), a[0], mats, "m")
+    cb = autoprop.collision_models(autoprop.Cluster((0, 0, 0), list(reversed(cands))), b[0], mats, "m")
+    assert [n for n, _ in ca] == [n for n, _ in cb]

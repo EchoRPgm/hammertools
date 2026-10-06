@@ -518,6 +518,55 @@ def cmd_fix(args) -> int:
     return 0
 
 
+def cmd_prop(args) -> int:
+    """Propper: solids escolhidos viram prop_static (o mesmo gerador do auto-prop). O EchoHammer chama com --json e
+    aplica as entidades no editor; sem --json grava <mapa>_prop.vmf."""
+    import json
+    from hammertools import autoprop, compile as _compile, lint
+    src = Path(args.vmf)
+    gd = lint._find_game(args.game)
+    if gd is None:
+        print("não achei o jogo (gameinfo.txt): use --game ou HT_GAME", file=sys.stderr)
+        return 2
+    studiomdl = _compile.find_tool(gd, "studiomdl")
+    if studiomdl is None:
+        print("studiomdl não encontrado em bin/ do jogo (defina HT_STUDIOMDL)", file=sys.stderr)
+        return 2
+    ids = [int(x) for x in ",".join(args.solids).replace(" ", ",").split(",") if x.strip()]
+    map_name = args.map_name or src.stem
+    v = vmfio.load(src)
+    work = autoprop.work_dir(src.parent / "build" / "ht_prop", f"prop:{src.resolve()}")
+    r = autoprop.convert(v, ids, gd, map_name, studiomdl, work)
+    if args.json:
+        o = r.origin
+        print(json.dumps({"model": r.model, "origin": f"{o.x:g} {o.y:g} {o.z:g}" if o else "", "entities": r.entities,
+                          "removed": r.removed, "skipped": {str(k): m for k, m in r.skipped.items()},
+                          "warnings": r.warnings}, ensure_ascii=False))
+        return 0 if r.entities else 1
+    for sid, why in r.skipped.items():
+        print(f"  solid {sid} fica como brush: {why}")
+    for w in r.warnings:
+        print(f"aviso: {w}")
+    if not r.entities:
+        return 1
+    print(f"{len(r.removed)} solid(s) -> {r.model} + {len(r.entities) - 1} modelo(s) de colisão")
+    gone = set(r.removed)
+    for s in [s for s in v.brushes if s.id in gone]:
+        v.remove_brush(s)
+    for e in list(v.entities):
+        if e.solids and any(s.id in gone for s in e.solids):
+            e.solids = [s for s in e.solids if s.id not in gone]
+            if not e.solids:
+                v.remove_ent(e)
+    from srctools.vmf import Entity
+    for kv in r.entities:
+        v.add_ent(Entity(v, dict(kv)))
+    out = _out_path(args, "prop")
+    vmfio.save(v, out)
+    print(f"gravado: {out}")
+    return 0
+
+
 def main(argv=None) -> int:
     from hammertools import __version__, setup_hammer, update
     ap = argparse.ArgumentParser(prog="ht", description="hammertools: marcadores ht_* -> geometria")
@@ -619,6 +668,13 @@ def main(argv=None) -> int:
     p.add_argument("--nodraw-hidden", action="store_true", help="nodraw nas faces de detail escondidas por outros brushes (menos faces/vértices)")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_fix)
+    p = sub.add_parser("prop", help="Propper: solids escolhidos viram prop_static compilado (mesmo gerador do auto-prop)")
+    p.add_argument("vmf"); p.add_argument("--solids", action="append", required=True, help="ids dos solids (vírgula; repetível)")
+    p.add_argument("--game", help="pasta com gameinfo.txt (padrão: HT_GAME ou a instalação do GMod)")
+    p.add_argument("--map-name", help="mapa dono dos modelos (pasta models/ht_prop/<mapa>; padrão: nome do VMF)")
+    p.add_argument("-o", "--out", help="padrão: <mapa>_prop.vmf")
+    p.add_argument("--json", action="store_true", help="não grava VMF: imprime as entidades a criar e os solids a tirar")
+    p.set_defaults(fn=cmd_prop)
     p = sub.add_parser("seal", help="fecha os vãos de leak com toolsskybox num VMF novo (o ht-vbsp faz sozinho ao vazar)")
     p.add_argument("vmf"); p.add_argument("-o", "--out"); p.add_argument("--game", help="pasta com gameinfo.txt (ou env HT_GAME)")
     p.add_argument("--voxel", type=float, help="resolução (padrão: a mesma do lint)")
@@ -1171,6 +1227,10 @@ def _vbsp_main(args: list[str]) -> int:
         print("\nht-vbsp: AVISO: o mapa compilado não tem NENHUM ponto de spawn (info_player_start...): o jogador nasce "
               "na origem do mundo. Confira o ht_spawnroom (início e _end com o mesmo targetname) ou ponha um "
               "info_player_start.\n", flush=True)
+    # props do `ht prop` vêm do fonte: o -StaticPropLighting que eles precisam é global, os outros ficam sem luz por vértice
+    from hammertools import autoprop as _ap
+    if _ap.isolate_prop_light(built):
+        vmfio.save(built, out)
     helpers = cordon_helper_brushes(built)
     if helpers:
         for sol in [b for b in built.brushes if b.id in set(helpers)]:

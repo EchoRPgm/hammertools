@@ -433,11 +433,123 @@ def find_studiomdl(real_vbsp: Path) -> Path | None:
     return None
 
 
+# --------------------------------------------------------------------------- compilar
+INVISIBLE_VMT = '"VertexLitGeneric"\n{\n\t"$basetexture" "tools/toolsnodraw"\n\t"$no_draw" "1"\n}\n'
+
+
+def work_dir(base: Path, key: str) -> Path:
+    """Pasta de trabalho do studiomdl. Pelo Wine ele passa o caminho do .qc para minúsculas e o Z: diferencia: em
+    ~/Projetos/... não acha o arquivo ("Error opening ...model.qc") e nenhum modelo compila. Aí vai para o /tmp."""
+    if os.name != "nt" and str(base.resolve()) != str(base.resolve()).lower():
+        import tempfile
+        return Path(tempfile.gettempdir()) / "ht-autoprop" / hashlib.sha1(key.encode()).hexdigest()[:10]
+    return base
+
+
+def model_dirs(gamedir: Path, map_name: str) -> tuple[Path, Path, str]:
+    """(pasta dos .mdl, pasta dos .vmt, caminho do modelo no jogo sem o nome) de um mapa."""
+    rel = f"{MODEL_DIR}/{safe(map_name)}"
+    return gamedir / "models" / rel, gamedir / "materials" / "models" / rel, f"models/{rel}"
+
+
+def prepare(clusters: list[Cluster], mats: Materials, map_name: str, gamedir: Path, work: Path) -> list[tuple]:
+    """Grava VMTs e os SMD/QC de cada grupo. [(grupo, origem, nome do visível, [(modelo, pasta de trabalho)])], o
+    primeiro modelo é o visível e os outros os de colisão."""
+    mdl_dir, mat_dir, _ = model_dirs(gamedir, map_name)
+    mat_dir.mkdir(parents=True, exist_ok=True)
+    mdl_dir.mkdir(parents=True, exist_ok=True)
+    # material do corpo dos modelos de colisão (nunca desenhados): invisível, só para não faltar
+    inv = mat_dir / "colisao.vmt"
+    if not inv.exists() or inv.read_text() != INVISIBLE_VMT:
+        inv.write_text(INVISIBLE_VMT)
+    jobs = []
+    for cl in clusters:
+        origin, name, files, vmts = build_files(cl, mats, map_name)
+        for mname, text in vmts.items():
+            f = mat_dir / f"{mname}.vmt"
+            if not f.exists() or f.read_text() != text:
+                f.write_text(text)
+        dirs = []
+        for mname, mfiles in [(name, files)] + collision_models(cl, origin, mats, map_name):
+            d = work / mname
+            d.mkdir(parents=True, exist_ok=True)
+            for fn, text in mfiles.items():
+                (d / fn).write_text(text)
+            dirs.append((mname, d))
+        jobs.append((cl, origin, name, dirs))
+    return jobs
+
+
+def compile_jobs(jobs: list[tuple], mdl_dir: Path, gamedir: Path, studiomdl: Path, run=None) -> dict[str, bool]:
+    """Compila no studiomdl (em paralelo) os modelos que ainda não existem. {modelo: compilou}."""
+    import subprocess
+    from hammertools.cli import _wine_cmd
+
+    def default_run(cmd, cwd) -> int:
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, errors="replace", env=dict(os.environ, WINEDEBUG="-all"))
+        (Path(cwd) / "studiomdl.log").write_text(r.stdout + r.stderr)    # o "log em <pasta>" dos avisos
+        return r.returncode
+    run = run or default_run
+
+    # o studiomdl roda com cwd na pasta do modelo: caminho relativo (ht prop mapa.vmf --game ../gm) não acharia nada
+    studiomdl, gamedir = Path(studiomdl).resolve(), Path(gamedir).resolve()
+
+    def compile_one(item) -> bool:
+        mname, d = item
+        mdl = mdl_dir / f"{mname}.mdl"
+        if mdl.exists():
+            return True     # mesmo hash = mesmo conteúdo: já compilado
+        d = Path(d).resolve()
+        try:
+            run(_wine_cmd([str(studiomdl), "-game", str(gamedir), "-nop4", "-nox360", str(d / "model.qc")]), str(d))
+        except OSError:
+            return False    # studiomdl que não executa (sem Wine, sem permissão): o grupo fica como brush
+        return mdl.exists()
+
+    items = [it for *_, dirs in jobs for it in dirs]
+    with ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) // 2)) as pool:
+        return dict(zip((m for m, _ in items), pool.map(compile_one, items)))
+
+
+def prop_keyvalues(folder: str, origin: Vec, dirs: list[tuple]) -> list[dict[str, str]]:
+    """prop_static de um grupo: o visível e os de colisão."""
+    org = f"{origin.x:g} {origin.y:g} {origin.z:g}"
+    name = dirs[0][0]
+    # o visível só desenha, com luz por vértice (vrad -StaticPropLighting): a origem fica dentro da própria colisão
+    # e, iluminado só por ela, saía preto. A sombra vem da colisão, com a forma exata dos brushes
+    out = [{"classname": "prop_static", "model": f"{folder}/{name}.mdl", "origin": org, "angles": "0 0 0",
+            "solid": "0", "skin": "0", "fademindist": "-1", "fadescale": "1", "disableshadows": "1",
+            "disableselfshadowing": "1"}]
+    # colisão: uma peça convexa por brush, em modelos sem brushes encostados; nunca desenhados (fade de 1u)
+    for mname, _ in dirs[1:]:
+        out.append({"classname": "prop_static", "model": f"{folder}/{mname}.mdl", "origin": org,
+                    "angles": "0 0 0", "solid": "6", "skin": "0", "fademindist": "0", "fademaxdist": "1",
+                    "fadescale": "1", "disableshadows": "0", "disablevertexlighting": "1"})
+    return out
+
+
+def isolate_prop_light(v: VMF) -> int:
+    """Com props gerados no mapa (auto-prop ou `ht prop`), os outros prop_static ganham disablevertexlighting: o
+    -StaticPropLighting que os gerados precisam é global no vrad e escurecia o mapa inteiro (rp_surdonoso). O Hammer++
+    grava "0" em todo prop, então "0" é o padrão, não escolha. HT_ALL_PROP_LIGHT=1 (perfil final) deixa como está.
+    Devolve quantos mudaram."""
+    if os.environ.get("HT_ALL_PROP_LIGHT") == "1":
+        return 0
+    props = v.by_class["prop_static"]
+    if not any(f"/{MODEL_DIR}/" in e["model"] for e in props):
+        return 0
+    n = 0
+    for e in props:
+        if f"/{MODEL_DIR}/" not in e["model"] and e["disablevertexlighting"] != "1":
+            e["disablevertexlighting"] = "1"
+            n += 1
+    return n
+
+
 # --------------------------------------------------------------------------- aplicar
 def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, vcalib: float = CALIB_VERTS,
           log=print, run=None) -> dict:
     """Converte os grupos escolhidos do build/ (out) em prop_static compilados. Devolve o resumo para o registro."""
-    import subprocess
     from hammertools import lint
     from hammertools.core import vmf as vmfio
     studiomdl = find_studiomdl(real_vbsp)
@@ -456,57 +568,15 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
         log("ht-vbsp: auto-prop: nada a converter (já cabe ou não há candidatos).")
         return {"models": 0, **stats}
     map_name = out.stem
-    work = out.parent / "ht_prop"
-    if os.name != "nt" and str(work.resolve()) != str(work.resolve()).lower():
-        # o studiomdl pelo Wine passa o caminho do .qc para minúsculas e o Z: diferencia: em ~/Projetos/... não acha
-        # o arquivo ("Error opening ...model.qc") e nenhum modelo compila. Trabalha numa pasta só de minúsculas
-        import tempfile
-        work = Path(tempfile.gettempdir()) / "ht-autoprop" / hashlib.sha1(str(out.resolve()).encode()).hexdigest()[:10]
-    mat_dir = gamedir / "materials" / "models" / MODEL_DIR / safe(map_name)
-    mdl_dir = gamedir / "models" / MODEL_DIR / safe(map_name)
-    mat_dir.mkdir(parents=True, exist_ok=True)
-    # material do corpo de um triângulo dos modelos de colisão (nunca desenhados): invisível, só para não faltar
-    inv = mat_dir / "colisao.vmt"
-    inv_text = '"VertexLitGeneric"\n{\n\t"$basetexture" "tools/toolsnodraw"\n\t"$no_draw" "1"\n}\n'
-    if not inv.exists() or inv.read_text() != inv_text:
-        inv.write_text(inv_text)
-    jobs = []
-    for cl in chosen:
-        origin, name, files, vmts = build_files(cl, mats, map_name)
-        for mname, text in vmts.items():
-            f = mat_dir / f"{mname}.vmt"
-            if not f.exists() or f.read_text() != text:
-                f.write_text(text)
-        models = [(name, files)] + collision_models(cl, origin, mats, map_name)
-        dirs = []
-        for mname, mfiles in models:
-            d = work / mname
-            d.mkdir(parents=True, exist_ok=True)
-            for fn, text in mfiles.items():
-                (d / fn).write_text(text)
-            dirs.append((mname, d))
-        jobs.append((cl, origin, name, dirs))
-    run = run or (lambda cmd, cwd: subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, errors="replace",
-                                                   env=dict(os.environ, WINEDEBUG="-all")).returncode)
-    from hammertools.cli import _wine_cmd
-
-    def compile_one(item) -> bool:
-        mname, d = item
-        mdl = mdl_dir / f"{mname}.mdl"
-        if mdl.exists():
-            return True     # mesmo hash = mesmo conteúdo: já compilado
-        cmd = _wine_cmd([str(studiomdl), "-game", str(gamedir), "-nop4", "-nox360", str(d / "model.qc")])
-        run(cmd, str(d))
-        return mdl.exists()
-
+    work = work_dir(out.parent / "ht_prop", str(out.resolve()))
+    mdl_dir, mat_dir, folder = model_dirs(gamedir, map_name)
+    jobs = prepare(chosen, mats, map_name, gamedir, work)
     items = [it for *_, dirs in jobs for it in dirs]
     todo = sum(1 for m, _ in items if not (mdl_dir / f"{m}.mdl").exists())
     log(f"ht-vbsp: auto-prop: {len(jobs)} grupo(s) -> prop_static + {len(items) - len(jobs)} modelo(s) de colisão "
         f"({todo} para compilar no studiomdl, o resto do cache)...")
-    with ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) // 2)) as pool:
-        compiled = dict(zip((m for m, _ in items), pool.map(compile_one, items)))
+    compiled = compile_jobs(jobs, mdl_dir, gamedir, studiomdl, run)
     made = 0
-    folder = f"models/{MODEL_DIR}/{safe(map_name)}"
     for cl, origin, name, dirs in jobs:
         if not all(compiled[m] for m, _ in dirs):
             continue                # sem a colisão inteira o grupo fica como detail (prop sem colisão = parede que some)
@@ -514,25 +584,10 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
             e.solids.remove(s_)
             if not e.solids:
                 v.remove_ent(e)
-        org = f"{origin.x:g} {origin.y:g} {origin.z:g}"
-        # o visível só desenha, com luz por vértice (vrad -StaticPropLighting): a origem fica dentro da própria colisão
-        # e, iluminado só por ela, saía preto. A sombra vem da colisão, com a forma exata dos brushes
-        v.add_ent(Entity(v, {"classname": "prop_static", "model": f"{folder}/{name}.mdl", "origin": org, "angles": "0 0 0",
-                             "solid": "0", "skin": "0", "fademindist": "-1", "fadescale": "1", "disableshadows": "1",
-                             "disableselfshadowing": "1"}))
-        # colisão: uma peça convexa por brush, em modelos sem brushes encostados; nunca desenhados (fade de 1u)
-        for mname, _ in dirs[1:]:
-            v.add_ent(Entity(v, {"classname": "prop_static", "model": f"{folder}/{mname}.mdl", "origin": org,
-                                 "angles": "0 0 0", "solid": "6", "skin": "0", "fademindist": "0", "fademaxdist": "1",
-                                 "fadescale": "1", "disableshadows": "0", "disablevertexlighting": "1"}))
+        for kv in prop_keyvalues(folder, origin, dirs):
+            v.add_ent(Entity(v, kv))
         made += 1
-    if made and os.environ.get("HT_ALL_PROP_LIGHT") != "1":
-        # o -StaticPropLighting é global no vrad: sem isto TODOS os props do mapa passavam a ter luz por vértice e o mapa
-        # ficava mais escuro (rp_surdonoso). Os do mapa seguem iluminados como antes (pela origem); só os gerados mudam.
-        # O Hammer++ grava "0" em todo prop, então "0" é o padrão, não escolha (no perfil final, HT_ALL_PROP_LIGHT=1)
-        for e in v.by_class["prop_static"]:
-            if f"/{MODEL_DIR}/" not in e["model"]:
-                e["disablevertexlighting"] = "1"
+    isolate_prop_light(v)
     vmfio.save(v, out)
     # modelos que nenhum prop deste build usa (nomes antigos, outra geometria) saem da pasta: o pack embute a pasta
     used = {Path(e["model"]).stem for e in v.by_class["prop_static"] if e["model"].startswith(folder + "/")}
@@ -541,7 +596,7 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
         if re.fullmatch(r"[0-9a-f]{12}(_c\d*)?", stem) and stem not in used:   # _c0.. = nomes antigos
             f.unlink()
     failed = len(jobs) - made
-    log(f"ht-vbsp: auto-prop: {made} prop_static no lugar de {sum(len(c.solids) for c, *_ in jobs if True)} solids de detail "
+    log(f"ht-vbsp: auto-prop: {made} prop_static no lugar de {sum(len(c.solids) for c, *_ in jobs)} solids de detail "
         f"(tira ~{stats.get('tira_idx', 0)} índices e ~{stats.get('tira_verts', 0)} vértices)"
         + (f"; {failed} grupo(s) não compilaram e ficaram como detail (log em {work})" if failed else "")
         + (". Ainda não basta pela estimativa." if not stats.get("suficiente", True) else "."))
@@ -550,6 +605,67 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
         log("ht-vbsp: auto-prop: o vrad precisa de -StaticPropLighting (o `ht compile` põe sozinho; compilando por fora, "
             "sem isso o prop gerado sai preto). Os outros props ficam com disablevertexlighting e não mudam.")
     return {"models": made, "falhas": failed, **stats}
+
+
+# --------------------------------------------------------------------------- `ht prop` (Propper do editor)
+@dataclass
+class PropResult:
+    entities: list[dict[str, str]] = field(default_factory=list)   # prop_static a criar (visível primeiro)
+    removed: list[int] = field(default_factory=list)              # ids dos solids que viraram prop
+    skipped: dict[int, str] = field(default_factory=dict)         # id -> motivo de ficar como brush
+    warnings: list[str] = field(default_factory=list)
+    model: str = ""
+    origin: Vec | None = None
+    work: Path | None = None
+
+
+def convert(v: VMF, solid_ids: list[int], gamedir: Path, map_name: str, studiomdl: Path, work: Path,
+            mats: Materials | None = None, run=None) -> PropResult:
+    """Propper manual: os solids escolhidos (mundo ou entidade de brush) viram UM prop_static visível e os modelos de
+    colisão, com o mesmo gerador do auto-prop. Não mexe no VMF: devolve as entidades a criar e os solids a tirar (o
+    editor aplica num passo de desfazer; o CLI grava um VMF novo). Modelos em models/ht_prop/<mapa>/, que o ht-vbsp
+    ilumina por vértice e o pack embute."""
+    from hammertools import lint
+    mats = mats or Materials(lint.Resources.from_game(str(gamedir), None, ()))
+    owner: dict[int, tuple] = {}
+    for s in v.brushes:
+        owner[s.id] = (None, s)
+    for e in v.entities:
+        for s in e.solids:
+            owner[s.id] = (e, s)
+    r = PropResult()
+    picked = []
+    for sid in dict.fromkeys(solid_ids):
+        if sid not in owner:
+            r.skipped[sid] = "não existe no mapa"
+            continue
+        e, s = owner[sid]
+        if any(sd.is_disp for sd in s.sides):
+            r.skipped[sid] = "displacement"
+        elif bad := sorted({sd.mat for sd in s.sides if not mats.usable(sd.mat)}):
+            r.skipped[sid] = "material que não funciona em modelo ou tem conteúdo próprio: " + ", ".join(bad[:3])
+        elif not any(len(p) >= 3 and not sd.mat.lower().startswith("tools/") for sd, p in geom.face_polys(s)):
+            r.skipped[sid] = "só faces de ferramenta"
+        else:
+            picked.append((e, s))
+    if not picked:
+        r.warnings.append("nada a converter")
+        return r
+    if any(e is None for e, _ in picked):
+        r.warnings.append("brushes do mundo viram prop e deixam de selar: confira leak no próximo compile")
+    mdl_dir, _, folder = model_dirs(gamedir, map_name)
+    (cl_job,) = jobs = prepare([Cluster((0, 0, 0), picked)], mats, map_name, gamedir, work)
+    compiled = compile_jobs(jobs, mdl_dir, gamedir, studiomdl, run)
+    cl, origin, name, dirs = cl_job
+    r.work, r.origin, r.model = work, origin, f"{folder}/{name}.mdl"
+    failed = [m for m, _ in dirs if not compiled[m]]
+    if failed:
+        r.warnings.append(f"studiomdl falhou em {len(failed)} de {len(dirs)} modelo(s); log em {work}")
+        r.model = ""
+        return r
+    r.entities = prop_keyvalues(folder, origin, dirs)
+    r.removed = [s.id for _, s in picked]
+    return r
 
 
 def bsp_static_models(bsp: Path) -> Counter:

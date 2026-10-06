@@ -370,3 +370,21 @@ def test_ht_flags_become_env_and_are_not_passed_to_vbsp(room, tmp_path, monkeypa
     assert os.environ["HT_NO_SEAL"] == "1" and os.environ["HT_AUTOPROP"] == "0"
     assert "--ht-" not in src.with_suffix(".bsp").read_text()
     monkeypatch.delenv("HT_NO_SEAL"); monkeypatch.delenv("HT_AUTOPROP")
+
+
+def test_wrapper_isolates_prop_light_for_ht_prop_models(room, tmp_path, monkeypatch):
+    """Prop do `ht prop` no fonte: os outros props saem sem luz por vértice no build/ (o -StaticPropLighting é global)."""
+    monkeypatch.delenv("HT_ALL_PROP_LIGHT", raising=False)
+    room.create_ent("prop_static", model="models/props_c17/oildrum001.mdl", origin="0 0 0", disablevertexlighting="0")
+    room.create_ent("prop_static", model="models/ht_prop/m/abc123def456.mdl", origin="64 0 0")
+    src = tmp_path / "mapsrc" / "m.vmf"; src.parent.mkdir()
+    vmfio.save(room, src)
+    fake = tmp_path / "vbsp.py"
+    fake.write_text("import sys, pathlib; pathlib.Path(sys.argv[-1]).with_suffix('.bsp').write_text('x')")
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    assert vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]) == 0
+    props = {e["model"]: e for e in vmfio.load(tmp_path / "mapsrc" / "build" / "m.vmf").by_class["prop_static"]}
+    assert props["models/props_c17/oildrum001.mdl"]["disablevertexlighting"] == "1"
+    assert props["models/ht_prop/m/abc123def456.mdl"]["disablevertexlighting"] != "1"
+    # o fonte não muda
+    assert {e["disablevertexlighting"] for e in vmfio.load(src).by_class["prop_static"] if "oildrum" in e["model"]} == {"0"}

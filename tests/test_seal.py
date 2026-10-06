@@ -264,3 +264,23 @@ def test_vbsp_wrapper_reports_real_opening_without_plugging(tmp_path, monkeypatc
     assert "vão(s) de verdade" in out and "AINDA VAZA" in out
     assert "ht_seal" not in (tmp_path / "mapsrc" / "build" / "m.vmf").read_text()
     assert not src.with_suffix(".seal.json").exists()
+
+
+def test_close_slivers_stays_inside_non_rectangular_faces():
+    """Rampa (face lateral triangular) a 1u de uma parede: a tampa pela caixa do brush subia acima da rampa, ia para o ar
+    e o vbsp apagava a face da parede (cinza do vazio no vão de escada do rp_surdonoso)."""
+    v = VMF()
+    _box(v, (0, -64, 0), (256, 0, 256))                   # parede, face em y = 0
+    ramp = v.make_prism(Vec(0, 1, 0), Vec(256, 128, 128)).solid
+    for sd in ramp.sides:                                  # corta a caixa na diagonal: lateral em y = 1 vira triângulo
+        pass
+    from srctools import Vec as V
+    from srctools.vmf import Side
+    ramp.sides.append(Side(v, [V(0, 0, 0), V(0, 200, 0), V(256, 200, 128)], mat="dev/dev_measuregeneric01"))
+    v.add_brush(ramp)
+    made = seal.close_slivers(v, lint.Resources())
+    assert made == []                                      # face triangular: não tampa (a caixa passaria da rampa)
+    # face retangular continua fechando
+    _box(v, (300, 1, 0), (400, 64, 64))
+    _box(v, (300, -64, 0), (400, 0, 64))
+    assert len(seal.close_slivers(v, lint.Resources())) == 1

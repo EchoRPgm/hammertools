@@ -914,15 +914,29 @@ def close_slivers(v: VMF, res, gap: float = SLIVER_GAP, material: str = "tools/t
     from collections import defaultdict
     from hammertools import lint
     from hammertools.core import geom
+    def area2(poly, o):
+        a = 0.0
+        for i in range(len(poly)):
+            p, q = poly[i], poly[(i + 1) % len(poly)]
+            a += p[o[0]] * q[o[1]] - q[o[0]] * p[o[1]]
+        return abs(a) / 2
+
     faces = []
     for s in (s for s in v.brushes if lint._seals(s, res)):
-        lo, hi = s.get_bbox()
-        for sd in s.sides:
+        for sd, poly in geom.face_polys(s):
+            if len(poly) < 3:
+                continue
             n, p = geom.outward(sd)
             for k in range(3):
                 if abs(abs(n[k]) - 1) < 1e-6:
                     o = [j for j in range(3) if j != k]
-                    faces.append((k, n[k] > 0, p[k], (lo[o[0]], hi[o[0]], lo[o[1]], hi[o[1]]), s))
+                    # extensão da FACE (não da caixa do brush) e só face retangular: numa rampa a caixa sobe acima
+                    # da face, e a tampa ia para o ar e apagava a parede encostada (vão de escada do rp_surdonoso)
+                    r = (min(q[o[0]] for q in poly), max(q[o[0]] for q in poly),
+                         min(q[o[1]] for q in poly), max(q[o[1]] for q in poly))
+                    if abs(area2(poly, o) - (r[1] - r[0]) * (r[3] - r[2])) > 0.01 * max(1.0, (r[1] - r[0]) * (r[3] - r[2])):
+                        continue
+                    faces.append((k, n[k] > 0, p[k], r, s))
     neg = defaultdict(list)
     for k, pos, c, r, s in faces:
         if not pos:

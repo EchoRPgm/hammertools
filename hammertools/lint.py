@@ -975,7 +975,7 @@ def _vmt_syntax_error(res: Resources, mat: str) -> str:
     if not data:
         return ""
     try:
-        Keyvalues.parse(data.decode("utf-8", "replace"), f"{mat}.vmt")
+        Keyvalues.parse(data.decode("utf-8", "replace"), f"{mat}.vmt", allow_escapes=False)   # VMT não tem escapes
     except Exception as e:  # srctools levanta KeyValError com a linha
         return str(e).replace("\n", " ").strip()[:160]
     return ""

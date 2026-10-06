@@ -99,3 +99,17 @@ def test_apply_swaps_detail_for_props_with_fake_studiomdl(room, tmp_path, monkey
     calls = []
     autoprop.apply(out, game, vbsp, 1.0, 1.0, log=lambda m: None, run=lambda c, d: calls.append(c) or 0)
     assert calls == []
+
+
+def test_model_vmt_keeps_backslash_paths_literal():
+    """VMT com barra invertida (custom_textures\\txt_chao): o Source não tem escapes; com escapes o \\t virava TAB e o
+    prop gerado aparecia com o xadrez roxo (8 materiais do rp_surdonoso)."""
+    res = FakeRes()
+    res.files["materials/custom_textures/txt_chao.vmt"] = b'"LightmappedGeneric"\n{\n"$basetexture" "custom_textures\\txt_chao"\n}\n'
+    res.files["materials/dunc_temp/vegas/w.vmt"] = b'"LightmappedGeneric" { "$basetexture" "dunc_temp\\vegas\\w" "$bumpmap" "dunc_temp\\vegas\\w_n" }'
+    mats = autoprop.Materials(res)
+    a = mats.model_vmt("custom_textures/txt_chao")
+    b = mats.model_vmt("dunc_temp/vegas/w")
+    assert '"$basetexture" "custom_textures/txt_chao"' in a
+    assert '"$basetexture" "dunc_temp/vegas/w"' in b and '"$bumpmap" "dunc_temp/vegas/w_n"' in b
+    assert "\t" not in a.replace('\t"$', '"$') and "\x0b" not in b

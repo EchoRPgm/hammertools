@@ -111,7 +111,9 @@ class Materials:
     def _parse(self, text: str, depth: int = 0) -> dict | None:
         from srctools import Keyvalues
         try:
-            kv = Keyvalues.parse(text)
+            # o Source lê VMT sem escapes: "custom_textures\txt_chao" é barra + t, não TAB (com escapes o caminho
+            # da textura saía corrompido e o modelo gerado ficava com o xadrez roxo)
+            kv = Keyvalues.parse(text, allow_escapes=False)
             root = next(iter(kv), None)
         except Exception:
             root = None
@@ -172,9 +174,11 @@ class Materials:
                 "$color", "$color2", "$envmap", "$envmapmask", "$envmaptint", "$basealphaenvmapmask",
                 "$normalmapalphaenvmapmask", "$selfillum", "$nocull", "$detail", "$detailscale", "$detailblendmode")
         lines = [f'"{shader}"', "{"]
+        paths = {"$basetexture", "$bumpmap", "$envmapmask", "$detail"}
         for k in keep:
             if k in p and not (shader == "UnlitGeneric" and k == "$bumpmap"):
-                lines.append(f'\t"{k}" "{p[k]}"')
+                v = p[k].replace("\\", "/") if k in paths else p[k]
+                lines.append(f'\t"{k}" "{v}"')
         lines.append("}")
         return "\n".join(lines) + "\n"
 

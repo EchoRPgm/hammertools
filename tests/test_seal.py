@@ -88,6 +88,7 @@ def test_vbsp_wrapper_seals_build_copy_and_recompiles(tmp_path, monkeypatch, cap
         "p.with_suffix('.bsp').write_text('ok')\n")
     monkeypatch.setenv("HT_VBSP", sys.executable)
     monkeypatch.setenv("HT_NO_PHANTOM", "1")
+    monkeypatch.setenv("HT_SEAL_GROSSO", "1")
     monkeypatch.setattr(seal, "seal", lambda v, res=None, voxel=None, material="tools/toolsskybox":
                         _real_seal(v, res, 16.0, material))
     rc = vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))])
@@ -183,3 +184,83 @@ def test_optimize_never_merges_seal_plugs():
     n = len(v.brushes)
     optimize.optimize(v)
     assert len(v.brushes) == n and len(seal.plugs_in(v)) == 1
+
+
+def test_fingerprint_ignores_ids_and_plugs_but_not_geometry(tmp_path):
+    a, b = tmp_path / "a.vmf", tmp_path / "b.vmf"
+    vmfio.save(_room(hole=True), a)
+    v = _room(hole=True)
+    seal.add_plug(v, Vec(992, 448, 32), Vec(1024, 576, 160), "tools/toolsskybox")
+    vmfio.save(v, b)
+    fa = seal.fingerprint(a.read_text())
+    assert fa and fa == seal.fingerprint(b.read_text())        # tampa e ids novos não contam
+    vmfio.save(_room(hole=False), b)
+    assert fa != seal.fingerprint(b.read_text())               # vão fechado no Hammer: outra geometria
+    cache = tmp_path / "m.seal.json"
+    seal.save_cache(cache, [], [], fa)
+    assert seal.cache_valid(cache, fa) and not seal.cache_valid(cache, seal.fingerprint(b.read_text()))
+    cache.write_text("[]")                                      # formato antigo, sem impressão: velho
+    assert not seal.cache_valid(cache, fa)
+
+
+def test_vbsp_wrapper_drops_cache_of_other_geometry(tmp_path, monkeypatch, capsys):
+    """Mapa fechado no Hammer depois de um selo automático: as tampas do cache ficariam no meio do cômodo."""
+    src = tmp_path / "mapsrc" / "m.vmf"
+    src.parent.mkdir()
+    vmfio.save(_room(hole=False), src)
+    cache = src.with_suffix(".seal.json")
+    seal.save_cache(cache, [(Vec(400, 400, 100), Vec(488, 488, 188), "tools/toolsskybox")], [], "outra")
+    fake = tmp_path / "vbsp.py"
+    fake.write_text("import sys, pathlib; pathlib.Path(sys.argv[-1]).with_suffix('.bsp').write_text('ok')")
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    monkeypatch.setenv("HT_NO_PHANTOM", "1")
+    assert vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]) == 0
+    out = capsys.readouterr().out
+    assert "outra geometria" in out and not cache.exists() and cache.with_suffix(".velho.json").exists()
+    assert "toolsskybox" not in (tmp_path / "mapsrc" / "build" / "m.vmf").read_text().lower()
+
+
+def test_vbsp_wrapper_closes_slivers_before_coarse_seal(tmp_path, monkeypatch, capsys):
+    """Leak só por lasca fora do grid: fecha com nodraw e nem chega no selo grosso (toolsskybox no voxel)."""
+    src = tmp_path / "mapsrc" / "m.vmf"
+    src.parent.mkdir()
+    v = _room(hole=False)
+    _box(v, (2000, 0, 0), (2032, 499.6, 64))
+    _box(v, (2000, 500, 0), (2032, 1000, 64))
+    vmfio.save(v, src)
+    fake = tmp_path / "vbsp.py"
+    fake.write_text(
+        "import sys, pathlib\n"
+        "p = pathlib.Path(sys.argv[-1])\n"
+        "if '499 0' not in p.with_suffix('.vmf').read_text():\n"   # tampa da lasca (y 499..500) ainda não existe
+        "    print('**** leaked ****')\n"
+        "p.with_suffix('.bsp').write_text('ok')\n")
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    monkeypatch.setenv("HT_NO_PHANTOM", "1")
+    called = []
+    monkeypatch.setattr(seal, "seal", lambda *a, **k: called.append(1) or seal.SealResult())
+    assert vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]) == 0
+    out = capsys.readouterr().out
+    assert "lasca(s)" in out and "selado." in out and not called
+
+
+def test_vbsp_wrapper_reports_real_opening_without_plugging(tmp_path, monkeypatch, capsys):
+    """Porta de 128u aberta pro vazio: sem --ht-seal-grosso nada é tampado (a tampa ocuparia a passagem); avisa."""
+    src = tmp_path / "mapsrc" / "m.vmf"
+    src.parent.mkdir()
+    vmfio.save(_room(hole=True), src)
+    fake = tmp_path / "vbsp.py"
+    # vaza sempre, com o caminho da luz (200 500 200) saindo pela porta (x 992..1024, y 448..576, z 32..160)
+    fake.write_text(
+        "import sys, pathlib\n"
+        "p = pathlib.Path(sys.argv[-1])\n"
+        "print('**** leaked ****')\n"
+        "p.with_suffix('.lin').write_text('200 500 200\\n1008 512 96\\n1400 512 96\\n')\n"
+        "p.with_suffix('.bsp').write_text('ok')\n")
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    monkeypatch.setenv("HT_NO_PHANTOM", "1")
+    vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))])
+    out = capsys.readouterr().out
+    assert "vão(s) de verdade" in out and "AINDA VAZA" in out
+    assert "ht_seal" not in (tmp_path / "mapsrc" / "build" / "m.vmf").read_text()
+    assert not src.with_suffix(".seal.json").exists()

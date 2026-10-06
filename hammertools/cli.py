@@ -693,30 +693,44 @@ LEAK_REFINE = 30    # recompilações guiadas pelo pointfile depois do selo gros
 
 
 def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str, dict]:
-    """vbsp vazou: tampa os vãos no build/ com toolsskybox (corte mínimo entre as entidades e o vazio) e recompila."""
+    """vbsp vazou: fecha no build/ só o que é fresta (lasca fora do grid, rachadura até seal.CRACK_MAX) e tira enfeite
+    solto no vazio; vão de verdade vira aviso com setpos (tampa automática ali ocupa espaço do mapa). O selo grosso
+    (toolsskybox no corte mínimo do voxel) só com --ht-seal-grosso."""
     from hammertools import lint, seal
     print("\nht-vbsp: LEAK: fechando os vãos automaticamente (só no build/; o fonte não muda) ...", flush=True)
     v = vmfio.load(out)
     try:
         res = lint.Resources.from_game(str(gamedir) if gamedir else None, None, ())
-        r = seal.seal(v, res)
     except Exception as e:  # selo automático nunca derruba o compile
         print(f"ht-vbsp: selo automático falhou ({e}); siga o pointfile (Map > Load Pointfile)", flush=True)
         return 0, "leaked", {"erro": str(e)}
-    boxes = list(r.boxes)
-    if r.boxes:
-        print(f"ht-vbsp: {len(r.boxes)} tampa(s) de toolsskybox ({r.leaked_before} entidade(s) alcançavam o vazio):", flush=True)
-        print("\n".join(_seal_report(r)) + "\n", flush=True)
-    # lascas de vértice fora do grid: todas de uma vez (o vbsp só mostra uma por compile)
-    slivers = seal.close_slivers(v, res)
-    if slivers:
-        boxes += slivers
-        print(f"ht-vbsp: {len(slivers)} lasca(s) de até {seal.SLIVER_GAP:g}u entre brushes fechadas com nodraw\n", flush=True)
+    # 1º lascas de vértice fora do grid, todas de uma vez (o vbsp só mostra uma por compile): nodraw no vão, sem
+    # efeito visual. Mapa cujo leak é só isso nem chega no selo grosso
+    boxes = seal.close_slivers(v, res)
+    rc, text = 0, "leaked"
     if boxes:
+        print(f"ht-vbsp: {len(boxes)} lasca(s) de até {seal.SLIVER_GAP:g}u entre brushes fechadas com nodraw\n", flush=True)
         vmfio.save(v, out)
         rc, text = _run_vbsp(cmd)
-    else:
-        rc, text = 0, "leaked"     # a grade grossa não vê a fresta: direto pro refino pelo pointfile
+    # 2º selo grosso, só com --ht-seal-grosso (corte mínimo entre as entidades e o vazio, toolsskybox em voxel de até
+    # 88u): a tampa fica onde o corte é menor, que pode ser dentro de cômodo ou no meio de passagem; é remendo
+    seal.WIDE.clear()
+    if "leaked" in text.lower() and os.environ.get("HT_SEAL_GROSSO") == "1":
+        v = vmfio.load(out)
+        try:
+            r = seal.seal(v, res)
+        except Exception as e:
+            print(f"ht-vbsp: selo automático falhou ({e}); siga o pointfile (Map > Load Pointfile)", flush=True)
+            return rc, text, {"erro": str(e)}
+        if r.boxes:
+            boxes += r.boxes
+            print(f"ht-vbsp: AVISO: o mapa tem vão de verdade; {len(r.boxes)} tampa(s) de toolsskybox "
+                  f"({r.leaked_before} entidade(s) alcançavam o vazio). Tampa no meio de cômodo aparece como céu: "
+                  "feche o vão no Hammer (Map > Load Pointfile)", flush=True)
+            print("\n".join(_seal_report(r)) + "\n", flush=True)
+            vmfio.save(v, out)
+            rc, text = _run_vbsp(cmd)
+        # a grade grossa não vê a fresta: segue pro refino pelo pointfile
     # fresta menor que o voxel: o caminho que o vbsp gravou (.lin) diz onde; tampa com grade fina e recompila
     removed_ents = []
     for _ in range(LEAK_REFINE):
@@ -752,6 +766,20 @@ def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str,
         rc, text = _run_vbsp(cmd)
     r = seal.SealResult(boxes=boxes)
     still = "leaked" in text.lower()
+    if still and seal.WIDE:
+        print("ht-vbsp: vão(s) de verdade no caminho do leak (mais largo que "
+              f"{seal.CRACK_MAX:g}u: não tampo sozinho, a tampa ocuparia espaço do mapa). Feche no Hammer:", flush=True)
+        seen = set()
+        for lo, hi in seal.WIDE:
+            c = (lo + hi) / 2
+            key = tuple(round(x / 64) for x in c)
+            if key in seen:
+                continue
+            seen.add(key)
+            d = hi - lo
+            print(f"  {d.x:.0f}x{d.y:.0f}x{d.z:.0f}u  setpos {c.x:.0f} {c.y:.0f} {c.z:.0f}", flush=True)
+        if os.environ.get("HT_SEAL_GROSSO") != "1":
+            print("ht-vbsp: (--ht-seal-grosso tampa com toolsskybox mesmo assim, como remendo)", flush=True)
     print("ht-vbsp: " + ("AINDA VAZA depois das tampas; siga o pointfile" if still else
                          "selado. Feche esses vãos no Hammer quando puder (as tampas só existem no build/)") + "\n", flush=True)
     return rc, text, {"selado": not still, "tampas": [[list(map(round, lo)), list(map(round, hi))] for lo, hi in r.boxes],
@@ -1024,6 +1052,7 @@ VBSP_FLAGS = {
     "--ht-no-autoprop": ("HT_AUTOPROP", "0", "não converte detail em prop_static para caber nos tetos"),
     "--ht-no-pack-props": ("HT_PACK_PROPS", "0", "não embute no BSP os modelos gerados pelo auto-prop"),
     "--ht-no-seal": ("HT_NO_SEAL", "1", "não fecha leaks sozinho"),
+    "--ht-seal-grosso": ("HT_SEAL_GROSSO", "1", "vão de verdade também é tampado (toolsskybox no corte mínimo; remendo)"),
     "--ht-no-phantom": ("HT_NO_PHANTOM", "1", "não conserta faces fantasma / textura vazada"),
     "--ht-tj-retry": ("HT_TJ_RETRY", "1", "recalcula as t-junctions em vez de repetir o que deu certo"),
     "--ht-keep-preview": ("HT_KEEP_PREVIEW", "1", "mantém o preview dos geradores no fonte"),
@@ -1131,8 +1160,14 @@ def _vbsp_main(args: list[str]) -> int:
 
     cmd = [str(real), *args[:-1], str(out.with_suffix(""))]
     cache = src.with_suffix(".seal.json")
+    from hammertools import seal
+    geometry = seal.fingerprint(out.read_text(encoding="utf-8", errors="replace"))
+    if cache.exists() and os.environ.get("HT_NO_SEAL") != "1" and not seal.cache_valid(cache, geometry):
+        stale = cache.with_suffix(".velho.json")
+        cache.replace(stale)
+        print(f"ht-vbsp: cache de tampas {cache.name} é de outra geometria (o mapa mudou); não vale mais, guardado "
+              f"em {stale.name}\n", flush=True)
     if cache.exists() and os.environ.get("HT_NO_SEAL") != "1":
-        from hammertools import seal
         v = vmfio.load(out)
         used, dropped = seal.apply_cache(v, cache)
         if used:
@@ -1253,7 +1288,7 @@ def _vbsp_main(args: list[str]) -> int:
         removed = (seal.cached_removals(cache) if cache.exists() else []) + \
             [(c, Vec(*o)) for c, o in seal_info.get("removidas", [])]
         if plugs or removed:
-            seal.save_cache(cache, plugs, removed)
+            seal.save_cache(cache, plugs, removed, geometry)
     # modelos do auto-prop vão dentro do BSP (não existem no addon de conteúdo de ninguém); HT_PACK_PROPS=0 desliga
     if rc == 0 and ap_info and ap_info.get("models") and gamedir and os.environ.get("HT_PACK_PROPS") != "0" \
             and out.with_suffix(".bsp").exists():

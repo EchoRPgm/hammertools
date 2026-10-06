@@ -15,6 +15,7 @@ uma fresta). Nunca avança pro lado de dentro do mapa.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from srctools import VMF, Vec
@@ -41,12 +42,44 @@ def plugs_in(v: VMF) -> list:
     return [(*s.get_bbox(), s.sides[0].mat) for s in v.brushes if s.visgroup_ids & ids]
 
 
-def save_cache(path, plugs, removed=()) -> None:
+def fingerprint(vmf_text: str) -> str:
+    """Impressão da geometria do mundo (bloco `world` do VMF, só planos e materiais, sem ids e sem as tampas do
+    visgroup ht_seal): o cache de tampas só vale pra essa geometria. Tampa velha num mapa que mudou (ou que já foi
+    fechado no Hammer) fica no meio de cômodo e o vbsp apaga as faces em volta (céu aparecendo pela parede)."""
+    import hashlib
+    i = vmf_text.find("\nworld\n")
+    if i < 0:
+        return ""
+    end = re.search(r"\n(?:entity|cameras|cordons?|hidden)\b", vmf_text[i + 1:])
+    block = vmf_text[i:i + 1 + end.start()] if end else vmf_text[i:]
+    seal_ids = set(re.findall(r'"name" "' + SEAL_VISGROUP + r'"\s*"visgroupid" "(\d+)"', vmf_text))
+    h = hashlib.sha1()
+    for solid in block.split("\tsolid\n")[1:]:
+        if any(f'"visgroupid" "{g}"' in solid for g in seal_ids):
+            continue
+        for m in re.finditer(r'"(plane|material)" "([^"]*)"', solid):
+            h.update(m.group(2).encode("utf-8", "replace"))
+        h.update(b"|")
+    return h.hexdigest()
+
+
+def save_cache(path, plugs, removed=(), geometry: str = "") -> None:
     import json
     path.write_text(json.dumps({
+        "geometria": geometry,
         "tampas": [[list(map(float, lo)), list(map(float, hi)), m] for lo, hi, m in plugs],
         "removidas": [[c, [float(o.x), float(o.y), float(o.z)]] for c, o in removed],
     }))
+
+
+def cache_valid(path, geometry: str) -> bool:
+    """Cache feito pra esta geometria (cache antigo, sem impressão, conta como velho)."""
+    import json
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and bool(geometry) and data.get("geometria") == geometry
 
 
 def cached_removals(path) -> list:
@@ -547,11 +580,31 @@ def outside_entities(v: VMF, res, coarse=None, region=None) -> list:
     return out
 
 
+STRAY_RADIUS = 256.0     # enfeite solto no vazio: nenhum brush que sela a essa distância
+
+
+def _stray(o, boxes) -> bool:
+    import numpy as np
+    if not len(boxes):
+        return True
+    p = np.array(tuple(o))
+    return not bool(np.any(np.all((boxes[:, :3] - STRAY_RADIUS <= p) & (p <= boxes[:, 3:] + STRAY_RADIUS), axis=1)))
+
+
 def drop_outside_visuals(v: VMF, res, coarse=None, region=None) -> tuple[list, list]:
     """Tira do mapa as entidades visuais do lado do vazio (só dentro de `region`: perto do caminho do leak que o
-    vbsp mostrou; no mapa inteiro a grade grossa erra em parede grossa e laje). Devolve (removidas, outras)."""
+    vbsp mostrou; no mapa inteiro a grade grossa erra em parede grossa e laje) E soltas: sem brush que sela a
+    STRAY_RADIUS. Com vão de verdade a grade grossa chama a sala inteira de vazio; a luz da sala não é enfeite
+    perdido. Devolve (removidas, outras)."""
+    import numpy as np
+    from hammertools import lint
+    sealing = [s for s in v.brushes if lint._seals(s, res)]
+    boxes_all = np.array([tuple(s.get_bbox()[0]) + tuple(s.get_bbox()[1]) for s in sealing]) if sealing \
+        else np.zeros((0, 6))
     removed, kept = [], []
     for e, o in outside_entities(v, res, coarse, region):
+        if not _stray(o, boxes_all):
+            continue
         if e["classname"].lower().startswith(VISUAL_PREFIXES):
             v.remove_ent(e)
             removed.append((e["classname"], o))
@@ -662,13 +715,16 @@ def seal_at_pointfile(v: VMF, res, points, material: str = "tools/toolsnodraw") 
         return []
     path = _samples(points, 1.0)
     for fine, margin in LEVELS:
+        n_wide = len(WIDE)
         made = _local_cut(v, res, seg, coarse, fine, margin, material, ent, path)
-        if made:
+        if made or len(WIDE) > n_wide:      # vão largo nesta resolução continua largo nas mais finas
             return made
     return []
 
 
 GRID_OFFSET = 0.25
+CRACK_MAX = 8.0               # espessura máxima de fresta que o ht-vbsp tampa sozinho; mais largo é vão de verdade
+WIDE: list = []               # vãos de verdade achados pelos cortes locais [(lo, hi)]: aviso, não tampa
 EXTRA_GROW = 2                # depois de achar a fresta, quantas vezes ainda aumenta o recorte
 LOCAL_BUDGET = 12_000_000     # voxels no recorte local (memória do corte ~ 400 bytes por voxel de ar)
 
@@ -707,15 +763,37 @@ def _local_cut(v: VMF, res, seg, coarse, fine: float, margin: float, material: s
         lo, hi = nlo, nhi
     if res_cut is None:
         return []
-    made = []
+    # cirúrgico: só fecha FRESTA (algum lado da tampa <= CRACK_MAX antes de crescer pra dentro da parede). Corte mais
+    # largo em todo eixo é vão de verdade (porta, área sem teto): tampa ali ocupa espaço do mapa (nodraw no meio da
+    # passagem); fica de fora e vai pra WIDE, pro aviso de fechar no Hammer
+    made, wide = [], []
+    origins = _entity_origins(v)
     for i0, i1 in boxes(cut):
+        blo0, bhi0 = lo + i0 * fine, lo + i1 * fine
+        # tampa em volta de entidade (bolsão "fechado" num cubo de nodraw) também é vão de verdade: a entidade está
+        # numa sala aberta, não numa fresta
+        if min((i1 - i0) * fine) > CRACK_MAX or any(
+                all(blo0[k] - fine <= o[k] <= bhi0[k] + fine for k in range(3)) for o in origins):
+            wide.append((Vec(*blo0), Vec(*bhi0)))
+            continue
         p, q = _grow_into_solid(i0, i1, fsolid, interior)
         blo = np.clip(lo + p * fine, -WORLD, WORLD)
         bhi = np.clip(lo + q * fine, -WORLD, WORLD)
         if np.any(bhi - blo <= 0):
             continue
-        made.append(add_plug(v, Vec(*blo), Vec(*bhi), material).get_bbox())
-    return made
+        made.append(add_plug(v, Vec(*blo), Vec(*bhi), material))
+    if wide:
+        WIDE.extend(wide)
+        # o corte tem vão de verdade: as frestas em volta sozinhas não selam, tampá-las só suja o mapa
+        for solid in made:
+            v.remove_brush(solid)
+        return []
+    return [solid.get_bbox() for solid in made]
+
+
+def _entity_origins(v: VMF) -> list:
+    from hammertools import lint
+    return [o for o in (lint._origin(e) for e in v.entities if not e.solids) if o is not None]
 
 
 def _crop_cut(v: VMF, res, lo, hi, coarse, fine: float, ent=None, path=()):

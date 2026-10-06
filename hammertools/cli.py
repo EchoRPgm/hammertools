@@ -75,9 +75,14 @@ def preview(src: Path, game: str | None = None) -> tuple[int, int, list[str]]:
 
 
 def clear_preview(src: Path) -> int:
+    """Tira o preview do fonte. Só regrava quando havia preview: a gravação passa pelo srctools, que perde o que
+    ele não conhece (vertices_plus do Hammer++, CRLF); regravar sempre apagava isso do mapa a cada compilação."""
+    if vmfio.PREVIEW_VISGROUP.encode() not in src.read_bytes():
+        return 0
     v = vmfio.load(src)
     n = vmfio.strip_visgroup(v, vmfio.PREVIEW_VISGROUP)
-    vmfio.save(v, src)
+    if n:
+        vmfio.save(v, src)
     return n
 
 
@@ -1047,6 +1052,10 @@ def _tj_plan(src: Path, out: Path) -> tuple[str, list[int], float] | None:
     return info["result"], list(info.get("detail_ids", [])), est
 
 
+SPAWN_CLASSES = {"info_player_start", "info_player_deathmatch", "info_player_teamspawn", "info_player_combine",
+                 "info_player_rebel", "info_player_terrorist", "info_player_counterterrorist"}
+
+
 # opções do ht-vbsp na linha de comando (o vbsp real não as vê): o mesmo que as variáveis de ambiente HT_*
 VBSP_FLAGS = {
     "--ht-no-autoprop": ("HT_AUTOPROP", "0", "não converte detail em prop_static para caber nos tetos"),
@@ -1126,6 +1135,11 @@ def _vbsp_main(args: list[str]) -> int:
     n_groups, n_solids, warnings = build(src, out, str(gamedir) if gamedir else None)
     from hammertools.lint import active_cordon, cordon_helper_brushes, hidden_count
     built = vmfio.load(out)
+    spawns = [e for e in built.entities if e["classname"].lower() in SPAWN_CLASSES]
+    if not spawns:
+        print("\nht-vbsp: AVISO: o mapa compilado não tem NENHUM ponto de spawn (info_player_start...): o jogador nasce "
+              "na origem do mundo. Confira o ht_spawnroom (início e _end com o mesmo targetname) ou ponha um "
+              "info_player_start.\n", flush=True)
     helpers = cordon_helper_brushes(built)
     if helpers:
         for sol in [b for b in built.brushes if b.id in set(helpers)]:

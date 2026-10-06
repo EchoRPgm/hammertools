@@ -98,13 +98,25 @@ class Group:
 
 
 def group_markers(ents: list[Entity]) -> dict[str, Group]:
-    """Agrupa por (classname base, targetname). Marcador sem targetname vira grupo próprio."""
+    """Agrupa por (classname base, targetname). Marcador sem targetname vira grupo próprio, com uma exceção: se de
+    uma ferramenta há exatamente UM início e UM _end sem nome, os dois são o par (não há o que errar). No
+    rp_surdonoso a sala de spawn veio assim e não era gerada: o mapa compilava sem nenhum ponto de spawn."""
     groups: dict[str, Group] = {}
     for e in ents:
         base = base_class(e["classname"])
         name = e.get("targetname") or f"{base}#{e.id}"
         key = f"{base}:{name}"
         groups.setdefault(key, Group(name=name, classname=base)).ents.append(e)
+    unnamed: dict[str, list[tuple[str, Group]]] = {}
+    for key, g in groups.items():
+        if all(not e.get("targetname") for e in g.ents):
+            unnamed.setdefault(g.classname, []).append((key, g))
+    for lst in unnamed.values():
+        starts = [(k, g) for k, g in lst if [role_of(e) for e in g.ents] == ["start"]]
+        ends = [(k, g) for k, g in lst if [role_of(e) for e in g.ents] == ["end"]]
+        if len(starts) == 1 and len(ends) == 1:
+            starts[0][1].ents.extend(ends[0][1].ents)
+            del groups[ends[0][0]]
     return groups
 
 

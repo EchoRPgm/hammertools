@@ -261,5 +261,6 @@ def write(res: Result, sources: list[Source], out: Path, title: str) -> int:
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(by_name[src].read(path))
         n += 1
+    out.mkdir(parents=True, exist_ok=True)      # nada a copiar com --clean: a pasta não foi recriada
     (out / "addon.json").write_text('{"title": "%s", "type": "map", "tags": ["build"], "ignore": []}\n' % title.replace('"', ""))
     return n

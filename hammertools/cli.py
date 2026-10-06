@@ -1335,6 +1335,20 @@ def _vbsp_main(args: list[str]) -> int:
                   + (f"; {len(pr.missing)} faltando" if pr.missing else ""), flush=True)
         except Exception as e:  # noqa: BLE001
             print(f"ht-vbsp: não consegui embutir os props gerados ({e}); rode `ht pack`", flush=True)
+    # o vbsp descarta prop_static em silêncio (modelo sem malha): sem o prop de colisão a peça fica atravessável
+    if rc == 0 and ap_info and ap_info.get("models") and out.with_suffix(".bsp").exists():
+        try:
+            from collections import Counter
+            from hammertools import autoprop as _ap
+            want = Counter(e["model"].lower() for e in vmfio.load(out).by_class["prop_static"]
+                           if f"/{_ap.MODEL_DIR}/" in e["model"])
+            have = _ap.bsp_static_models(out.with_suffix(".bsp"))
+            lost = sum((want - have).values())
+            if lost:
+                print(f"ht-vbsp: AVISO: o vbsp descartou {lost} prop(s) do auto-prop (ex.: {next(iter(want - have))}); "
+                      "a peça some ou fica sem colisão. Rode de novo com --ht-no-autoprop e reporte.", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"ht-vbsp: não consegui conferir os props no BSP ({e})", flush=True)
     for ext in (".bsp", ".prt", ".lin", ".log"):
         f = out.with_suffix(ext)
         if f.exists():

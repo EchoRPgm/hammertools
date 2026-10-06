@@ -379,10 +379,11 @@ def contact_colors(solids: list) -> list[int]:
 
 
 def collision_models(cl: Cluster, origin: Vec, mats: Materials, map_name: str) -> list[tuple[str, dict[str, str]]]:
-    """Modelos só de colisão do grupo, um por cor de contato: [(nome, arquivos)]. Corpo de um triângulo mínimo
-    (o prop fica com fade de 1u, nunca é desenhado); a colisão é exatamente a dos brushes e faz a sombra no vrad."""
+    """Modelos só de colisão do grupo, um por cor de contato: [(nome, arquivos)]. O corpo é a própria geometria da
+    colisão, com material invisível (o prop tem fade de 1u e nunca é desenhado): com um triângulo degenerado o vbsp
+    descartava o prop em silêncio, e mesmo um corpo mínimo deixaria a caixa do modelo (que decide em quais folhas da BSP
+    o motor testa a colisão) num ponto só."""
     head = "version 1\nnodes\n0 \"root\" -1\nend\nskeleton\ntime 0\n0 0 0 0 0 0 0\nend\ntriangles\n"
-    body = head + "colisao\n" + "".join(f"0 {x} 0 0 0 0 1 0 0 1 0 1\n" for x in ("0", "0.01", "0.02")) + "end\n"
     solids = sorted(cl.solids, key=lambda t: t[1].id)
     colors = contact_colors([s for _, s in solids])
     out = []
@@ -391,6 +392,7 @@ def collision_models(cl: Cluster, origin: Vec, mats: Materials, map_name: str) -
         phys = [head]
         sps: Counter = Counter()
         pieces = 0
+        body = [head]
         for (_, s), sc in zip(solids, colors):
             if sc != c:
                 continue
@@ -403,12 +405,17 @@ def collision_models(cl: Cluster, origin: Vec, mats: Materials, map_name: str) -
                 loc = [p - origin for p in poly]
                 if Vec.cross(loc[1] - loc[0], loc[2] - loc[0]).dot(n) < 0:
                     loc.reverse()
+                rn = _smd(n)
                 for k in range(1, len(loc) - 1):
                     phys.append("phys\n")
+                    body.append("colisao\n")
                     for p in (loc[0], loc[k], loc[k + 1]):
                         q = _smd(p)
                         phys.append(f"0 {_fmt(q.x)} {_fmt(q.y)} {_fmt(q.z)} 0 0 1 {pieces} 0 1 0 1\n")
+                        body.append(f"0 {_fmt(q.x)} {_fmt(q.y)} {_fmt(q.z)} {_fmt(rn.x)} {_fmt(rn.y)} {_fmt(rn.z)} 0 0 1 0 1\n")
         phys.append("end\n")
+        body.append("end\n")
+        body = "".join(body)
         csp = sps.most_common(1)[0][0]
         cname = content_name("".join(phys), body, csp, str(pieces)) + "_c"
         qc = (f'$modelname "{folder}/{cname}.mdl"\n$staticprop\n$surfaceprop "{csp}"\n'
@@ -517,14 +524,14 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
         for mname, _ in dirs[1:]:
             v.add_ent(Entity(v, {"classname": "prop_static", "model": f"{folder}/{mname}.mdl", "origin": org,
                                  "angles": "0 0 0", "solid": "6", "skin": "0", "fademindist": "0", "fademaxdist": "1",
-                                 "fadescale": "1", "disableshadows": "1"}))
+                                 "fadescale": "1", "disableshadows": "1", "disablevertexlighting": "1"}))
         made += 1
     vmfio.save(v, out)
     # modelos que nenhum prop deste build usa (nomes antigos, outra geometria) saem da pasta: o pack embute a pasta
     used = {Path(e["model"]).stem for e in v.by_class["prop_static"] if e["model"].startswith(folder + "/")}
     for f in mdl_dir.glob("*"):
         stem = f.name.split(".")[0]
-        if re.fullmatch(r"[0-9a-f]{12}(_c)?", stem) and stem not in used:
+        if re.fullmatch(r"[0-9a-f]{12}(_c\d*)?", stem) and stem not in used:   # _c0.. = nomes antigos
             f.unlink()
     failed = len(jobs) - made
     log(f"ht-vbsp: auto-prop: {made} prop_static no lugar de {sum(len(c.solids) for c, *_ in jobs if True)} solids de detail "
@@ -536,3 +543,26 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
         log("ht-vbsp: auto-prop: compile o vrad com -StaticPropLighting -StaticPropPolys (o EchoHammer põe sozinho): sem "
             "isso o prop é iluminado só pela origem, dentro da própria colisão, e sai preto; e não faz sombra.")
     return {"models": made, "falhas": failed, **stats}
+
+
+def bsp_static_models(bsp: Path) -> Counter:
+    """Quantos prop_static de cada modelo o BSP tem (lump de jogo sprp)."""
+    import struct
+    data = Path(bsp).read_bytes()
+    o, l = struct.unpack_from("<ii", data, 8 + 16 * 35)
+    gl = data[o:o + l]
+    for k in range(struct.unpack_from("<i", gl, 0)[0]):
+        gid, _flags, _ver, ofs, ln = struct.unpack_from("<iHHii", gl, 4 + 16 * k)
+        if gid != 0x73707270:          # "sprp"
+            continue
+        b = data[ofs:ofs + ln]
+        nd = struct.unpack_from("<i", b, 0)[0]
+        names = [b[4 + 128 * i:4 + 128 * (i + 1)].split(b"\0")[0].decode("latin-1").lower() for i in range(nd)]
+        p = 4 + 128 * nd
+        p += 4 + 2 * struct.unpack_from("<i", b, p)[0]
+        n = struct.unpack_from("<i", b, p)[0]
+        p += 4
+        size = (len(b) - p) // n if n else 0
+        return Counter(names[struct.unpack_from("<H", b, p + i * size + 24)[0]] for i in range(n))
+    return Counter()
+

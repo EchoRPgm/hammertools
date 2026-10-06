@@ -137,30 +137,53 @@ def nodraw_hidden_detail(v: VMF) -> int:
     return len(faces)
 
 
+def brush_angles(v: VMF) -> list[tuple[str, str]]:
+    """Entidade de brush com angles diferente de zero: o Hammer desenha os brushes sem girar, o jogo gira o modelo em
+    volta da origin (porta de garagem do rp_surdonoso, func_door_rotating "0 90 0": de pé no meio da rua). Zera: o jogo
+    fica como o Hammer mostra (e o eixo das flags do func_door_rotating fica no mundo). Devolve [(entidade, angles)]."""
+    out = []
+    for e in v.entities:
+        if not e.solids or e["classname"].lower() in ("func_detail", "worldspawn"):
+            continue
+        a = e["angles"].strip()
+        try:
+            nonzero = a and any(abs(float(x)) > 1e-6 for x in a.split())
+        except ValueError:
+            nonzero = False
+        if nonzero:
+            out.append((f'{e["classname"]} {e["targetname"] or "#" + str(e.id)}', a))
+            e["angles"] = "0 0 0"
+    return out
+
+
 def autofix_build(out: Path, gamedir: Path | None, map_stem: str, log=print) -> int:
     """Consertos seguros que o ht-vbsp aplica sozinho no build/ (o fonte não muda), para o lint não só avisar:
-    material de modelo em brush vira uma cópia LightmappedGeneric (com lightmap; antes a luz mudava com a distância,
-    canteiro do rp_surdonoso). As cópias vão para a pasta de materiais gerados do mapa, que o pack embute no BSP.
-    Devolve quantas faces mudaram."""
+    - material de modelo em brush vira uma cópia LightmappedGeneric (com lightmap; antes a luz mudava com a distância,
+      canteiro do rp_surdonoso), na pasta de materiais gerados do mapa, que o pack embute no BSP;
+    - entidade de brush com angles diferente de zero fica com 0 0 0 (o jogo girava o modelo e o Hammer não mostra).
+    Devolve quantos consertos (faces + entidades)."""
     from hammertools import autoprop
     from hammertools.core import vmf as vmfio
-    if gamedir is None:
-        return 0
     v = vmfio.load(out)
-    res = lint.Resources.from_game(str(gamedir), None, ())
-    if res.read is None:
-        return 0
-    prefix = f"models/{autoprop.MODEL_DIR}/{autoprop.safe(map_stem)}/lm"
-    r = fix_model_shaders(v, res, prefix)
-    if not r.faces:
-        return 0
-    for mat, text in r.materials.items():
-        p = Path(gamedir) / "materials" / f"{mat}.vmt"
-        p.parent.mkdir(parents=True, exist_ok=True)
-        if not p.exists() or p.read_text() != text:
-            p.write_text(text)
-    vmfio.save(v, out)
-    log(f"ht-vbsp: conserto automático: {r.faces} face(s) de brush com material de modelo ganharam cópia "
-        f"LightmappedGeneric ({', '.join(sorted(r.replaced))}): agora têm lightmap")
-    return r.faces
-
+    total = 0
+    turned = brush_angles(v)
+    if turned:
+        total += len(turned)
+        log(f"ht-vbsp: conserto automático: {len(turned)} entidade(s) de brush com angles zerados (o jogo girava o modelo "
+            f"e o Hammer mostra sem girar): " + ", ".join(f"{n} ({a})" for n, a in turned))
+    res = lint.Resources.from_game(str(gamedir), None, ()) if gamedir is not None else None
+    if res is not None and res.read is not None:
+        prefix = f"models/{autoprop.MODEL_DIR}/{autoprop.safe(map_stem)}/lm"
+        r = fix_model_shaders(v, res, prefix)
+        if r.faces:
+            for mat, text in r.materials.items():
+                p = Path(gamedir) / "materials" / f"{mat}.vmt"
+                p.parent.mkdir(parents=True, exist_ok=True)
+                if not p.exists() or p.read_text() != text:
+                    p.write_text(text)
+            total += r.faces
+            log(f"ht-vbsp: conserto automático: {r.faces} face(s) de brush com material de modelo ganharam cópia "
+                f"LightmappedGeneric ({', '.join(sorted(r.replaced))}): agora têm lightmap")
+    if total:
+        vmfio.save(v, out)
+    return total

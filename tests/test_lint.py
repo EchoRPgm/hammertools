@@ -580,3 +580,24 @@ def test_build_autofix_gives_model_material_on_brush_a_lightmapped_copy(tmp_path
     assert {sd.mat for s in vmfio.load(out).brushes for sd in s.sides} >= {new}
     assert (game / "materials" / f"{new}.vmt").read_text().startswith('"LightmappedGeneric"')
     assert fix.autofix_build(out, game, "m", log=lambda m: None) == 0           # já consertado: nada a fazer
+
+
+def test_brush_entity_angles_are_flagged_and_zeroed_in_build(tmp_path):
+    """Porta de garagem (func_door_rotating com angles 0 90 0): o jogo girava o modelo em volta da origin e ela ficava de
+    pé no meio da rua; o Hammer mostra sem girar. O lint avisa e o build zera."""
+    from hammertools import fix
+    from hammertools.core import vmf as vmfio
+    from srctools.vmf import Entity
+    v = _room()
+    door = v.create_ent("func_door_rotating", targetname="garagem", origin="296 -16067 -258", angles="0 90 0", spawnflags="96")
+    door.solids.append(v.make_prism(Vec(114, -16068, -374), Vec(242, -16066, -258)).solid)
+    v.create_ent("prop_static", model="models/x.mdl", origin="0 0 0", angles="0 90 0")    # prop gira de verdade: fica
+    hits = [i for i in _checks(lint.run(v, lint.Resources(), {"logic"}), "logic") if "angles" in i.msg]
+    assert len(hits) == 1 and "garagem" in hits[0].msg
+    out = tmp_path / "m.vmf"
+    vmfio.save(v, out)
+    assert fix.autofix_build(out, None, "m", log=lambda m: None) == 1
+    w = vmfio.load(out)
+    assert next(iter(w.by_class["func_door_rotating"]))["angles"] == "0 0 0"
+    assert next(iter(w.by_class["prop_static"]))["angles"] == "0 90 0"
+    assert fix.autofix_build(out, None, "m", log=lambda m: None) == 0

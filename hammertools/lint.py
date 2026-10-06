@@ -351,6 +351,13 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
 
     if "logic" in checks:
         _logic(v, rep)
+        for e in v.entities:
+            a = e["angles"].strip()
+            if e.solids and e["classname"].lower() != "func_detail" and a and a not in ("0 0 0", "0.0 0.0 0.0"):
+                o = _origin(e)
+                rep.add("aviso", "logic", f"{e['classname']} '{e['targetname'] or e.id}' com angles {a}: o jogo gira o "
+                        "modelo em volta da origin e o Hammer mostra sem girar (porta fora do lugar). O ht compile/ht-vbsp "
+                        "zera no build", o)
 
     if "extents" in checks:
         from hammertools import extents

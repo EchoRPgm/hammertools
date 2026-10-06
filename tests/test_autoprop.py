@@ -168,3 +168,78 @@ def test_same_group_in_any_order_gives_same_origin_and_model(room):
     ca = autoprop.collision_models(autoprop.Cluster((0, 0, 0), list(cands)), a[0], mats, "m")
     cb = autoprop.collision_models(autoprop.Cluster((0, 0, 0), list(reversed(cands))), b[0], mats, "m")
     assert [n for n, _ in ca] == [n for n, _ in cb]
+
+
+def _fake_studiomdl(game):
+    def run(cmd, cwd):   # "compila": cria o .mdl onde o studiomdl criaria
+        name = Path(cmd[-1]).read_text().split('"')[1]
+        (game / "models" / name).parent.mkdir(parents=True, exist_ok=True)
+        (game / "models" / name).write_text("mdl")
+        return 0
+    return run
+
+
+def test_convert_picked_solids_with_collision_split(room, tmp_path):
+    """ht prop: os solids escolhidos (mundo e detail) viram um visível + colisão separada, sem mexer no VMF."""
+    _room_with_details(room, n=2)
+    world = room.make_prism(Vec(200, 0, 0), Vec(232, 32, 32), "dev/a").solid
+    room.add_brush(world)
+    clip = room.make_prism(Vec(300, 0, 0), Vec(332, 32, 32), "tools/toolsplayerclip").solid
+    room.add_brush(clip)
+    agua = room.make_prism(Vec(400, 0, 0), Vec(432, 32, 32), "dev/agua").solid
+    room.add_brush(agua)
+    details = [s.id for e in room.by_class["func_detail"] for s in e.solids]
+    game = tmp_path / "game"
+    before = len(list(room.brushes))
+    r = autoprop.convert(room, [*details, world.id, clip.id, agua.id, 999999], game, "Mapa X",
+                         Path("studiomdl"), tmp_path / "work", autoprop.Materials(FakeRes()), _fake_studiomdl(game))
+    assert sorted(r.removed) == sorted([*details, world.id])
+    assert set(r.skipped) == {clip.id, agua.id, 999999}           # clip e água ficam como brush
+    assert any("selar" in w for w in r.warnings)                   # tirou brush do mundo
+    assert r.model.startswith("models/ht_prop/mapa_x/") and r.entities[0]["model"] == r.model
+    assert r.entities[0]["solid"] == "0" and all(e["solid"] == "6" for e in r.entities[1:])
+    assert len(r.entities) >= 2 and len({e["origin"] for e in r.entities}) == 1
+    assert len(list(room.brushes)) == before                        # o VMF não muda: quem aplica é o chamador
+
+
+def test_convert_reports_studiomdl_failure(room, tmp_path):
+    _room_with_details(room, n=1)
+    ids = [s.id for e in room.by_class["func_detail"] for s in e.solids]
+    r = autoprop.convert(room, ids, tmp_path / "game", "m", Path("studiomdl"), tmp_path / "work",
+                         autoprop.Materials(FakeRes()), lambda c, d: 1)
+    assert not r.entities and not r.removed and not r.model and any("studiomdl falhou" in w for w in r.warnings)
+
+
+def test_isolate_prop_light_only_with_generated_props(room, monkeypatch):
+    monkeypatch.delenv("HT_ALL_PROP_LIGHT", raising=False)
+    own = room.create_ent("prop_static", model="models/props_c17/oildrum001.mdl", disablevertexlighting="0")
+    assert autoprop.isolate_prop_light(room) == 0 and own["disablevertexlighting"] == "0"
+    room.create_ent("prop_static", model="models/ht_prop/m/abc.mdl")
+    assert autoprop.isolate_prop_light(room) == 1 and own["disablevertexlighting"] == "1"
+    own["disablevertexlighting"] = "0"
+    monkeypatch.setenv("HT_ALL_PROP_LIGHT", "1")                  # perfil final: luz por vértice em tudo
+    assert autoprop.isolate_prop_light(room) == 0 and own["disablevertexlighting"] == "0"
+
+
+def test_cli_prop_writes_new_vmf(room, tmp_path, monkeypatch, capsys):
+    from hammertools import cli, lint
+    _room_with_details(room, n=2)
+    src = tmp_path / "m.vmf"
+    vmfio.save(room, src)
+    ids = [s.id for e in room.by_class["func_detail"] for s in e.solids]
+    game = tmp_path / "garrysmod"
+    game.mkdir()
+    (game / "gameinfo.txt").write_text("")
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "studiomdl").write_text("")
+    monkeypatch.setattr(lint.Resources, "from_game", classmethod(lambda cls, *a, **k: FakeRes()))
+    real = autoprop.compile_jobs
+    monkeypatch.setattr(autoprop, "compile_jobs", lambda j, m, g, s, run=None: real(j, m, g, s, _fake_studiomdl(game)))
+    monkeypatch.setattr("hammertools.update.auto", lambda: None)
+    assert cli.main(["prop", str(src), "--solids", ",".join(map(str, ids)), "--game", str(game), "--json"]) == 0
+    import json
+    out = json.loads(capsys.readouterr().out)
+    assert sorted(out["removed"]) == sorted(ids) and out["entities"][0]["model"] == out["model"]
+    assert cli.main(["prop", str(src), "--solids", str(ids[0]), "--game", str(game)]) == 0
+    v = vmfio.load(tmp_path / "m_prop.vmf")
+    assert len(v.by_class["func_detail"]) == 1 and any("ht_prop" in e["model"] for e in v.by_class["prop_static"])

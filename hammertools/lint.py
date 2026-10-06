@@ -417,7 +417,8 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
                     if brush_users and shader in MODEL_SHADERS:
                         ex = _texture_examples(brush_users)
                         rep.add("aviso", "textures", f"material de modelo ({shader}) em brush: '{mat}' ({len(brush_users)} face(s)); "
-                                f"sem lightmap, a luz sai errada e muda com a distância. Use uma cópia LightmappedGeneric",
+                                f"sem lightmap, a luz sai errada e muda com a distância. O ht compile/ht-vbsp troca sozinho no build por uma cópia "
+                                f"LightmappedGeneric (o fonte não muda)",
                                 ex[0][0] if ex else None, group="shader de modelo", name=mat, count=len(brush_users), examples=ex,
                                 locations=_texture_locations(brush_users))
 

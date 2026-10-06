@@ -5,8 +5,8 @@ Hammer++, linha de comando):
 - vbsp pelo ht-vbsp (marcadores, leak, t-junctions, auto-prop, limite de coordenadas...);
 - vvis e vrad do jogo (GarrysMod/bin ou bin/win64, pelo Wine fora do Windows), por um caminho só de minúsculas quando
   preciso: o vvis/vrad passam o caminho do mapa para minúsculas e o Z: do Wine diferencia ("Can't create LogFile");
-- o vrad ganha -StaticPropLighting -StaticPropPolys sozinho quando o BSP tem props do auto-prop: iluminado só pela
-  origem (que fica dentro da própria colisão) o prop sai preto, e o visível faz a sombra pelos polígonos;
+- o vrad ganha -StaticPropLighting sozinho quando o BSP tem props do auto-prop: iluminado só pela origem (que fica
+  dentro da própria colisão) o prop gerado sai preto; os outros props têm disablevertexlighting e não mudam;
 - perfis como os do Hammer++: normal, rápido (vvis -fast, vrad -bounce 2 -noextra) e final (vrad -final ...).
 """
 from __future__ import annotations
@@ -19,8 +19,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-PROP_LIGHT = ["-StaticPropLighting", "-StaticPropPolys"]
-RAD_PROFILES = {"normal": [], "rapido": ["-bounce", "2", "-noextra"], "final": ["-final", *PROP_LIGHT, "-TextureShadows"]}
+PROP_LIGHT = ["-StaticPropLighting"]   # só os props gerados usam (os outros saem com disablevertexlighting)
+RAD_PROFILES = {"normal": [], "rapido": ["-bounce", "2", "-noextra"],
+                "final": ["-final", "-StaticPropLighting", "-StaticPropPolys", "-TextureShadows"]}
 
 
 def find_tool(gamedir: Path, name: str) -> Path | None:
@@ -75,6 +76,11 @@ def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags:
     say = lambda m: print(f"ht compile: {m}", flush=True)
 
     say(f"vbsp (ht-vbsp) de {vmf.name}")
+    # perfil final: luz por vértice em todos os props (como no Hammer++); senão só nos gerados pelo auto-prop
+    if rad == "final":
+        os.environ["HT_ALL_PROP_LIGHT"] = "1"
+    else:
+        os.environ.pop("HT_ALL_PROP_LIGHT", None)
     rc = cli.vbsp_main([*(ht_flags or []), *(vbsp_args or []), "-game", str(game), str(noext)])
     if rc != 0 or not bsp.exists():
         say(f"vbsp falhou (saída {rc}); parado")

@@ -135,3 +135,32 @@ def nodraw_hidden_detail(v: VMF) -> int:
     for _, side in faces:
         side.mat = "tools/toolsnodraw"
     return len(faces)
+
+
+def autofix_build(out: Path, gamedir: Path | None, map_stem: str, log=print) -> int:
+    """Consertos seguros que o ht-vbsp aplica sozinho no build/ (o fonte não muda), para o lint não só avisar:
+    material de modelo em brush vira uma cópia LightmappedGeneric (com lightmap; antes a luz mudava com a distância,
+    canteiro do rp_surdonoso). As cópias vão para a pasta de materiais gerados do mapa, que o pack embute no BSP.
+    Devolve quantas faces mudaram."""
+    from hammertools import autoprop
+    from hammertools.core import vmf as vmfio
+    if gamedir is None:
+        return 0
+    v = vmfio.load(out)
+    res = lint.Resources.from_game(str(gamedir), None, ())
+    if res.read is None:
+        return 0
+    prefix = f"models/{autoprop.MODEL_DIR}/{autoprop.safe(map_stem)}/lm"
+    r = fix_model_shaders(v, res, prefix)
+    if not r.faces:
+        return 0
+    for mat, text in r.materials.items():
+        p = Path(gamedir) / "materials" / f"{mat}.vmt"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if not p.exists() or p.read_text() != text:
+            p.write_text(text)
+    vmfio.save(v, out)
+    log(f"ht-vbsp: conserto automático: {r.faces} face(s) de brush com material de modelo ganharam cópia "
+        f"LightmappedGeneric ({', '.join(sorted(r.replaced))}): agora têm lightmap")
+    return r.faces
+

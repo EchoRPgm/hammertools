@@ -37,8 +37,8 @@ def test_compile_runs_vbsp_vis_rad_with_profile_and_copies(room, tmp_path, monke
     names = [s.split()[0] for s in steps]
     assert names == ["vbsp", "vvis", "vrad"]
     assert "-fast" in steps[1]
-    # perfil rápido + luz por vértice e sombra por polígono por causa dos props gerados
-    assert "-bounce 2 -noextra -StaticPropLighting -StaticPropPolys" in steps[2]
+    # perfil rápido + luz por vértice por causa dos props gerados (sem mexer na sombra dos outros props)
+    assert "-bounce 2 -noextra -StaticPropLighting" in steps[2] and "-StaticPropPolys" not in steps[2]
     assert (game / "maps" / "m.bsp").exists()
 
 

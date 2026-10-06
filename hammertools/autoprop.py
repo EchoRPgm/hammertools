@@ -515,17 +515,24 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
             if not e.solids:
                 v.remove_ent(e)
         org = f"{origin.x:g} {origin.y:g} {origin.z:g}"
-        # o visível desenha e faz a sombra pelos polígonos (vrad -StaticPropPolys), sem sombrear a si mesmo: a colisão
-        # tem a mesma forma e, fazendo sombra, deixava 32% dos vértices do prop pretos (medido no rp_surdonoso)
+        # o visível só desenha, com luz por vértice (vrad -StaticPropLighting): a origem fica dentro da própria colisão
+        # e, iluminado só por ela, saía preto. A sombra vem da colisão, com a forma exata dos brushes
         v.add_ent(Entity(v, {"classname": "prop_static", "model": f"{folder}/{name}.mdl", "origin": org, "angles": "0 0 0",
-                             "solid": "0", "skin": "0", "fademindist": "-1", "fadescale": "1", "disableshadows": "0",
+                             "solid": "0", "skin": "0", "fademindist": "-1", "fadescale": "1", "disableshadows": "1",
                              "disableselfshadowing": "1"}))
         # colisão: uma peça convexa por brush, em modelos sem brushes encostados; nunca desenhados (fade de 1u)
         for mname, _ in dirs[1:]:
             v.add_ent(Entity(v, {"classname": "prop_static", "model": f"{folder}/{mname}.mdl", "origin": org,
                                  "angles": "0 0 0", "solid": "6", "skin": "0", "fademindist": "0", "fademaxdist": "1",
-                                 "fadescale": "1", "disableshadows": "1", "disablevertexlighting": "1"}))
+                                 "fadescale": "1", "disableshadows": "0", "disablevertexlighting": "1"}))
         made += 1
+    if made and os.environ.get("HT_ALL_PROP_LIGHT") != "1":
+        # o -StaticPropLighting é global no vrad: sem isto TODOS os props do mapa passavam a ter luz por vértice e o mapa
+        # ficava mais escuro (rp_surdonoso). Os do mapa seguem iluminados como antes (pela origem); só os gerados mudam.
+        # O Hammer++ grava "0" em todo prop, então "0" é o padrão, não escolha (no perfil final, HT_ALL_PROP_LIGHT=1)
+        for e in v.by_class["prop_static"]:
+            if f"/{MODEL_DIR}/" not in e["model"]:
+                e["disablevertexlighting"] = "1"
     vmfio.save(v, out)
     # modelos que nenhum prop deste build usa (nomes antigos, outra geometria) saem da pasta: o pack embute a pasta
     used = {Path(e["model"]).stem for e in v.by_class["prop_static"] if e["model"].startswith(folder + "/")}
@@ -540,8 +547,8 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
         + (". Ainda não basta pela estimativa." if not stats.get("suficiente", True) else "."))
     log(f"ht-vbsp: auto-prop: modelos em {mdl_dir} e materiais em {mat_dir} (inclua no conteúdo do mapa).")
     if made:
-        log("ht-vbsp: auto-prop: o vrad precisa de -StaticPropLighting -StaticPropPolys (o `ht compile` põe sozinho; "
-            "compilando por fora, sem isso o prop sai preto e sem sombra).")
+        log("ht-vbsp: auto-prop: o vrad precisa de -StaticPropLighting (o `ht compile` põe sozinho; compilando por fora, "
+            "sem isso o prop gerado sai preto). Os outros props ficam com disablevertexlighting e não mudam.")
     return {"models": made, "falhas": failed, **stats}
 
 

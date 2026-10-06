@@ -558,3 +558,25 @@ def test_phy_checksum_mismatch_flagged():
     res = FakeRes()
     res.model_info = lambda m: {"static": True, "phy_mismatch": True}
     assert any("não bate com o .mdl" in i.msg for i in _checks(lint.run(v, res, {"models"}), "models"))
+
+
+def test_build_autofix_gives_model_material_on_brush_a_lightmapped_copy(tmp_path, monkeypatch):
+    """O lint não só avisa: o ht-vbsp troca no build/ o material de modelo em brush (luz que mudava com a distância no
+    canteiro do rp_surdonoso, 5114 -9639) por uma cópia LightmappedGeneric, gravada nos materiais gerados do mapa."""
+    from hammertools import fix
+    from hammertools.core import vmf as vmfio
+    v = _room()
+    v.add_brush(v.make_prism(Vec(-64, -64, 0), Vec(64, 64, 8), "models/props/gov_planter/grass_01").solid)
+    out = tmp_path / "build" / "m.vmf"
+    out.parent.mkdir()
+    vmfio.save(v, out)
+    vmts = {"materials/models/props/gov_planter/grass_01.vmt": b'"VertexLitGeneric"\n{\n"$basetexture" "models/props/gov_planter/grass"\n}'}
+    res = FakeRes(materials={"models/props/gov_planter/grass_01"})
+    res.read = lambda p, limit=None: vmts.get(p.lower())
+    monkeypatch.setattr(lint.Resources, "from_game", classmethod(lambda cls, *a, **k: res))
+    game = tmp_path / "garrysmod"
+    assert fix.autofix_build(out, game, "m", log=lambda m: None) == 6
+    new = "models/ht_prop/m/lm/models/props/gov_planter/grass_01"
+    assert {sd.mat for s in vmfio.load(out).brushes for sd in s.sides} >= {new}
+    assert (game / "materials" / f"{new}.vmt").read_text().startswith('"LightmappedGeneric"')
+    assert fix.autofix_build(out, game, "m", log=lambda m: None) == 0           # já consertado: nada a fazer

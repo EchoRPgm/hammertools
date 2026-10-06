@@ -74,6 +74,8 @@ def test_apply_swaps_detail_for_props_with_fake_studiomdl(room, tmp_path, monkey
     (game.parent / "bin" / "studiomdl").write_text("")
     out = tmp_path / "build" / "m.vmf"
     out.parent.mkdir()
+    room.create_ent("prop_static", model="models/props_c17/oildrum001.mdl", origin="0 0 0",
+                    disablevertexlighting="0")   # prop do próprio mapa, com o "0" que o Hammer++ grava em todo prop
     vmfio.save(room, out)
     from hammertools import lint
     monkeypatch.setattr(lint.Resources, "from_game", classmethod(lambda cls, *a, **k: FakeRes()))
@@ -90,16 +92,20 @@ def test_apply_swaps_detail_for_props_with_fake_studiomdl(room, tmp_path, monkey
     info = autoprop.apply(out, game, vbsp, 1.0, 1.0, log=lambda m: None, run=fake_studiomdl)
     v = vmfio.load(out)
     props = [e for e in v.entities if e["classname"] == "prop_static"]
-    assert info["models"] == len([p for p in props if p["solid"] == "0"]) >= 1 and info["falhas"] == 0
-    assert all(p["model"].startswith("models/ht_prop/m/") for p in props)
+    assert info["models"] == len([p for p in props if p["solid"] == "0" and "ht_prop" in p["model"]]) >= 1 and info["falhas"] == 0
+    gen = [p for p in props if "ht_prop" in p["model"]]
+    assert all(p["model"].startswith("models/ht_prop/m/") for p in gen)
     assert len(v.by_class["func_detail"]) < 4
-    visual = [p for p in props if p["solid"] == "0"]
-    coll = [p for p in props if p["solid"] == "6"]
-    # o visível não tem colisão (o studiomdl fundia peças e tampava portas); faz sombra, mas não em si mesmo
-    assert visual and all(p["disableshadows"] == "0" and p["disableselfshadowing"] == "1" for p in visual)
-    # a colisão vem de modelos à parte, nunca desenhados nem fazendo sombra, com a mesma origem do visível
-    assert coll and all(p["fademaxdist"] == "1" and p["disableshadows"] == "1" for p in coll)
+    visual = [p for p in gen if p["solid"] == "0"]
+    coll = [p for p in gen if p["solid"] == "6"]
+    # o visível não tem colisão (o studiomdl fundia peças e tampava portas) nem faz sombra
+    assert visual and all(p["disableshadows"] == "1" for p in visual)
+    # a colisão vem de modelos à parte, nunca desenhados nem iluminados, e faz a sombra (forma exata dos brushes)
+    assert coll and all(p["fademaxdist"] == "1" and p["disableshadows"] == "0" and p["disablevertexlighting"] == "1" for p in coll)
     assert {p["origin"] for p in coll} <= {p["origin"] for p in visual}
+    # luz por vértice só nos gerados: o prop do mapa continua iluminado como antes (mapa não escurece)
+    own = [p for p in props if "ht_prop" not in p["model"]]
+    assert own and all(p["disablevertexlighting"] == "1" for p in own)
     qcs = [q.read_text() for q in (tmp_path / "build").rglob("model.qc")]
     assert any("$collisionmodel" not in q and "ref.smd" in q for q in qcs)
     assert any("$collisionmodel" in q and "$maxconvexpieces" in q for q in qcs)

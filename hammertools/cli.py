@@ -1157,6 +1157,13 @@ def _vbsp_main(args: list[str]) -> int:
         if n_prev:
             print(f"ht-vbsp: preview removido do fonte ({n_prev} objeto(s)); recarregue o mapa no Hammer++ antes de salvar de novo")
     n_groups, n_solids, warnings = build(src, out, str(gamedir) if gamedir else None)
+    # o que o lint acha e tem conserto seguro é consertado aqui, no build/ (o fonte não muda)
+    fixed_faces = 0
+    try:
+        from hammertools import fix as _fix
+        fixed_faces = _fix.autofix_build(out, gamedir, src.stem, log=lambda m: print(m, flush=True))
+    except Exception as e:  # noqa: BLE001  conserto automático nunca derruba o compile
+        print(f"ht-vbsp: conserto automático falhou ({e}); seguindo sem ele", flush=True)
     from hammertools.lint import active_cordon, cordon_helper_brushes, hidden_count
     built = vmfio.load(out)
     spawns = [e for e in built.entities if e["classname"].lower() in SPAWN_CLASSES]
@@ -1328,7 +1335,7 @@ def _vbsp_main(args: list[str]) -> int:
         if plugs or removed:
             seal.save_cache(cache, plugs, removed, geometry)
     # modelos do auto-prop vão dentro do BSP (não existem no addon de conteúdo de ninguém); HT_PACK_PROPS=0 desliga
-    if rc == 0 and ap_info and ap_info.get("models") and gamedir and os.environ.get("HT_PACK_PROPS") != "0" \
+    if rc == 0 and ((ap_info and ap_info.get("models")) or fixed_faces) and gamedir and os.environ.get("HT_PACK_PROPS") != "0" \
             and out.with_suffix(".bsp").exists():
         try:
             from hammertools import pack

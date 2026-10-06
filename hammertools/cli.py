@@ -214,6 +214,26 @@ def cmd_content(args) -> int:
             return idx.read(p) if p in idx else None
 
     sources: list = []
+    if args.base_only:
+        # para versionar/compartilhar o mapa (Git do EchoHammer): só os VPKs do jogo base contam como "o jogo tem";
+        # o que vem de addons, workshop e arquivos soltos é copiado (quem clonar não tem os mesmos addons)
+        from srctools.filesys import VPKFileSystem
+        # o arquivo achado pela cadeia aponta pra cadeia, não pro VPK de onde veio: consulta cada VPK montado
+        vpks = [x for x in ((s[0] if isinstance(s, tuple) else s) for s in fs.systems) if isinstance(x, VPKFileSystem)]
+
+        def in_vpk(p):
+            p = content.norm(p)
+            for vpk in vpks:
+                try:
+                    vpk[p]
+                    return True
+                except FileNotFoundError:
+                    pass
+            return False
+        installed_has = game_has
+        sources.append(content.Source("addons e arquivos soltos do jogo", lambda p: installed_has(p) and not in_vpk(p),
+                                      lambda p: game_read(p) or b""))
+        game_has = in_vpk
     for b in args.bsp or []:
         sources.append(content.source_bsp(Path(b)))
     for d in args.extra or []:
@@ -555,6 +575,8 @@ def main(argv=None) -> int:
     p.add_argument("--all-map-paks", action="store_true", help="usar o conteúdo embutido de TODOS os mapas dos addons")
     p.add_argument("--clean", action="store_true", help="apaga a pasta de saída antes de gravar")
     p.add_argument("--dry-run", action="store_true", help="só lista, não grava")
+    p.add_argument("--base-only", action="store_true",
+                   help="só o jogo base (VPKs) conta como instalado: copia também o que vem de addons/workshop (para versionar o mapa)")
     p.add_argument("--max", type=int, default=30)
     p.set_defaults(fn=cmd_content)
     p = sub.add_parser("rename", help="renomeia entidades por regex e atualiza outputs e keyvalues que apontam pra elas")

@@ -59,3 +59,20 @@ def test_wine_safe_dir_is_lowercase_link_to_same_folder(tmp_path):
     safe = htc.wine_safe_dir(d)
     assert str(safe) == str(safe).lower() and (safe / "x.txt").read_text() == "ok"
     assert htc.wine_safe_dir(d) == safe
+
+
+def test_install_bsp_replaces_atomically_keeping_open_readers_on_old_file(tmp_path):
+    """O jogo com o mapa aberto lia o pakfile novo nas posições do antigo: a troca é por rename (inode novo)."""
+    if os.name == "nt":
+        return
+    dest = tmp_path / "maps" / "m.bsp"
+    dest.parent.mkdir()
+    dest.write_bytes(b"ANTIGO" * 10)
+    reader = open(dest, "rb")                 # o jogo com o mapa aberto
+    new = tmp_path / "m.bsp"
+    new.write_bytes(b"NOVO")
+    htc.install_bsp(new, dest)
+    assert dest.read_bytes() == b"NOVO"
+    assert reader.read() == b"ANTIGO" * 10     # quem já tinha aberto continua no arquivo antigo inteiro
+    reader.close()
+    assert not list(dest.parent.glob(".*novo"))

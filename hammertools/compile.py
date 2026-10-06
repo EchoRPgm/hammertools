@@ -51,6 +51,21 @@ def wine_safe_dir(d: Path) -> Path:
     return link
 
 
+def install_bsp(bsp: Path, dest: Path) -> None:
+    """Copia o .bsp para maps/ sem sobrescrever no lugar: grava ao lado e troca de uma vez (rename). Sobrescrever com o
+    mapa aberto no jogo fazia o motor ler os modelos do pakfile nas posições do arquivo antigo ("Error Vertex File ...
+    id N should be 1448297545", que é o "IDSV" do .vvd). Com a troca, quem está com o mapa aberto segue no antigo inteiro
+    e a próxima carga pega o novo inteiro."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(f".{dest.name}.novo")
+    shutil.copy2(bsp, tmp)
+    try:
+        os.replace(tmp, dest)
+    except PermissionError:
+        tmp.unlink(missing_ok=True)       # Windows: o jogo com o mapa aberto trava o arquivo
+        raise RuntimeError(f"{dest} está em uso (mapa aberto no jogo?): feche o mapa e copie de novo")
+
+
 def has_generated_props(bsp: Path) -> bool:
     from hammertools import autoprop
     try:
@@ -116,8 +131,7 @@ def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags:
             say("ht pack falhou; o BSP segue sem o conteúdo embutido")
     if copy:
         dest = game / "maps" / bsp.name
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(bsp, dest)
+        install_bsp(bsp, dest)
         say(f"copiado para {dest}")
     say("pronto")
     return 0

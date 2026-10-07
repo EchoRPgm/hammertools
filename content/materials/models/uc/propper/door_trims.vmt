@@ -1,0 +1,12 @@
+"vertexlitgeneric"
+{
+	"$basetexture" "unioncity/misc/door_trims"
+	$surfaceprop metal
+	$bumpmap "unioncity/misc/door_trims_n"
+
+	$envmap env_cubemap
+	$normalmapalphaenvmapmask 1
+	$envmaptint "[ 0.2 0.2 0.2 ]"
+	
+}
+

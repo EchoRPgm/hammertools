@@ -1,0 +1,15 @@
+"lightmappedgeneric"
+{
+	"$basetexture" 	"office/wood/wood_floor_001b"
+	"$bumpmap"     	"office/wood/wood_floor_001_ssbump"
+"$ssbump" "1"
+"$ssbumpmathfix" "1"
+	"$surfaceprop" 	"wood"
+
+	"$envmap" 			"env_cubemap"
+	"$envmaptint" 			"[0.07 0.07 0.07]"
+	"$normalmapalphaenvmapmask"	"1"
+	
+
+//	"$reflectivity" 		"[.3 .3 .3]"
+}

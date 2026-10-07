@@ -1,0 +1,16 @@
+"vertexlitgeneric"
+{
+	"$basetexture" "industrial17/opensign_v"
+	"$surfaceprop" "default"
+	"$selfillum" 1
+//texture created by videowarrior for industrial17
+"proxies"
+{
+"animatedtexture"
+{
+"animatedtexturevar" "$basetexture"
+"animatedtextureframenumvar" "$frame"
+"animatedtextureframerate" "1"
+}
+}
+}

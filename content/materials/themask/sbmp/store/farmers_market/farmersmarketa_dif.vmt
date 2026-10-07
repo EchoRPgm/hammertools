@@ -1,0 +1,32 @@
+"VertexLitGeneric"
+{
+
+
+	//"$envmap" "env_cubemap"
+	//"$normalmapalphaenvmapmask" "1"
+	//"$envmapfresnel" ".25"
+	//"$envmaptint"	"[.1 .1 .1]"
+
+
+	"$baseTexture" 		"themask/SBMP/Store/Storing/FarmersMarketA_DIF"
+	"$translucent"		"0"
+	"$alphatest" 		"0"
+
+	"$bumpmap" 			"themask/SBMP/Store/Storing/FarmersMarketA_DIF_N"
+
+	//"$Lightwarptexture"	"themask/shared/lightwarp_thor"
+
+	"$phong" "1"
+	//"$phongexponent" "64"
+	"$phongexponenttexture" 	"themask/SBMP/Store/Storing/FarmersMarketA_DIF_S"
+	//"$phongwarptexture"		"themask/SBMP/Groceries/shared/anisotropic"
+	"$phongalbedotint" "1"
+	"$phongboost" "5"
+	"$phongfresnelranges"	"[.2 1 3]"
+
+	//"$detail" "themask/SBMP/Store/Storing/FarmersMarketA_DIF_E"
+	//$detailscale 1
+	//$detailblendfactor 0
+	//$detailblendmode 0
+
+}

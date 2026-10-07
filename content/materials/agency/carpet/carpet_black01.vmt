@@ -1,0 +1,12 @@
+LightmappedGeneric
+{
+$basetexture "agency\carpet\carpet_black01"
+$bumpmap "agency\carpet\carpet_brown01_n"
+$normalmapalphaenvmapmask 1
+$envmap env_cubemap
+$envmapsaturation "0.01"
+$envmapcontrast "0.1"
+$envmaptint "[1 1 1]"
+$surfaceprop carpet
+"%keywords" agency
+}

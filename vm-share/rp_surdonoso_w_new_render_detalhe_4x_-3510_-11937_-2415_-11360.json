@@ -1,0 +1,69 @@
+{
+  "map": "rp_surdonoso_w_new",
+  "engine": "bsp",
+  "variant": "",
+  "image": "rp_surdonoso_w_new_render_detalhe_4x_-3510_-11937_-2415_-11360.png",
+  "width": 1481,
+  "height": 780,
+  "units_per_pixel": 0.7397257089614868,
+  "file_bytes": 1476068,
+  "world_bounds": {
+    "x_min": -3509.713556892411,
+    "y_max": -11360.006303146027,
+    "x_max": -2414.179781920449,
+    "y_min": -11936.992356135986
+  },
+  "z_range": [
+    -2432,
+    3711
+  ],
+  "content_paks": [
+    "workshop:maps/rp_surdonoso.bsp"
+  ],
+  "missing_materials": [
+    "__missing__/models/custom_models/cogu2.mdl",
+    "materials/wall/conctrim1_ivy",
+    "stone/marblefloor002a"
+  ],
+  "missing_textures": [],
+  "missing_models": [],
+  "recipe": {
+    "map": "/home/wanso/.local/share/Steam/steamapps/common/GarrysMod/garrysmod/maps/rp_surdonoso_w_new.bsp",
+    "vmf": "/home/wanso/hammer-tools/vm-share/rp_surdonoso_w_new.vmf",
+    "engine": "bsp",
+    "output": "/home/wanso/hammer-tools/vm-share/rp_surdonoso_w_new_render_detalhe_4x_-3510_-11937_-2415_-11360",
+    "content": {
+      "workshopMaps": [
+        "auto"
+      ],
+      "bsps": []
+    },
+    "layer": 0,
+    "region": [
+      -3509.713556892411,
+      -11936.605273245417,
+      -2414.5624928781317,
+      -11360.006303146027
+    ],
+    "resolution": 32768,
+    "maxTextureSize": 1024,
+    "exposure": 1,
+    "relief": 1,
+    "minBrightness": 0.2,
+    "cutExposure": 0.5,
+    "overlays": true,
+    "props": true,
+    "removeRoofs": true,
+    "roofThickness": 128,
+    "cuts": [],
+    "maxBytes": 0,
+    "variants": [],
+    "pathTracing": {
+      "samples": 256,
+      "tile": 2048,
+      "maxBounces": 4,
+      "textureSize": 1024
+    }
+  },
+  "note": "pixel_x = (x - x_min) / units_per_pixel ; pixel_y = (y_max - y) / units_per_pixel"
+}

@@ -1,0 +1,18 @@
+"VertexLitGeneric"
+{
+   "$basetexture"         "models/mark2580/gtav/mp_apa_low/bathroom/gz_v_fa_duvet02"
+	"$bumpmap"     "models/mark2580/gtav/mp_apa_06/lobby/p_h_acc_rugwooll03_n"
+	
+   "$nocull"      "1"
+
+   	$phong               1
+	$phongfresnelranges  "[0.05 0.05 0.05]"
+	$halflambert         1
+	$phongexponent       100
+	$phongboost          1  
+
+    "$detail"             "mark2580/gtav/shared/Detail_Cloth6"
+	"$detailscale"        "1"
+	"$detailblendfactor"  "0.5"
+	"$detailblendmode"    "0"  
+}

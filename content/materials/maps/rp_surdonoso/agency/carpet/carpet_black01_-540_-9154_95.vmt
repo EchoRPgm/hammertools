@@ -1,0 +1,8 @@
+"patch"
+{
+	"include"		"materials/AGENCY/CARPET/CARPET_BLACK01.vmt"
+	"replace"
+	{
+		"$envmap"		"maps/rp_surdonoso/c-540_-9154_95"
+	}
+}

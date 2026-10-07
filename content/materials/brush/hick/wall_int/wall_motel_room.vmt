@@ -1,0 +1,8 @@
+
+"LightMappedGeneric"
+{
+	"$color"				"[1 1 1]"
+	"$baseTexture"			"brush/hick/wall_int/wall_motel_room"
+	"$bumpMap"			"brush/hick/wall_int/wall_motel_room_normal"
+	"$surfaceprop" 			"default"
+}

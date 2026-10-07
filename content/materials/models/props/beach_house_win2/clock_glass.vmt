@@ -1,0 +1,11 @@
+"vertexlitgeneric"
+{
+	"$basetexture" "af_omega/clock_glass"
+	"$surfaceprop" "glass"
+	"$envmap" "env_cubemap"
+	//"$surfaceprop" "glass"
+	"$envmapmask" "models/props_trainstation/trainstation_clock_glass001_mask"
+	"$translucent" 1
+	//"$envmaptint" "[ 0.75 0.75 0.75 ]"
+	"%keywords" "train,glass,clock"
+}

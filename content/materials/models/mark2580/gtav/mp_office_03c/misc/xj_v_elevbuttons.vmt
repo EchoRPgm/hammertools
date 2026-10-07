@@ -1,0 +1,16 @@
+"VertexLitGeneric"
+{
+   "$basetexture"         "models/mark2580/gtav/mp_office_03c/misc/xj_v_elevbuttons"
+   "$bumpmap"             "models/mark2580/gtav/mp_office_03c/misc/xj_v_elevbuttons_n" 
+	
+	"$phong"                  "1" 
+	"$phongboost"             "1" 
+	"$phongfresnelranges"     "[0.1 0.1 0.1]" 
+	"$phongexponent"          "35"
+	
+	$envmap                   "env_cubemap"
+	$envmaptint               "[0.05 0.05 0.05]"
+
+   "$selfillum"	       "1"
+   "$selfillumtint"    "[1 1 1]" 	
+}

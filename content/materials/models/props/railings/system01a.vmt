@@ -1,0 +1,10 @@
+"VertexLitGeneric"
+{
+	"$basetexture" "models/props/railings/system01a"
+
+	"$envmap" "env_cubemap"
+	"$envmaptint" "[.75 .75 .75]"
+	"$envmapmask" "models/props/railings/system01a_mask"
+	"$envmapcontrast" ".75"
+
+}

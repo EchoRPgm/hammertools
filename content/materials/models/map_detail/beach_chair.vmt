@@ -1,0 +1,15 @@
+// Thanks to Krionikal for the chair!
+
+"VertexLitGeneric"
+{
+	"$basetexture" "models\map_detail\beach_chair"
+	"$model" "1"
+
+	"$phong" "1"
+	"$phongexponent" "64"
+	"$phongboost" ".25"
+	"$phongfresnelranges" "[1 1 8]"
+
+	"$blendtintbybasealpha" "1" 
+ 	"$blendtintcoloroverbase" "0.5"
+}

@@ -1,0 +1,11 @@
+"VertexlitGeneric"
+{
+	"$basetexture" "models\props\de_cbble\window_bars_a\window_bars_a.vtf"
+	"$bumpmap" "models\props\de_cbble\window_bars_a\window_bars_normal.vtf"
+	
+	
+	"$envmap" "env_cubemap"
+	$normalmapalphaenvmapmask 1
+	"$envmaptint" 		"[.8 .8 .8]"
+}
+

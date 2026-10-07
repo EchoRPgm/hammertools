@@ -1,0 +1,10 @@
+"VertexLitGeneric"
+{
+	"$basetexture" "models/postal3/jail_door01"
+	"$basemapalphaphongmask" "1"
+	"$phong" "1"
+	"$phongexponent" 20
+	"$phongboost"	"2"
+	"$phongfresnelranges"	"[0.5 0.5 1]"
+	"$surfaceprop" "metal"
+}

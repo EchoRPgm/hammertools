@@ -1,0 +1,21 @@
+VertexLitGeneric
+{
+	"$basetexture"            "mark2580/gtav/shared/chrome"
+	"$bumpmap"                "mark2580/gtav/shared/skin_nm"
+	
+	"$phong"                  "1" 
+	"$phongboost"             "4" 
+	"$phongfresnelranges"     "[3 1 1]" 
+	"$phongexponent"          "150"
+	
+	"$envmap"                 "env_cubemap"
+	"$envmaptint"             "[0.9 0.9 0.9]"
+
+	"$halflambert"            "1"
+	"$nodecal"                "0"
+	
+	"$envmapsaturation"       "0.55"
+	"$multipass"              "1"
+	
+	"$lightwarptexture"       "mark2580/gtav/shared/lightfix"
+}

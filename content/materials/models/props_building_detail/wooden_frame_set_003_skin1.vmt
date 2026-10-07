@@ -1,0 +1,5 @@
+"VertexlitGeneric"
+{
+	"$basetexture" "models/props_building_detail/wooden_frame_set_003_skin1"
+$FlashlightNoLambert 1
+}

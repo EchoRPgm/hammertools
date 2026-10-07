@@ -1,0 +1,5 @@
+"LightmappedGeneric"
+{
+	$basetexture "pepsi2/arch/metal_grate01"
+	$surfaceprop Metal
+}

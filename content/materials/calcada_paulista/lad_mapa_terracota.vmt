@@ -1,0 +1,8 @@
+"LightmappedGeneric"
+{
+	"$basetexture" "calcada_paulista/lad_mapa_terracota"
+	"$bumpmap" "calcada_paulista/lad_mapa_terracota_normal"
+	"$surfaceprop" "tile"
+	"%keywords" "calcada,sao paulo,piso"
+	// Ladrilho hidráulico – mapa de SP (terracota e cinza) – textura cobre 1.6 m; escala real no Hammer: 0.082
+}

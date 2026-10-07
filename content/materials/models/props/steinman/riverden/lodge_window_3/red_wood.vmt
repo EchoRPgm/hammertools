@@ -1,0 +1,6 @@
+"vertexlitgeneric"
+{
+	"$basetexture" "angry_builder/pt/red_wood"
+	"$bumpmap" "angry_builder/pt/red_wood_n"
+	"$surfaceprop" "wood_solid"
+}

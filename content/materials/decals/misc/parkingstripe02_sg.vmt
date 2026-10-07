@@ -1,0 +1,8 @@
+"LightmappedGeneric"
+{
+	"$translucent" 1
+	"$basetexture" "decals/misc/ParkingStripe02_sg"
+	"$decal" 1
+	"$decalscale" 0.25
+	"%keywords" "neotokyo"
+}

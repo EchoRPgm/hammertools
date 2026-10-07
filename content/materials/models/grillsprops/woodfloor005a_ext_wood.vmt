@@ -1,0 +1,10 @@
+VertexLitGeneric
+{
+	$basetexture "models/grillsprops/woodfloor005a_ext_wood"
+	$bumpmap "models/grillsprops/woodfloor005a_ext_wood_norm"
+	$surfaceprop Wood
+
+	$vertexcolor 1
+
+	$model 1
+}

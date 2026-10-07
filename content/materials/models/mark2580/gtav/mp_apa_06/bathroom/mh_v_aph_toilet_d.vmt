@@ -1,0 +1,16 @@
+"VertexlitGeneric" 
+{ 
+	"$basetexture" "models/mark2580/gtav/mp_apa_06/bathroom/mh_v_aph_toilet_d" 
+    "$bumpmap"            "dev/bump_normal"	
+	
+   "$nocull"      "0" 
+   "$envmap"             "env_cubemap" 
+   "$envmaptint"         "[.08 .08 .08]" 
+   "$normalmapalphaenvmapmask"    "1" 
+
+   	$phong               1
+	$phongfresnelranges  "[0.3 0.75 1.00]"
+	$halflambert         1
+	$phongexponent       50
+	$phongboost          1 
+} 

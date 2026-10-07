@@ -1,0 +1,8 @@
+"LightmappedGeneric"
+{
+	"$basetexture" "calcada_paulista/pp_mapa_gasta"
+	"$bumpmap" "calcada_paulista/pp_mapa_gasta_normal"
+	"$surfaceprop" "rock"
+	"%keywords" "calcada,sao paulo,piso"
+	// Pedra portuguesa – mapa de SP (gasta) – textura cobre 4.2 m; escala real no Hammer: 0.215
+}

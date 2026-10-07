@@ -1,0 +1,15 @@
+"VertexlitGeneric"
+{
+	"$basetexture"	"models/s_prop/vegas/furni/cas_front_statue/cas_front_statue"
+	"$bumpmap"	"models/s_prop/vegas/furni/cas_front_statue/cas_front_statue_normal"
+	"$phong"                       "1"
+	"$phongexponent"               "40"
+//	"$phongexponenttexture"        "models/s_prop/hick/besp/fuel_tank/fuel_tank_exponent"
+      	  "$phongfresnelranges"          "[1 0.2 0.2]"
+        "$phongboost"                  "1"
+        
+//        "$rimlight"                    "1"
+//        "$rimlightexponent"            "5"
+//        "$rimlightboost"               "1"
+	"$selfillum"			"1"
+}

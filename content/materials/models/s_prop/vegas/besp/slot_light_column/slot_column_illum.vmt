@@ -1,0 +1,18 @@
+"unlitGeneric"
+{
+	"$basetexture"	"models/s_prop/vegas/besp/slot_light_column/slot_column_illum"
+	"$alpha"		"1"
+//	"$selfillum"	"1"
+	"$translucent"	"1"
+
+	"Proxies"
+	{
+	"TextureScroll"
+		{
+			"textureScrollVar" "$baseTextureTransform"
+			"textureScrollRate" "1"
+			"textureScrollAngle" 0
+		}
+	}
+
+}

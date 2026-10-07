@@ -1,0 +1,5 @@
+"LightmappedGeneric"
+{
+	"$baseTexture" "Goldeneye/Caverns/CavernsConcreteFloor02"
+	"$surfaceprop" "concrete"        
+}

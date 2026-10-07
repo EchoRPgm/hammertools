@@ -1,0 +1,14 @@
+"VertexlitGeneric"
+{
+	"$basetexture"	"models/s_prop/vegas/flora/circ_planter/circ_planter"
+	"$bumpmap"                     "models/s_prop/vegas/flora/circ_planter/circ_planter_normal"
+
+	"$phong"                       "1"
+	"$phongexponent"               "5"
+        "$phongfresnelranges"          "[1 0.3 0.1]"
+       "$phongboost"                  "2.5"
+	"$alphatest"	"1"
+	"$nocull"		"1"
+
+
+}

@@ -1,0 +1,25 @@
+VertexLitGeneric
+{
+	"$basetexture"	"models\props\de_nuke\electric_box_clean2"
+
+	"$envmap" 	"env_cubemap"
+	"$bumpmap" "models\props\de_nuke\electric_box_clean2_NRM"
+	"$normalmapalphaenvmapmask" 1
+	"$model"			"1"
+	"$surfaceprop"			"metal"	
+   	"$envmaptint"			"[.2 .2 .2]"
+	"$envmapsaturation"		"0.15"
+"$phong" "1"
+"$phongexponent" "80"
+"$phongboost" "5"
+"$phongfresnelranges"	"[0.2 .5 1.6]"
+"$phongalbedotint" "1"
+"$PhongWarpTexture"	"models\props_am\am_ams_phongwarp"
+
+
+// Rim lighting parameters
+"$rimlight" "1"
+"$rimlightexponent" "25"
+"$rimlightboost" "0.25"
+
+}

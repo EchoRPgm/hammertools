@@ -1,0 +1,5 @@
+LightmappedGeneric
+{
+$baseTexture "concrete/conc_clean_top"
+$Surfaceprop concrete
+}

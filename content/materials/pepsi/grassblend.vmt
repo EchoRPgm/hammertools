@@ -1,0 +1,10 @@
+"WorldVertexTransition"
+{
+	"$basetexture" 	"de_train/train_dirt_floor_01"
+	"$basetexture2" "forest/grass_01"
+	"%tooltexture" 	"nature/milground004_2_tooltexture"
+	"%detailtype" 	"alley_grass1"
+	"$surfaceprop" 	"dirt"
+	"$surfaceprop2"	"grass"
+}
+

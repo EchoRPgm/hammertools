@@ -1,0 +1,18 @@
+"unlitGeneric"
+{
+	"$basetexture"	"models/s_prop/vegas/sign/sign_jackpot/sign_jackpot_neon"
+	"$alpha"		"1"
+	"$selfillum"	"1"
+	"$translucent"	"1"
+
+	"Proxies"
+	{
+	"TextureScroll"
+		{
+			"textureScrollVar" "$baseTextureTransform"
+			"textureScrollRate" "2"
+			"textureScrollAngle" "90"
+		}
+	}
+
+}

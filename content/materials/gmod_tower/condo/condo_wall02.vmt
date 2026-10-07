@@ -1,0 +1,11 @@
+"LightmappedGeneric"
+{
+	"$basetexture" "gmod_tower/condo/condo_wall02"
+	"$surfaceprop" "Default"
+	"%keywords" "pixeltail pt condo"
+
+	"$detail" "detail\noise_detail_01"
+	"$detailscale" "16"
+	"$detailblendfactor" ".25"
+	"$detailblendmode" "0"
+}

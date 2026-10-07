@@ -1,0 +1,5 @@
+VertexLitGeneric
+{
+    $basetexture                "models\props_camp\keypad_red_diff"
+    $surfaceprop "metalpanel"
+}

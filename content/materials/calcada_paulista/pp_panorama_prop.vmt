@@ -1,0 +1,6 @@
+"VertexLitGeneric"
+{
+	"$basetexture" "calcada_paulista/pp_panorama"
+	"$bumpmap" "calcada_paulista/pp_panorama_normal"
+	"$surfaceprop" "rock"
+}

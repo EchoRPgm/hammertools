@@ -1,0 +1,11 @@
+"LightmappedGeneric"
+{
+	// Original shader: DecalBaseTimesLightmapAlphaBlend
+	"$translucent" 1
+	"$basetexture" "Decals/decal_postersPP001a"
+	"$decal" 1
+	"$decalscale" 0.045
+	"%keywords" "c17downtown"
+				"$detail" "FF_Detail/korn_detail"
+	"$detailscale" 5
+}

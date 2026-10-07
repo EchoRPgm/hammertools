@@ -1,0 +1,14 @@
+"LightmappedGeneric"
+{
+	$basetexture "pepsi2/arch/stone_floor02_e"
+	$surfaceprop Concrete
+
+	$envmap "env_cubemap"
+	$envmaptint "[0.03 0.03 0.03]"
+	$envmaplightscale 1
+
+	$phong 1
+	$phongexponent 35
+	$phongamount "[1 0.95 0.84 1]"
+	$phongmaskcontrastbrightness "[3 1]"
+}

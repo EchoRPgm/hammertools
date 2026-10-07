@@ -1,0 +1,15 @@
+"vertexlitgeneric"
+{
+      "$basetexture" "contagion/wood/wooddesk_01"
+
+      // specular map
+      "$envmap" "env_cubemap"
+      "$envmapmask" "contagion/wood/wooddesk_01_spec"
+      "$envmaptint" "[.05 .05 .05]"
+      "$envmapsaturation" "0.4"
+      "$envmapcontrast" "0.3"
+
+      // extra parameters
+      "$surfaceprop" "wood"
+      "%keywords" "cont, policestation"
+}

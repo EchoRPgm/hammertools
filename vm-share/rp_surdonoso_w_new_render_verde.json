@@ -1,0 +1,105 @@
+{
+  "map": "rp_surdonoso_w_new",
+  "engine": "bsp",
+  "variant": "_verde",
+  "image": "rp_surdonoso_w_new_render_verde.png",
+  "width": 4406,
+  "height": 5145,
+  "units_per_pixel": 4.7123516112417185,
+  "file_bytes": 18689141,
+  "world_bounds": {
+    "x_min": -8228.14453125,
+    "y_max": 7888.33203125,
+    "x_max": 12534.476667881012,
+    "y_min": -16353.958902835846
+  },
+  "z_range": [
+    -2432,
+    3711
+  ],
+  "content_paks": [
+    "workshop:maps/rp_surdonoso.bsp"
+  ],
+  "missing_materials": [
+    "__missing__/models/custom_models/cogu2.mdl",
+    "__missing__/models/custom_models/cogu3.mdl",
+    "__missing__/models/props/de_venice/venice_streetlight_1/venice_streetlight_2.mdl",
+    "__missing__/models/props_building_detail/wooden_window_frame_003_f.mdl",
+    "__missing__/models/props_electric/light_004b.mdl",
+    "__missing__/models/props_electric/light_ceiling_001.mdl",
+    "__missing__/models/props_equipment/light_floodlight.mdl",
+    "__missing__/models/props_lighting/lightfixture02.mdl",
+    "__missing__/models/s_prop/vegas/furni/club_chair/club_chair.mdl",
+    "materials/wall/conctrim1_ivy",
+    "stone/marblefloor002a"
+  ],
+  "missing_textures": [
+    "custom_textures\txt_chao",
+    "custom_textures\txt_chao2",
+    "de_nuke\nuke_beam_01",
+    "de_nuke\nuke_metalfloor_01",
+    "de_train\train_cement_floor_01",
+    "de_train\train_gravel_floor_01",
+    "de_train\train_metalceiling_02",
+    "dunc_temp\u000Begas/wall_int_grey_panel_glowtrim"
+  ],
+  "missing_models": [],
+  "recipe": {
+    "map": "/home/wanso/hammer-tools/vm-share/rp_surdonoso_w_new.bsp",
+    "engine": "bsp",
+    "output": "/home/wanso/hammer-tools/vm-share/rp_surdonoso_w_new_render",
+    "content": {
+      "workshopMaps": [
+        "auto"
+      ],
+      "bsps": []
+    },
+    "layer": 0,
+    "resolution": 8192,
+    "maxTextureSize": 1024,
+    "exposure": 1,
+    "relief": 1,
+    "minBrightness": 0.2,
+    "cutExposure": 0.5,
+    "overlays": true,
+    "props": true,
+    "removeRoofs": false,
+    "roofThickness": 128,
+    "cuts": [
+      {
+        "name": "caverna",
+        "x0": 6400,
+        "y0": -6000,
+        "x1": 10400,
+        "y1": 0,
+        "zMax": -1250
+      }
+    ],
+    "maxBytes": 20000000,
+    "variants": [
+      {
+        "suffix": ""
+      },
+      {
+        "suffix": "_verde",
+        "greenify": {
+          "region": [
+            -8300,
+            -1800,
+            12600,
+            7950
+          ],
+          "strength": 1,
+          "featherUnits": 184
+        }
+      }
+    ],
+    "pathTracing": {
+      "samples": 256,
+      "tile": 2048,
+      "maxBounces": 4,
+      "textureSize": 1024
+    }
+  },
+  "note": "pixel_x = (x - x_min) / units_per_pixel ; pixel_y = (y_max - y) / units_per_pixel"
+}

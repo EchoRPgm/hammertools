@@ -1,0 +1,16 @@
+"vertexlitgeneric"
+{
+   "$basetexture" "contagion\roofing\roof_shingle01b"
+   "$bumpmap" "contagion\roofing\roof_shingle01a_normal"
+
+   "$normalmapalphaenvmapmask" "1"
+   "$envmap" "env_cubemap"
+	
+   "$phong" "1"
+   "$phongboost" "90"
+
+   "$envmaptint" "[.04 .04 .07]"
+   "$envmapcontrast" 0.5
+
+   "$surfaceprop" "rubbertire"
+}

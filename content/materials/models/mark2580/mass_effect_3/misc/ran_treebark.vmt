@@ -1,0 +1,11 @@
+"VertexLitGeneric"
+{
+        "$basetexture"         "models/mark2580/mass_effect_3/misc/Ran_TreeBark"
+        "$bumpmap"             "models/mark2580/mass_effect_3/misc/Ran_TreeBark_n"
+
+        "$detail"             "mark2580/mass_effect_3/detail/wood_detail"
+
+	"$detailscale"        "5"
+	"$detailblendfactor"  "1.6"
+	"$detailblendmode"    "0"      
+}

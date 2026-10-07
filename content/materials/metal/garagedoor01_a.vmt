@@ -1,0 +1,10 @@
+"lightmappedGeneric"
+{
+	"$baseTexture" "metal/garagedoor01_a"
+	"$surfaceprop" "metal"
+	"$bumpmap" "metal\garagedoor01_normal"
+	"$envmap" "env_cubemap"
+    	"$envmaptint" "[.09 .09 .09]"
+	"%keywords" "neotokyo" 
+
+}

@@ -1,0 +1,5 @@
+"VertexLitGeneric"
+{
+	"$basetexture" "models/props_custom/doge/base"
+	"$bumpmap" "models/props_custom/doge/base_normal"
+}

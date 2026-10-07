@@ -1,0 +1,5 @@
+"VertexLitGeneric"
+{
+	"$basetexture" "models/props_interior/p_el_litswi_dm"
+	$bumpmap "models/props_interior/p_el_litswi_n"
+}

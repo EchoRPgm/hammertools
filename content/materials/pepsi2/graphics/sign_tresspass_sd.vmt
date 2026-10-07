@@ -1,0 +1,8 @@
+"LightmappedGeneric"
+{
+	"$basetexture" "pepsi2/graphics/Sign_Tresspass_SD"
+	"$decal" "1"
+	"$decalscale" 0.25
+	"$translucent" 1
+}
+

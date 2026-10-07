@@ -1,0 +1,12 @@
+"VertexLitGeneric"
+{
+   "$basetexture"         "models/mark2580/gtav/mp_apa_low/bathroom/gz_v_cs_chrome"
+   "$bumpmap"             "dev/bump_normal" 
+   
+   $phong               1
+   $phongfresnelranges  "[0.3 0.75 1.00]"
+   $halflambert         1
+   $phongexponent       10
+   $phongboost          0.3
+   $nocull              0   
+}

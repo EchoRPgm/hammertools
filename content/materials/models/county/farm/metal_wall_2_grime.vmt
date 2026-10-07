@@ -1,0 +1,13 @@
+VertexLitGeneric
+{
+	$basetexture "models/county/farm/silodome_d"
+	$bumpmap "hr_massive/metal_wall_2_bottom_normal"
+	$surfaceprop Metal
+
+	$phong 1
+	$phongfresnelranges "[0.5 0.75 1]"
+	$phongexponent 30
+	$phongboost 4
+
+	$normalmapalphaphongmask 1
+}

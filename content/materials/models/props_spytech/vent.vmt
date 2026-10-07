@@ -1,0 +1,10 @@
+"VertexLitGeneric"
+{
+	"$basetexture" "Models/props_spytech/vent"
+	"$phong" "1"
+	"$phongexponent" "31"
+	"$phongboost" ".25"	
+	"$phongfresnelranges"	"[1 1 1]"
+	"$halflambert" "0"
+
+}

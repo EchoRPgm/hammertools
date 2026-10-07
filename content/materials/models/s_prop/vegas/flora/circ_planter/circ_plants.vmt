@@ -1,0 +1,9 @@
+"VertexlitGeneric"
+{
+	"$basetexture"	"models/s_prop/vegas/flora/circ_planter/circ_plants"
+
+	"$alphatest"	"1"
+	"$nocull"		"1"
+
+
+}

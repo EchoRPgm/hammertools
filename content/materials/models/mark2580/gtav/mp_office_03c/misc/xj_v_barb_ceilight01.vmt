@@ -1,0 +1,19 @@
+"VertexLitGeneric"
+{
+   "$basetexture"         "models/mark2580/gtav/mp_office_03c/misc/xj_v_barb_ceilight01"
+   "$bumpmap"             "models/mark2580/gtav/mp_office_03c/misc/xj_v_barb_ceilight01_n" 	 
+
+	$normalmapalphaenvmapmask "1"
+	$envmapfresnel            "1"
+	
+	"$phong"                  "1" 
+	"$phongboost"             "1" 
+	"$phongfresnelranges"     "[0.1 0.1 0.1]" 
+	"$phongexponent"          "15"
+	
+	$envmap                   "env_cubemap"
+	$envmaptint               "[0.01 0.01 0.01]"
+
+   "$selfillum"	       "1"
+   "$selfillumtint"    "[1 1 1]" 	
+}

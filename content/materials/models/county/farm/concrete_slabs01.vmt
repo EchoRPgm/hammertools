@@ -1,0 +1,9 @@
+VertexLitGeneric
+{
+	$basetexture "models/county/farm/concreteslabs01_basecolor"
+	$bumpmap "models/county/farm/concreteslabs01_n"
+	$surfaceprop Rock
+
+	$decaltexture "models/county/farm/silo_decals"
+	$decalblendmode 1
+}

@@ -1,0 +1,14 @@
+"VertexlitGeneric"
+{
+	"$basetexture"                 "models/s_prop/vegas/besp/glowing_pillar/glowing_pillar"
+	"$bumpmap"                     "models/s_prop/vegas/besp/glowing_pillar/glowing_pillar_normal"
+	"$selfillum"		"1"
+	"$alpha"			"1"
+	
+	"$phong"                       "1"
+	"$phongexponent"               "5"
+        "$phongfresnelranges"          "[1 0.3 0.1]"
+       "$phongboost"                  "0.5"
+
+
+}

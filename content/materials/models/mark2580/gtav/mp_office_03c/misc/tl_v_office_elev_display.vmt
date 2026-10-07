@@ -1,0 +1,11 @@
+"VertexlitGeneric" 
+{ 
+	"$basetexture" "models/mark2580/gtav/mp_office_03c/misc/tl_v_office_elev_display" 
+   "$nocull"      "1" 
+ 	"$envmap"             "env_cubemap" 
+   "$envmaptint"         "[.5 .5 .5]" 
+   "$normalmapalphaenvmapmask"    "1"
+
+   "$selfillum"	       "1"
+   "$selfillumtint"    "[1 1 1]"   
+} 

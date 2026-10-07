@@ -1,0 +1,5 @@
+"LightmappedGeneric"
+{
+	"$basetexture" "custom_textures/echo_governo"
+	"$translucent" 1
+}

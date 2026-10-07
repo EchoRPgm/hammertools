@@ -1,0 +1,9 @@
+//payne
+VertexLitGeneric
+{
+$baseTexture "models\props/interior/bathroom_set_py"
+$envmap env_cubemap
+$envmapmask "models\props/interior/bathroom_set_py_ref"
+$envmaptint "[.7 .7 .7]"
+$color2 "[.7 .7 .7]"
+}

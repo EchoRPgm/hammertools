@@ -1,0 +1,13 @@
+"LightmappedGeneric" 
+{ 
+	"$basetexture" "mark2580/gtav/mp_apa_mid/tl_ss_v_lab_tiles_white" 
+    "$bumpmap"                  "mark2580/gtav/mp_apa_mid/tl_ss_v_lab_tiles_white_n"	
+	
+	"$envmap"                   "env_cubemap"
+	"$normalmapalphaenvmapmask" "1"
+	"$envmapcontrast"           "1"
+	"$envmapsaturation"         "1"
+	"$envmaptint"               "[ .25 .25 .25 ]"
+	
+	"$surfaceprop"              "tile"   
+} 

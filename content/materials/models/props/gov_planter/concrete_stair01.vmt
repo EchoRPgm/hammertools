@@ -1,0 +1,5 @@
+"vertexlitgeneric"
+{
+	$basetexture "pepsi2/arch/concrete_stair01"
+	$surfaceprop concrete
+}

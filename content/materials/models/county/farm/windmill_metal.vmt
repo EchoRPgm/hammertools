@@ -1,0 +1,5 @@
+VertexLitGeneric
+{
+	$basetexture "models/county/farm/windmill_metal_d"
+	$surfaceprop Metal
+}

@@ -1,0 +1,6 @@
+vertexlitgeneric
+{
+$basetexture "agency\concrete\concretewall01"
+$surfaceprop concrete
+"%keywords" agency
+}

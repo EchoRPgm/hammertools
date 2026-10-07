@@ -1,0 +1,29 @@
+"VertexlitGeneric"
+{
+
+	"$baseTexture" "models/props_foliage/oaktreeleaves_d"
+	$alphatest 1
+	$alphatestreference 0.2
+	$nocull 1
+	
+	"$treeSway"                "2"
+    "$treeSwayHeight"        "300"
+    "$treeSwayStartHeight"    ".4"
+    "$treeSwayRadius"        "500"
+    "$treeSwayStartRadius"    ".4"
+    "$treeSwaySpeed"        "1"
+    "$treeSwayStrength"        ".4"
+    "$treeSwayFalloffExp"    "1"
+
+    "$treeSwayScrumbleSpeed"    "1.6"
+    "$treeSwayScrumbleStrength"    ".2"
+    "$treeSwayScrumbleFrequency"    "4"
+    "$treeSwayScrumbleFalloffExp"    "2"
+
+    "$treeSwaySpeedHighWindMultiplier"    "0"
+    "$treeSwaySpeedLerpStart"    "200"
+    "$treeSwaySpeedLerpEnd"        "600"
+	
+	$color2 "[.7 .7 .7]"
+}
+

@@ -1,0 +1,9 @@
+"LightmappedGeneric"
+{
+    "$basetexture" "decals/graff/roadtrash01_ivy"
+    "$decal" 1
+    "$decalscale" 0.23
+    "$translucent" 1
+    "%keywords" "neotokyo"
+}
+

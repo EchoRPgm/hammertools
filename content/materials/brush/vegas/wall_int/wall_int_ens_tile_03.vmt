@@ -1,0 +1,10 @@
+"LightMappedGeneric"
+{
+	"$color"			"[1 1 1]"
+	"$baseTexture"			"brush/vegas/wall_int/wall_int_ens_tile_03"
+	"$bumpMap"			"brush/vegas/wall_int/wall_int_ens_tile_03_normal"
+	"$envmap"			"env_cubemap"
+	"$normalMapAlphaEnvMapMask"	1
+	"$envmaptint"			"[0.18 0.1 0.1]"
+	"$surfaceprop" 			"tile"
+}

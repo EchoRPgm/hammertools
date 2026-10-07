@@ -1,0 +1,6 @@
+"VertexLitGeneric"
+{
+	"$basetexture" "calcada_paulista/lad_mapa_gasto"
+	"$bumpmap" "calcada_paulista/lad_mapa_gasto_normal"
+	"$surfaceprop" "tile"
+}

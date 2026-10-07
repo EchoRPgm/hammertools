@@ -1,0 +1,5 @@
+"LightmappedGeneric"
+{
+	$basetexture "pepsi2/arch/concrete_floor_smooth01"
+	$surfaceprop Concrete
+}

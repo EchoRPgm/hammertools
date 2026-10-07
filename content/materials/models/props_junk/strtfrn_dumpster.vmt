@@ -1,0 +1,16 @@
+"VertexLitGeneric"
+{
+	"$basetexture" "models/props_junk/strtfrn_dumpster"
+	"$bumpmap" "models/props_junk/strtfrn_dumpster_n"
+
+	$envmap env_cubemap
+	$normalmapalphaenvmapmask 1
+	$envmaptint "[ .3 .3 .3 ]"
+
+
+	$phong "1"
+    $phongtint "[.9 .9 .8]"
+    $phongexponent "30"
+    $phongboost "0.7"
+    $phongfresnelranges "[1 2 5]"
+}

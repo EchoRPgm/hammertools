@@ -1,0 +1,9 @@
+VertexLitGeneric
+{
+	$basetexture "county/overlays/hay02"
+	$surfaceprop Grass
+
+	$alphatest 1
+	$alphatestreference 0.5
+	$nocull 1
+}

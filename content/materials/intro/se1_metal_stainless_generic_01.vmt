@@ -1,0 +1,10 @@
+"lightmappedgeneric"
+{
+	"$basetexture" "INTRO/SE1_metal_stainless_generic_01"
+	"$surfaceprop" "metal"
+	"$envmap" "env_cubemap"
+	"$envmaptint" "[ .5 .5 .5 ]"
+	"$envmapconstrast" "1"
+        "$basealphaenvmapmask" 1
+	"%keywords" "intro"
+} 

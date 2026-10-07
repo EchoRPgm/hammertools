@@ -1,0 +1,5 @@
+VertexLitGeneric
+{
+$baseTexture "models\props_vehicles/train_box"
+$blendtintbybasealpha 1
+}

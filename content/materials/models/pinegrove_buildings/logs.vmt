@@ -1,0 +1,7 @@
+"VertexLitGeneric"
+{
+	"$model" 1
+	"$basetexture" 	"models/pinegrove_buildings/logs"
+	"$surfaceprop" 	"wood"
+	"$bumpmap"	"models/pinegrove_buildings/logs_normal"
+}

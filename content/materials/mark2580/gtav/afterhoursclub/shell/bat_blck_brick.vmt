@@ -1,0 +1,10 @@
+"lightmappedGeneric"
+{
+   "$basetexture"         "mark2580/gtav/AfterHoursClub/shell/bat_blck_brick"
+   "$bumpmap"             "mark2580/gtav/AfterHoursClub/shell/bat_blck_brick_n"
+
+$normalmapalphaenvmapmask 1
+$envmap "mark2580/gtav/AfterHoursClub/shared/cubemap_specular002"
+$envmaptint "[ .001 .001 .001]"
+$surfaceprop brick
+}

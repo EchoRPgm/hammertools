@@ -1,0 +1,13 @@
+"VertexLitGeneric"
+{
+   "$basetexture"         "models/mark2580/gtav/mp_office_03c/misc/xj_v_metaldoors01"
+   "$bumpmap"             "models/mark2580/gtav/mp_office_03c/misc/xj_v_metaldoors01_n" 
+	
+	"$phong"                  "1" 
+	"$phongboost"             "1" 
+	"$phongfresnelranges"     "[0.1 0.1 0.1]" 
+	"$phongexponent"          "35"
+	
+	$envmap                   "env_cubemap"
+	$envmaptint               "[0.05 0.05 0.05]"  
+}

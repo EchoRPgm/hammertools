@@ -1,0 +1,5 @@
+"vertexlitgeneric"
+{
+	"$basetexture" "fish/gtaivtex/ap_service_door"
+	"$surfaceprop" "glass"
+}

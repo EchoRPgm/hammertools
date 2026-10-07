@@ -1,0 +1,10 @@
+"LightmappedGeneric"
+{
+	"$basetexture" "pepsi2/graphics/Election3"
+	
+	"$envmap" "env_cubemap"
+	"$envmapsaturation" 1
+	"$envmapcontrast" 1
+	"$envmaptint" "[ .2 .2 .2 ]"
+}
+

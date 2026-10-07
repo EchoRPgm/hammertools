@@ -1,0 +1,8 @@
+"LightmappedGeneric"
+{
+	"$basetexture" "Plaster/plasterwall_025b"
+	"$bumpmap" "plaster/plasterwall_025b_ssbump"
+"$ssbump" "1"
+"$ssbumpmathfix" "1"
+	"$surfaceprop" "plaster"
+}

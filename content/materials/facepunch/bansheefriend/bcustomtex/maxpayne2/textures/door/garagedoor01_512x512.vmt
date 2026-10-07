@@ -1,0 +1,5 @@
+"LightmappedGeneric"
+{
+	"$basetexture" "facepunch/BansheeFriend/BCustomTex/MaxPayne2/textures/door/garagedoor01_512x512"
+	"$surfaceprop" metal
+}

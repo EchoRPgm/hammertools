@@ -1,0 +1,29 @@
+"VertexLitGeneric"
+{
+
+	"$model"		"1"
+
+	"$baseTexture" 		"themask/SBMP/Signs/Neon/CITY_Neon_Generic_Red"
+	"$translucent"		"0"
+	"$alphatest" 		"0"
+	"$blendtintbybasealpha" "0"
+
+	"$selfillum"		"1"
+	"$selfillummask"	"themask/SBMP/Signs/Neon/CITY_Neon_Generic_Red_E"
+	"$selfillumtint"	"[12 12 12]"
+
+	"$bumpmap" 		"themask/SBMP/Signs/Neon/CITY_Neon_Generic_Red_N"
+
+	"$phong" "1"
+	"$phongexponent" "64"
+	//"$phongexponenttexture" "themask/SBMP/shared/Phong_exp_B_030_C_090"
+	"$phongalbedotint" "1"
+	"$phongboost" "32" 
+	"$phongfresnelranges"	"[.1 .8 1]"
+
+	//"$detail" "themask/SBMP/Signs/Neon/City_Neon"
+	$detailscale 1
+	$detailblendfactor 0
+	$detailblendmode 0
+
+}

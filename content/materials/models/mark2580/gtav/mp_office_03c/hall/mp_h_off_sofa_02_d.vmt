@@ -1,0 +1,15 @@
+"VertexLitGeneric"
+{
+	"$basetexture"        "models/mark2580/gtav/mp_office_03c/hall/mp_h_off_sofa_02_d"
+
+$phong               1
+$phongfresnelranges  "[0.1 0.1 0.1]"
+$halflambert         1
+$phongexponent       10
+$phongboost          0.3
+$nocull              1
+
+	"$detail"             "models/mark2580/gtav/mp_office_03c/shared/Detail_Leather"
+    "$detailblendfactor"  "0.5"
+    "$detailscale"        "10.0"
+}

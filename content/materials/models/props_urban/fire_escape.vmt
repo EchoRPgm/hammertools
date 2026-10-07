@@ -1,0 +1,7 @@
+VertexLitGeneric
+{
+$baseTexture "models\props_urban/fire_escape"
+
+$color2 "[3 3 3]"
+
+}

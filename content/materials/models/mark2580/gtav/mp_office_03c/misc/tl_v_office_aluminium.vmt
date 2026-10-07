@@ -1,0 +1,24 @@
+"VertexLitGeneric"
+{
+   "$basetexture"         "models/mark2580/gtav/mp_office_03c/misc/tl_v_office_aluminium"
+   "$bumpmap"             "models/mark2580/gtav/mp_office_03c/shared/flat_normal_alt2" 
+   
+    $lightwarptexture	  "models/mark2580/gtav/mp_office_03c/shared/lightwarp_metallic"
+
+	$phongexponenttexture "models/mark2580/gtav/mp_office_03c/shared/phongexponent"	 
+
+	$normalmapalphaenvmapmask "1"
+	$envmapfresnel            "1"
+	
+	"$detail"             "models/mark2580/gtav/mp_office_03c/shared/graynoisy"
+	"$detailblendfactor"  "0.7"
+	"$detailscale"        "2.0"
+	
+	"$phong"                  "1" 
+	"$phongboost"             "2" 
+	"$phongfresnelranges"     "[.3 .2 .1]" 
+	"$phongexponent"          "15"
+	
+	$envmap                   "env_cubemap"
+	$envmaptint               "[0.05 0.05 0.05]"  
+}

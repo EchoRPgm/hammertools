@@ -1,0 +1,13 @@
+"LightmappedGeneric"
+{
+	"$basetexture" "stone/stone_wall_001"
+	"$bumpmap" "stone/stone_wall_001_ssbump"
+	"$surfaceprop" "Rock"
+                "$ssbump"	"1"
+                "$envmaptint" "[ .05 .05 .05 ]"
+$envmapsaturation ".7"
+$envmapcontrast ".7"
+$envmap env_cubemap
+$envmapmask		"stone/stone_wall_001_env"
+}
+

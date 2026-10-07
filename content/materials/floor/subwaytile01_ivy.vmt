@@ -1,0 +1,8 @@
+"LightmappedGeneric"
+{
+	"$baseTexture" "floor/subwaytile01_ivy"
+	"$envmap" "env_cubemap"
+	"$envmapmask" "floor\subwaytile01_ref_ivy"
+	"$surfaceprop" "tile"
+	"%keywords" "neotokyo" 
+}

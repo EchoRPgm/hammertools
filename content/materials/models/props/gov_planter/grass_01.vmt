@@ -1,0 +1,5 @@
+"vertexlitgeneric"
+{
+	"$basetexture" "forest/grass_01"
+	"$surfaceprop" "grass"
+}

@@ -1,0 +1,13 @@
+"VertexLitGeneric"
+{
+	"$basetexture"		"nature/mudfloor001a"
+	"$basetexture2"		"nature/dirtfloor004a"
+	"%tooltexture"		"nature/blenddirtmud003a_tooltexture"
+	"%keywords"		"wasteland"
+	"$normalmapalphaenvmapmask"		"1"
+	"$envmapcontrast"		"1"
+	"$envmapsaturation"		"1"
+	"$envmaptint"		"[ .5 .5 .5]"
+	"$envmap"		"env_cubemap"
+	"$model"		"1"
+}

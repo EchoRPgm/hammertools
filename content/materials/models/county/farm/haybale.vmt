@@ -1,0 +1,6 @@
+VertexLitGeneric
+{
+	$basetexture "models/county/farm/haybale"
+	$bumpmap "models/county/farm/haybale_nrm"
+	$surfaceprop Grass
+}

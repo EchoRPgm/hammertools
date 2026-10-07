@@ -1,0 +1,6 @@
+vertexlitgeneric
+{
+$basetexture "wood/woodsiding_ext_05"
+$surfaceprop wood
+"%keywords" l4d2
+}

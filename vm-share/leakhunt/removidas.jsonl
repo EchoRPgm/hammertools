@@ -1,0 +1,4 @@
+["env_sprite", "-1638 -15763.4 -265.035", "", "sprites/glow06.spr"]
+["prop_static", "-1638 -15763.4 -262.155", "", "models/props_interiors/lights_florescent01a.mdl"]
+["light_spot", "-1638 -15788.7 -271.155", "", ""]
+["light_spot", "-1638 -15738 -271.155", "", ""]

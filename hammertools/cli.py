@@ -921,6 +921,58 @@ def _fix_verts(real: Path, args: list[str], out: Path) -> tuple[int, str, dict]:
 
 PHANTOM_MIN_AREA = 16.0     # o laço confere e desfaz se vazar; lasca sem brush de outra textura no plano fica pro lint
 PHANTOM_ROUNDS = 2
+PHANTOM_CACHE_KEEP = 4
+
+
+def _phantom_key(out: Path) -> str | None:
+    """Chave da checagem de faces fantasma: geometria do BSP (bspcache, sem entidades), planos e materiais de todos os
+    brushes do VMF do build/ e o código da checagem. None = sem cache (HT_NO_CACHE=1 ou erro)."""
+    import hashlib
+    import re
+    from hammertools import bspcache, bspcheck
+    if not bspcache.enabled():
+        return None
+    try:
+        from srctools.bsp import BSP
+        h = hashlib.blake2b(digest_size=20)
+        for m in re.finditer(rb'"(?:plane|material)" "([^"]*)"', out.read_bytes()):
+            h.update(m.group(1))
+            h.update(b"|")
+        return bspcache._h("phantom", bspcache.geometry_digest(BSP(str(out.with_suffix(".bsp")))), h.hexdigest(),
+                           Path(bspcheck.__file__).read_bytes(), PHANTOM_MIN_AREA)
+    except Exception:  # noqa: BLE001  sem cache, checa de novo
+        return None
+
+
+def _phantom_cache(out: Path, key: str | None, found: list | None = None) -> list | None:
+    """Lê (found=None) ou grava o resultado da checagem de faces fantasma no cache do build/."""
+    import json
+    from srctools import Vec
+    if key is None:
+        return None
+    f = out.parent / "cache" / "phantom.json"
+    try:
+        data = json.loads(f.read_text()) if f.exists() else {}
+    except (OSError, ValueError):
+        data = {}
+    vec = lambda p: [p.x, p.y, p.z]
+    if found is None:
+        hit = data.get(key)
+        if hit is None:
+            return None
+        return [{**p, "center": Vec(*p["center"]), "normal": Vec(*p["normal"]), "points": [Vec(*q) for q in p["points"]]}
+                for p in hit["found"]]
+    data.pop(key, None)
+    data[key] = {"found": [{**p, "center": vec(p["center"]), "normal": vec(p["normal"]),
+                            "points": [vec(q) for q in p["points"]]} for p in found]}
+    for k in list(data)[:-PHANTOM_CACHE_KEEP]:
+        del data[k]
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(data))
+    except OSError:
+        pass
+    return None
 
 
 def _fix_phantoms(real: Path, opts: list[str], out: Path) -> tuple[int, dict]:
@@ -933,7 +985,16 @@ def _fix_phantoms(real: Path, opts: list[str], out: Path) -> tuple[int, dict]:
     rep = {"found": 0, "detail": [], "left": 0}
 
     def problems():
-        return [f for f in bspcheck.world_face_problems(vmfio.load(out), out.with_suffix(".bsp")) if f["area"] >= PHANTOM_MIN_AREA]
+        # a checagem leva ~20 s no rp_surdonoso e é função só do BSP e dos brushes do build/: mesmo conteúdo = mesma
+        # resposta (cache em build/cache/phantom.json, chave = geometria do BSP + planos/materiais do VMF)
+        key = _phantom_key(out)
+        hit = _phantom_cache(out, key)
+        if hit is not None:
+            print(f"ht-vbsp: faces fantasma: mesma geometria de uma compilação anterior, resultado do cache ({len(hit)}).", flush=True)
+            return hit
+        found = [f for f in bspcheck.world_face_problems(vmfio.load(out), out.with_suffix(".bsp")) if f["area"] >= PHANTOM_MIN_AREA]
+        _phantom_cache(out, key, found)
+        return found
     try:
         found = problems()
     except Exception as e:  # BSP ilegível: não arrisca
@@ -1408,6 +1469,14 @@ def _vbsp_main(args: list[str]) -> int:
     if rc == 0 and "-onlyents" not in (a.lower() for a in args) and os.environ.get("HT_NO_PHANTOM") != "1":
         extra = ["-notjunc"] if info.get("result") == "notjunc" and not notjunc else []
         rc, info["phantom"] = _fix_phantoms(real, [*args[:-1], *extra], out)
+    # daqui em diante o build/ não muda mais: registro, cache de tampas, pack e conferência dos props leem o mesmo VMF
+    # (carregar um VMF de 30 MB custa ~2 s; eram 4 cargas iguais)
+    _final: list = []
+
+    def final_vmf():
+        if not _final:
+            _final.append(vmfio.load(out))
+        return _final[0]
     # registro pro `ht lint` marcar quais t-junctions a compilação resolveu (<mapa>.tjfix.json ao lado do fonte).
     # Grava MESMO quando a compilação falha ("falhou"): sem registro a próxima refaz a descoberta inteira
     # (conversão que não coube, -notjunc, nodraw, optimize = várias rodadas de vbsp, sempre iguais) e o auto-prop
@@ -1435,7 +1504,7 @@ def _vbsp_main(args: list[str]) -> int:
             info["ap_calib"], info["ap_vcalib"] = rec0["ap_calib"], rec0.get("ap_vcalib")
         try:   # calibração do mapa compilado (estimativa x real), para o próximo auto-prop
             from hammertools import autoprop
-            est = autoprop.estimate(vmfio.load(out))
+            est = autoprop.estimate(final_vmf())
             if est.verts_total and info.get("vertices"):
                 info["vcalib"] = round(info["vertices"] / est.verts_total, 4)
             if est.idx_total and info.get("indices") and info.get("result") != "notjunc":
@@ -1456,7 +1525,7 @@ def _vbsp_main(args: list[str]) -> int:
     if seal_info and os.environ.get("HT_NO_SEAL") != "1":
         from hammertools import seal
         from srctools import Vec
-        v_cache = vmfio.load(out)
+        v_cache = final_vmf()
         plugs = seal.plugs_in(v_cache)
         removed = (seal.cached_removals(cache) if cache.exists() else []) + \
             [(c, Vec(*o)) for c, o in seal_info.get("removidas", [])]
@@ -1467,7 +1536,7 @@ def _vbsp_main(args: list[str]) -> int:
             and out.with_suffix(".bsp").exists():
         try:
             from hammertools import pack
-            pr = pack.pack_generated(vmfio.load(out), out.with_suffix(".bsp"), Path(gamedir), src.stem)
+            pr = pack.pack_generated(final_vmf(), out.with_suffix(".bsp"), Path(gamedir), src.stem)
             print(f"ht-vbsp: {len(pr.added)} arquivo(s) dos props gerados embutidos no BSP ({pr.bytes_added / 1e6:.1f} MB)"
                   + (f"; {len(pr.missing)} faltando" if pr.missing else ""), flush=True)
         except Exception as e:  # noqa: BLE001
@@ -1477,7 +1546,7 @@ def _vbsp_main(args: list[str]) -> int:
         try:
             from collections import Counter
             from hammertools import autoprop as _ap
-            want = Counter(e["model"].lower() for e in vmfio.load(out).by_class["prop_static"]
+            want = Counter(e["model"].lower() for e in final_vmf().by_class["prop_static"]
                            if f"/{_ap.MODEL_DIR}/" in e["model"])
             have = _ap.bsp_static_models(out.with_suffix(".bsp"))
             lost = sum((want - have).values())

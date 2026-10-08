@@ -308,3 +308,40 @@ def test_compile_reuses_vis_and_rad_until_something_they_read_changes(room, tmp_
     monkeypatch.setenv("HT_NO_CACHE", "1")
     assert compile_() == ["vvis", "vrad"]
 
+
+def test_phantom_check_cached_by_bsp_geometry_and_vmf_brushes(room, tmp_path, monkeypatch):
+    """A checagem de faces fantasma (~20 s no mapa real) roda de novo só se a geometria do BSP ou os brushes mudam."""
+    from srctools import Entity, Vec
+    from hammertools import bspcheck, cli
+    monkeypatch.delenv("HT_NO_CACHE", raising=False)
+    out = tmp_path / "build" / "m.vmf"
+    out.parent.mkdir()
+    vmfio.save(room, out)
+    make_bsp(out.with_suffix(".bsp"))
+    calls = []
+    fake = [{"face": 1, "material": "A", "kind": "fantasma", "area": 10.0, "center": Vec(1, 2, 3), "normal": Vec(0, 0, 1),
+             "points": [Vec(0, 0, 0), Vec(1, 0, 0), Vec(1, 1, 0)], "expected": ""}]
+    monkeypatch.setattr(bspcheck, "world_face_problems", lambda v, bsp: calls.append(1) or fake)
+    monkeypatch.setattr(bspcheck, "detail_candidates", lambda v, found: [])   # só detecta, não recompila
+    monkeypatch.setattr(cli, "PHANTOM_MIN_AREA", 1.0)
+    run = lambda: cli._fix_phantoms(Path(sys.executable), [], out)[1]
+    assert run()["found"] == 1 and len(calls) == 1
+    assert run()["found"] == 1 and len(calls) == 1                # do cache, com os mesmos dados
+    # entidade nova no VMF (nenhum brush muda) e entidades do BSP diferentes: ainda do cache
+    v = vmfio.load(out)
+    v.add_ent(Entity(v, {"classname": "info_target", "origin": "0 0 0"}))
+    vmfio.save(v, out)
+    make_bsp(out.with_suffix(".bsp"), {BSP_LUMPS.ENTITIES: ENTS.replace(b'"10 0 0"', b'"1 1 1"') + b"\0"})
+    run()
+    assert len(calls) == 1
+    # brush novo no VMF: checa de novo; geometria do BSP diferente: também
+    v.add_brush(v.make_prism(Vec(0, 0, 0), Vec(16, 16, 16)).solid)
+    vmfio.save(v, out)
+    run()
+    assert len(calls) == 2
+    make_bsp(out.with_suffix(".bsp"), {BSP_LUMPS.PLANES: b"Z" * 20})
+    run()
+    assert len(calls) == 3
+    monkeypatch.setenv("HT_NO_CACHE", "1")
+    run()
+    assert len(calls) == 4

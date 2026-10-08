@@ -259,7 +259,10 @@ def choose(est: Estimate, cands: list[tuple[Entity, Solid]], calib: float, vcali
         return (cl.idx / need_idx if need_idx > 0 else 0) + (cl.verts / need_v if need_v > 0 else 0)
 
     chosen, gi, gv = [], 0.0, 0
-    for cl in sorted(cells.values(), key=score, reverse=True):
+    # desempate pela célula e score arredondado: a soma dos custos em ponto flutuante muda na última casa entre
+    # processos (ordem de dicionário/conjunto), e a ordem dos prop_static no build/ mudava a cada compilação — o BSP
+    # saía diferente com o mesmo mapa e o cache do vvis/vrad (bspcache) nunca acertava
+    for cl in sorted(cells.values(), key=lambda c: (-round(score(c), 9), c.cell)):
         if gi >= need_idx and gv >= need_v:
             break
         if score(cl) <= 0:
@@ -270,6 +273,7 @@ def choose(est: Estimate, cands: list[tuple[Entity, Solid]], calib: float, vcali
     stats["tira_idx"] = round(gi * calib)
     stats["tira_verts"] = round(gv * vcalib)
     stats["suficiente"] = gi >= need_idx and gv >= need_v
+    chosen.sort(key=lambda c: c.cell)     # ordem dos props no VMF independente do score
     return chosen, stats
 
 

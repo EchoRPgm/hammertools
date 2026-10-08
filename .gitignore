@@ -13,3 +13,9 @@ vm-share/leak/
 hammerplusplus_gmod_build8871/
 vm-share/*.bsp
 vm-share/*.lin
+# área de troca com a VM e content/ montada por engano na raiz: nunca vão para o repositório público
+# (2026-10-07 a janela Git do EchoHammer registrou 576 MB daqui; só o setup.ps1 é do projeto)
+vm-share/*
+!vm-share/setup.ps1
+/content/
+uv.lock

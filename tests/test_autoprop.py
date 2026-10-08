@@ -50,6 +50,22 @@ def test_choose_meets_both_goals(room):
     assert autoprop.choose(est_ok, cands, 1.0, 1.0)[0] == []          # já cabe: nada a converter
 
 
+def test_choose_order_does_not_depend_on_candidate_order_or_float_noise(room):
+    """A soma dos custos em ponto flutuante mudava na última casa entre processos (PYTHONHASHSEED) e a ordem dos
+    prop_static no build/ mudava a cada compilação: BSP diferente com o mesmo mapa, cache do vvis/vrad sem acerto."""
+    _room_with_details(room, n=8)
+    cands = autoprop.candidates(room, autoprop.Materials(FakeRes()))
+    # células de 512u: os 8 blocos caem em 1 célula; espalha para ter vários grupos com o mesmo custo
+    for i, (_, s) in enumerate(cands):
+        s.localise(Vec(i * 1024, 0, 0))
+    base = {s.id: 1000.0 for _, s in cands}
+    noisy = {sid: c + (1e-12 if k % 2 else 0) for k, (sid, c) in enumerate(base.items())}
+    est = lambda cost: autoprop.Estimate(idx_total=80000, verts_total=1000, idx_cost=cost, vert_cost={})
+    a, _ = autoprop.choose(est(base), cands, 1.0, 1.0)
+    b, _ = autoprop.choose(est(noisy), list(reversed(cands)), 1.0, 1.0)
+    assert [c.cell for c in a] == [c.cell for c in b] and len(a) > 1
+
+
 def test_smd_rotated_and_origin_inside_detail(room):
     _room_with_details(room, n=1)
     mats = autoprop.Materials(FakeRes())

@@ -7,7 +7,8 @@ Hammer++, linha de comando):
   preciso: o vvis/vrad passam o caminho do mapa para minúsculas e o Z: do Wine diferencia ("Can't create LogFile");
 - o vrad ganha -StaticPropLighting sozinho quando o BSP tem props do auto-prop: iluminado só pela origem (que fica
   dentro da própria colisão) o prop gerado sai preto; os outros props têm disablevertexlighting e não mudam;
-- perfis como os do Hammer++: normal, rápido (vvis -fast, vrad -bounce 2 -noextra) e final (vrad -final ...).
+- perfis como os do Hammer++: normal, rápido (vvis -fast, vrad -bounce 2 -noextra) e final (vrad -final ...);
+- cache do vvis/vrad por conteúdo do BSP (`bspcache`, em build/cache): o que eles leem igual = resultado guardado.
 """
 from __future__ import annotations
 
@@ -83,7 +84,7 @@ def rad_args(profile: str, bsp: Path, extra: list[str]) -> list[str]:
 
 def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags: list[str] | None = None,
         vbsp_args: list[str] | None = None, vis_args: list[str] | None = None, rad_args_extra: list[str] | None = None,
-        copy: bool = True, pack: bool = False) -> int:
+        copy: bool = True, pack: bool = False, use_cache: bool = True) -> int:
     from hammertools import cli
     vmf = vmf.resolve()
     noext = vmf.with_suffix("")
@@ -102,28 +103,73 @@ def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags:
         return rc or 1
     target = wine_safe_dir(vmf.parent) / vmf.stem
     tool_target = lambda exe: str(target) if str(exe).lower().endswith(".exe") else str(noext)
+    vvis = vrad = None
+    vflags = flags = None
     if vis != "off":
         vvis = find_tool(game, "vvis")
         if vvis is None:
             say("vvis não encontrado ao lado do vbsp (defina HT_VVIS)")
             return 2
-        args = [str(vvis), *(["-fast"] if vis == "fast" else []), *(vis_args or []), "-game", str(game), tool_target(vvis)]
-        say("vvis " + " ".join(args[1:-3]))
-        rc, _ = cli._run_streaming(args)
-        if rc != 0:
-            say(f"vvis falhou (saída {rc}); parado")
-            return rc
+        vflags = [*(["-fast"] if vis == "fast" else []), *(vis_args or [])]
     if rad != "off":
         vrad = find_tool(game, "vrad")
         if vrad is None:
             say("vrad não encontrado ao lado do vbsp (defina HT_VRAD)")
             return 2
         flags = rad_args(rad, bsp, rad_args_extra or [])
+    # cache por conteúdo (bspcache): o BSP que o vbsp gerou igual ao de antes no que o vvis/vrad leem = o resultado
+    # deles também é igual; volta do cache em vez de rodar (só entidades que ninguém lê mudaram, ou nada mudou)
+    from hammertools import bspcache
+    cache = keys = None
+    if use_cache and bspcache.enabled() and (vvis or vrad):
+        try:
+            keys = bspcache.compute_keys(bsp, vmf.with_suffix(".prt"), vflags, vvis, flags, vrad)
+            cache = bspcache.Cache(vmf.parent / "build" / "cache")
+        except Exception as e:  # noqa: BLE001  cache nunca derruba a compilação
+            say(f"cache de vvis/vrad indisponível ({e}); compilando sem")
+    vis_done = rad_done = False
+    if cache and keys.rad and (keys.vis or vis == "off"):
+        try:
+            rad_done = vis_done = cache.restore_rad(keys.rad, bsp)
+        except Exception as e:  # noqa: BLE001
+            say(f"cache do vrad ilegível ({e}); compilando")
+        if rad_done:
+            say("vvis e vrad: geometria, props, luzes e opções iguais a uma compilação anterior; resultado do cache "
+                "(só as entidades são as de agora). --no-cache recompila")
+    if vvis and not vis_done:
+        if cache and keys.vis:
+            try:
+                got = cache.restore_vis(keys.vis, bsp)
+            except Exception as e:  # noqa: BLE001
+                got = None
+                say(f"cache do vvis ilegível ({e}); compilando")
+            if got is not None:
+                vis_done = True
+                say(f"vvis: geometria e portais iguais a uma compilação anterior; visibilidade do cache ({', '.join(got)})")
+        if not vis_done:
+            before = bspcache.lump_hashes(bsp) if cache and keys.vis else None
+            args = [str(vvis), *vflags, "-game", str(game), tool_target(vvis)]
+            say("vvis " + " ".join(vflags))
+            rc, _ = cli._run_streaming(args)
+            if rc != 0:
+                say(f"vvis falhou (saída {rc}); parado")
+                return rc
+            if before is not None:
+                try:
+                    cache.save_vis(keys.vis, before, bsp)
+                except Exception as e:  # noqa: BLE001
+                    say(f"não consegui guardar o vvis no cache ({e})")
+    if vrad and not rad_done:
         say("vrad " + " ".join(flags))
         rc, _ = cli._run_streaming([str(vrad), *flags, "-game", str(game), tool_target(vrad)])
         if rc != 0:
             say(f"vrad falhou (saída {rc}); parado")
             return rc
+        if cache and keys.rad and (keys.vis or vis == "off"):
+            try:
+                cache.save_rad(keys.rad, bsp)
+            except Exception as e:  # noqa: BLE001
+                say(f"não consegui guardar o vrad no cache ({e})")
     if pack:
         say("ht pack")
         rc = cli.main(["pack", str(vmf), "--game", str(game), "--bsp", str(bsp), "--out", str(bsp)])
@@ -145,7 +191,8 @@ def cmd_compile(args) -> int:
         return 2
     ht_flags = [f for f in cli.VBSP_FLAGS if getattr(args, f.lstrip("-").replace("-", "_"), False)]
     return run(Path(args.vmf), Path(game), args.vis, args.rad, ht_flags, shlex.split(args.vbsp_args or ""),
-               shlex.split(args.vis_args or ""), shlex.split(args.rad_args or ""), not args.no_copy, args.pack)
+               shlex.split(args.vis_args or ""), shlex.split(args.rad_args or ""), not args.no_copy, args.pack,
+               not args.no_cache)
 
 
 def add_parser(sub) -> None:
@@ -160,6 +207,8 @@ def add_parser(sub) -> None:
     p.add_argument("--vis-args", help="argumentos extras do vvis")
     p.add_argument("--rad-args", help="argumentos extras do vrad")
     p.add_argument("--no-copy", action="store_true", help="não copia o .bsp para <jogo>/maps")
+    p.add_argument("--no-cache", action="store_true",
+                   help="roda vvis e vrad mesmo com o resultado no cache (build/cache; = HT_NO_CACHE=1)")
     p.add_argument("--pack", action="store_true", help="embute no BSP o conteúdo que o GMod base não tem (ht pack)")
     for f, (_, _, desc) in cli.VBSP_FLAGS.items():
         p.add_argument(f, action="store_true", help=desc)

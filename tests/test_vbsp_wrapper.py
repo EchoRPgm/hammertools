@@ -416,23 +416,25 @@ def test_tjfix_record_saved_when_compile_fails_and_drives_next(room, tmp_path, m
     monkeypatch.delenv("HT_TJ_RETRY", raising=False)
     args = [str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]
 
-    assert vbsp_main(args) != 0                                   # nada fecha: t-junction e depois vértices
+    # nada fecha: t-junction e depois vértices; o mesmo F9 recompila uma vez com o auto-prop (o registro da
+    # primeira rodada é o que o liga) — quem clona o projeto não vê o primeiro compile falhar à toa
+    assert vbsp_main(args) != 0
     out1 = capsys.readouterr().out
-    fix = json.loads(src.with_suffix(".tjfix.json").read_text())  # gravado MESMO na falha
-    assert fix["falhou"] and fix["result"] == "notjunc" and fix["est_idx"] > 0
-    assert fix["conv_falhou"]["k"] >= 1 and "quando" in fix
-    assert "auto-prop" not in out1                                # primeiro: sem registro, sem auto-prop
+    assert "recompilando já com ele" in out1
     calls = tmp_path / "mapsrc" / "build" / "calls.txt"
-    antes = calls.read_text()
-    assert antes[0] == "p" and "c" in antes and "n" in antes      # descobriu conversão, depois -notjunc
+    feitas = calls.read_text()
+    assert feitas[0] == "p" and "c" in feitas and "n" in feitas    # descobriu conversão, depois -notjunc
+    fix = json.loads(src.with_suffix(".tjfix.json").read_text())  # gravado MESMO na falha
+    assert fix["falhou"] and fix["result"] == "notjunc" and fix["est_idx"] > 0 and "quando" in fix
+    assert "autoprop" in fix                                      # a segunda rodada já usou o auto-prop
+    assert fix["conv_falhou"]["k"] >= 1                           # a tentativa que falhou continua na memória
 
+    # próxima compilação: direto com -notjunc, sem redescobrir, e sem outra rodada extra (o auto-prop já está no registro)
     assert vbsp_main(args) != 0
     out2 = capsys.readouterr().out
-    depois = calls.read_text()[len(antes):]
-    assert depois and "p" not in depois and "c" not in depois     # já vai direto com -notjunc, sem redescoberta
-    fix2 = json.loads(src.with_suffix(".tjfix.json").read_text())
-    assert "autoprop" in fix2 and fix2["memoria"] and fix2["falhou"]
-    assert fix2["conv_falhou"] == fix["conv_falhou"]              # a tentativa que falhou continua na memória
+    depois = calls.read_text()[len(feitas):]
+    assert depois and "p" not in depois and "c" not in depois
+    assert "recompilando já com ele" not in out2
 
 
 def test_tjfix_skips_conversion_that_already_failed(room, tmp_path, monkeypatch, capsys):

@@ -63,11 +63,46 @@ def fingerprint(vmf_text: str) -> str:
     return h.hexdigest()
 
 
-def save_cache(path, plugs, removed=(), geometry: str = "") -> None:
+LOCAL_MARGIN = 48.0    # volta da tampa que define se a vizinhança dela mudou (edição mais longa que isso não conta)
+
+
+def _solid_sig(s) -> str:
+    """Planos e materiais de um brush, numa ordem que não depende de como o VMF foi salvo."""
+    parts = ["|".join(f"{p.x:g} {p.y:g} {p.z:g} {sd.mat}" for p in sd.planes) for sd in s.sides]
+    return ";".join(sorted(parts))
+
+
+def local_fingerprint(v: VMF, lo, hi) -> str:
+    """Impressão da geometria do mundo só NA VOLTA da tampa (bbox + LOCAL_MARGIN), sem as tampas ht_seal. A tampa
+    vale enquanto a vizinhança não mudar, mesmo que o resto do mapa tenha mudado: a impressão global invalida o
+    cache inteiro por qualquer brush movido e a próxima compilação refazia a selagem do zero."""
+    import hashlib
+    ids = {vg.id for vg in v.vis_tree if vg.name == SEAL_VISGROUP}
+    reg_lo = Vec(lo[0] - LOCAL_MARGIN, lo[1] - LOCAL_MARGIN, lo[2] - LOCAL_MARGIN)
+    reg_hi = Vec(hi[0] + LOCAL_MARGIN, hi[1] + LOCAL_MARGIN, hi[2] + LOCAL_MARGIN)
+    sigs = []
+    for s in v.brushes:
+        if s.visgroup_ids & ids:
+            continue
+        slo, shi = s.get_bbox()
+        if any(shi[k] < reg_lo[k] or slo[k] > reg_hi[k] for k in range(3)):   # fora da volta: não conta
+            continue
+        sigs.append(_solid_sig(s))
+    h = hashlib.sha1()
+    for sig in sorted(sigs):
+        h.update(sig.encode("utf-8", "replace"))
+        h.update(b"|")
+    return h.hexdigest()
+
+
+def save_cache(path, plugs, removed=(), geometry: str = "", v: VMF | None = None) -> None:
     import json
+    # com `v`, cada tampa guarda também a impressão da própria vizinhança: o cache deixa de ser tudo-ou-nada
+    tampas = [[list(map(float, lo)), list(map(float, hi)), m]
+              + ([local_fingerprint(v, lo, hi)] if v is not None else []) for lo, hi, m in plugs]
     path.write_text(json.dumps({
         "geometria": geometry,
-        "tampas": [[list(map(float, lo)), list(map(float, hi)), m] for lo, hi, m in plugs],
+        "tampas": tampas,
         "removidas": [[c, [float(o.x), float(o.y), float(o.z)]] for c, o in removed],
     }))
 
@@ -88,9 +123,11 @@ def cached_removals(path) -> list:
     return [] if isinstance(data, list) else [(c, Vec(*o)) for c, o in data.get("removidas", [])]
 
 
-def apply_cache(v: VMF, path) -> tuple[int, int]:
-    """Repõe as tampas de compilações anteriores (<mapa>.seal.json). Tampa que hoje contém a origem de alguma
-    entidade é velha (o mapa mudou ali) e fica de fora. Devolve (aplicadas, descartadas)."""
+def apply_cache(v: VMF, path, geometry: str = "") -> tuple[int, int]:
+    """Repõe as tampas de compilações anteriores (<mapa>.seal.json). Com `geometry` (a impressão do build atual),
+    tampa cuja VIZINHANÇA mudou é velha mesmo quando o resto do cache serve; sem `geometry`, quem só quer repor
+    confia no cache como antes. Tampa que hoje contém a origem de alguma entidade também é velha (o mapa mudou
+    ali). Devolve (aplicadas, descartadas)."""
     import json
     from hammertools import lint
     data = json.loads(path.read_text())
@@ -103,10 +140,16 @@ def apply_cache(v: VMF, path) -> tuple[int, int]:
             if e["classname"] == cls and eo is not None and (eo - o).mag() < 1.0:
                 v.remove_ent(e)
                 break
+    global_ok = not geometry or (isinstance(data, dict) and data.get("geometria") == geometry)
     origins = [o for o in (lint._origin(e) for e in v.entities) if o is not None]
     used = dropped = 0
-    for lo, hi, mat in plugs:
+    for entry in plugs:
+        lo, hi, mat = entry[0], entry[1], entry[2]
+        local = entry[3] if len(entry) > 3 else None
         lo, hi = Vec(*lo), Vec(*hi)
+        if not global_ok and (local is None or local_fingerprint(v, lo, hi) != local):
+            dropped += 1                              # a geometria ali mudou: a tampa velha ficaria no meio do mapa
+            continue
         if any(all(lo[k] < o[k] < hi[k] for k in range(3)) for o in origins):
             dropped += 1
             continue

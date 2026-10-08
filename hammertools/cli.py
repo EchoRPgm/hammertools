@@ -1019,9 +1019,16 @@ def _fix_tjunctions(real: Path, args: list[str], out: Path, text: str = "") -> t
           f"(estimativa {est_total:.0f} x calibração {calib:.2f}). {len(ranked)} func_detail causam t-junctions.", flush=True)
     k = 0
     verts = rec.get("vertices")
+    falhou = rec.get("conv_falhou")
     if verts and verts > TJ_VERT_HEADROOM * LIMIT:
         print(f"ht-vbsp: sem folga de vértices ({verts}/{LIMIT} = {verts / LIMIT:.0%}): converter detail em func_brush gasta "
               "vértice e não cabe. O caminho para caber nos dois tetos é tirar geometria do BSP (detail -> prop_static).", flush=True)
+    elif falhou and os.environ.get("HT_TJ_RETRY") != "1" and est_total >= 0.85 * float(falhou.get("est", est_total)):
+        # a mesma tentativa já falhou com esta estimativa: refazer é mais uma compilação pra chegar no mesmo
+        # -notjunc. Só tenta de novo se a estimativa caiu 15%+ (o mapa mudou de verdade) ou com HT_TJ_RETRY=1
+        print(f"ht-vbsp: a conversão já foi tentada com ~{float(falhou['est']):.0f} de estimativa e não coube; "
+              f"{est_total:.0f} não muda o suficiente, não refaço. Indo direto pro -notjunc (HT_TJ_RETRY=1 "
+              "recalcula).", flush=True)
     elif ranked:
         need = real_idx - TJ_INDEX_GOAL * LIMIT
         acc = 0.0
@@ -1081,7 +1088,10 @@ def _fix_tjunctions(real: Path, args: list[str], out: Path, text: str = "") -> t
     print("\nht-vbsp: recompilando com -notjunc (as t-junctions deste mapa não cabem no teto do vbsp).\n"
           "ht-vbsp: efeito colateral possível: brilhos finos nas emendas (veja a aba T-junctions do `ht lint --html`).\n", flush=True)
     rc, text_nj = _run_vbsp([str(real), *args[:-1], "-notjunc", str(out.with_suffix(""))])
-    return rc, {"result": "notjunc", "_text": text_nj, "est_idx": est_total}
+    # conv_falhou: a tentativa que não coube, com a estimativa em que falhou — a próxima compilação não refaz
+    # a mesma conversão (k=0: nenhuma tentativa aconteceu, então não há o que lembrar)
+    return rc, {"result": "notjunc", "_text": text_nj, "est_idx": est_total,
+                **({"conv_falhou": {"est": est_total, "k": k}} if k else {})}
 
 
 def _autoprop(out: Path, gamedir, real: Path, rec: dict) -> dict:
@@ -1280,13 +1290,16 @@ def _vbsp_main(args: list[str]) -> int:
         print(f"ht-vbsp: {used} tampa(s) de leak do cache {cache.name}" +
               (f" ({dropped} velha(s) descartada(s): o mapa mudou ali)" if dropped else "") +
               " (apague o arquivo pra refazer do zero)\n", flush=True)
-    # auto-prop: o mapa não coube nos tetos da última vez (precisou de -notjunc ou passou de 90% dos vértices):
-    # tira geometria de detail do BSP virando prop_static antes de compilar (HT_AUTOPROP=0 desliga)
+    # auto-prop: o mapa não coube nos tetos da última vez (precisou de -notjunc, passou de 90% dos vértices ou os
+    # passos de redução não resolveram): tira geometria de detail do BSP virando prop_static antes de compilar
+    # (HT_AUTOPROP=0 desliga). O registro é gravado mesmo quando a compilação falha, senão ele nunca nasce e o
+    # auto-prop nunca dispara — o mapa ficava em loop de descoberta até uma compilação fechar sem erro
     ap_info = None
     rec0 = _tj_record(out)
     flags = {a.lower() for a in args}
     if (os.environ.get("HT_AUTOPROP") != "0" and "-onlyents" not in flags and "-notjunc" not in flags and rec0
-            and (rec0.get("ap_calib") or rec0.get("result") == "notjunc" or rec0.get("vertices", 0) > 0.90 * LIMIT)):
+            and (rec0.get("ap_calib") or rec0.get("result") == "notjunc" or rec0.get("vertices", 0) > 0.90 * LIMIT
+                 or (rec0.get("verts") and not rec0["verts"].get("ok")))):
         ap_info = _autoprop(out, gamedir, real, rec0)
     # t-junctions: repete o que deu certo da última vez em vez de descobrir de novo compilando
     plan = None if ap_info and ap_info.get("models") else None if "-notjunc" in (a.lower() for a in args) or "-onlyents" in (a.lower() for a in args) else _tj_plan(src, out)
@@ -1319,7 +1332,7 @@ def _vbsp_main(args: list[str]) -> int:
     if seal_info:
         info["seal"] = seal_info
     if planned and "too many t-junctions" not in text.lower():
-        info = dict(planned)
+        info = {**info, **planned}    # só o plano por cima: verts/seal desta rodada continuam no registro
     elif "too many t-junctions" not in text.lower() and not notjunc and "leaked" not in text.lower():
         # fechou direto: aprende a calibração (índices reais / estimativa) para dimensionar a próxima vez
         try:
@@ -1345,24 +1358,33 @@ def _vbsp_main(args: list[str]) -> int:
     if "too many t-junctions" in text.lower() and not notjunc:
         if planned:
             print("ht-vbsp: a conversão da última vez não coube mais; recalculando.", flush=True)
-        rc, info = _fix_tjunctions(real, args, out, text)
+        rc, fix_info = _fix_tjunctions(real, args, out, text)
         # o vbsp só confere vértices depois das t-junctions: com -notjunc pode estourar o teto só agora
-        text_nj = info.pop("_text", "")
+        text_nj = fix_info.pop("_text", "")
+        info = {**info, **fix_info}   # mescla: verts/seal desta rodada não somem do registro
         if "too many unique verts" in text_nj.lower() and "leaked" not in text_nj.lower():
             rc, text, verts_info = _fix_verts(real, [*args[:-1], "-notjunc", args[-1]], out)
             info["verts"] = verts_info
     if rc == 0 and "-onlyents" not in (a.lower() for a in args) and os.environ.get("HT_NO_PHANTOM") != "1":
         extra = ["-notjunc"] if info.get("result") == "notjunc" and not notjunc else []
         rc, info["phantom"] = _fix_phantoms(real, [*args[:-1], *extra], out)
-    # registro pro `ht lint` marcar quais t-junctions a compilação resolveu (<mapa>.tjfix.json ao lado do fonte)
-    if rc == 0 and "-onlyents" not in (a.lower() for a in args):
+    # registro pro `ht lint` marcar quais t-junctions a compilação resolveu (<mapa>.tjfix.json ao lado do fonte).
+    # Grava MESMO quando a compilação falha ("falhou"): sem registro a próxima refaz a descoberta inteira
+    # (conversão que não coube, -notjunc, nodraw, optimize = várias rodadas de vbsp, sempre iguais) e o auto-prop
+    # não dispara (ele lê este registro) — o mapa ficava preso nesse loop até uma compilação fechar por acaso.
+    # Contagens e calibração só de compilação que fechou: a BSP de uma falha pode ser a da compilação anterior
+    # (o -onlyents de cima copia o .bsp velho ao lado da entrada) e os índices de -notjunc não passam pelo FixTjuncs
+    if "-onlyents" not in (a.lower() for a in args):
         import json, time
         info["quando"] = time.strftime("%Y-%m-%d %H:%M")
-        try:
-            from hammertools.lint import bsp_counts
-            info.update(bsp_counts(out.with_suffix(".bsp")))
-        except Exception as e:  # BSP ilegível não impede o registro
-            info["erro_bsp"] = str(e)
+        if rc != 0:
+            info["falhou"] = True
+        if rc == 0:
+            try:
+                from hammertools.lint import bsp_counts
+                info.update(bsp_counts(out.with_suffix(".bsp")))
+            except Exception as e:  # BSP ilegível não impede o registro
+                info["erro_bsp"] = str(e)
         if ap_info:
             info["autoprop"] = ap_info
             if ap_info.get("models"):
@@ -1376,7 +1398,7 @@ def _vbsp_main(args: list[str]) -> int:
             est = autoprop.estimate(vmfio.load(out))
             if est.verts_total and info.get("vertices"):
                 info["vcalib"] = round(info["vertices"] / est.verts_total, 4)
-            if est.idx_total and info.get("indices"):
+            if est.idx_total and info.get("indices") and info.get("result") != "notjunc":
                 info["calib"] = round(info["indices"] / est.idx_total, 4)
             elif ap_info and ap_info.get("calib_min"):
                 info["calib"] = round(ap_info["calib_min"] * 1.15, 4)
@@ -1384,7 +1406,11 @@ def _vbsp_main(args: list[str]) -> int:
                 info["calib"] = rec0["calib"]
         except Exception:
             pass
-        src.with_suffix(".tjfix.json").write_text(json.dumps(info))
+        if "conv_falhou" not in info and info.get("result") == "notjunc" and rec0.get("conv_falhou"):
+            info["conv_falhou"] = rec0["conv_falhou"]   # a tentativa que falhou segue valendo enquanto for notjunc
+        # falhou sem aprender nada novo (erro que não teve a ver com tetos): não sobrescreve um registro bom
+        if rc == 0 or set(info) - {"result", "quando", "falhou", "seal"}:
+            src.with_suffix(".tjfix.json").write_text(json.dumps(info))
     # tampas de leak (visgroup ht_seal do build/) viram cache: a próxima compilação começa delas
     if seal_info and os.environ.get("HT_NO_SEAL") != "1":
         from hammertools import seal

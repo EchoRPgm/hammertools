@@ -190,7 +190,10 @@ def _tab_tjunctions(rep: L.Report, radius: float) -> tuple[str, int]:
         what = {"convertido": f'o ht-vbsp converteu {fix.get("func_detail")} func_detail em {fix.get("func_brush")} func_brush e o vbsp consertou o resto',
                 "direto": "o vbsp consertou todas sem precisar converter nada",
                 "notjunc": "compilado com -notjunc: nenhuma t-junction foi consertada (brilhos possíveis nas emendas)"}.get(res, res)
-        note = (f'<p class="{"warn" if res == "notjunc" or fix.get("stale") else "sub"}">Última compilação ({escape(fix.get("quando", "?"))}): {escape(what)}.'
+        if fix.get("falhou") and res != "notjunc":
+            what = "a última compilação não fechou (o registro guarda o estado na hora da desistência)"
+        note = (f'<p class="{"warn" if res == "notjunc" or fix.get("stale") or fix.get("falhou") else "sub"}">Última compilação ({escape(fix.get("quando", "?"))}): {escape(what)}.'
+                + (" <b>A compilação falhou antes de fechar.</b>" if fix.get("falhou") else "")
                 + (" <b>O VMF foi salvo depois dessa compilação: compile de novo pra atualizar.</b>" if fix.get("stale") else "") + "</p>")
         chips = '<div class="chips">' + "".join(f'<button class="chip" data-folder="{escape(L.TJ_STATUS[k].split(" (")[0])}">{escape(L.TJ_STATUS[k].split(" (")[0])} <b>{cnt[k]}</b></button>'
                                                for k in ("conv", "vbsp", "pend") if cnt[k]) + "</div>"

@@ -109,11 +109,17 @@ def _bbox(pts):
 
 
 def _norm_mat(t: str) -> str:
-    """Nome do material como no VMF: tira o prefixo maps/<mapa>/ e o sufixo _x_y_z de cubemap e _wvt_patch."""
-    t = t.lower()
+    """Nome do material como no VMF: tira o prefixo maps/<mapa>/, o sufixo _x_y_z de cubemap e _wvt_patch, e o
+    prefixo da cópia com lightmap do build (models/ht_prop/<mapa>/lm/)."""
+    t = t.lower().replace("\\", "/")
+    t = t[len("materials/"):] if t.startswith("materials/") else t     # o VMF às vezes grava com o prefixo
     m = re.match(r"maps/[^/]+/(.+?)(_-?\d+_-?\d+_-?\d+)?$", t)
     t = m.group(1) if m else t
-    return re.sub(r"_wvt_patch$", "", t)
+    t = t[len("materials/"):] if t.startswith("materials/") else t     # maps/<mapa>/materials/... (cubemap)
+    t = re.sub(r"_wvt_patch$", "", t)
+    # cópia com lightmap que o build faz de material de modelo usado em brush (fix.autofix_build): é o mesmo material
+    m = re.match(r"models/ht_prop/[^/]+/lm/(.+)$", t)
+    return m.group(1) if m else t
 
 
 def world_face_problems(v: VMF, bsp_path: str | Path, min_area: float = 16.0) -> list[dict]:

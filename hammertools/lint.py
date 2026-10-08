@@ -88,6 +88,14 @@ class Resources:
                 mounted.append(mdir.name)
             except Exception:  # noqa: BLE001  (gameinfo exótico: ignora)
                 pass
+        # o GMod monta sempre os VPKs de sourceengine/ (texturas e conteúdo do HL2/CSS base) sem listar no gameinfo
+        from srctools.filesys import VPKFileSystem
+        se = Path(gd).parent / "sourceengine"
+        for vpk in sorted(se.glob("*_dir.vpk")) if se.is_dir() else []:
+            try:
+                fs.add_sys(VPKFileSystem(str(vpk)))
+            except Exception:  # noqa: BLE001
+                pass
         pak: dict[str, str] = {}
         pakfile = None
         if bsp:
@@ -276,6 +284,11 @@ def report_json(rep: "Report") -> dict:
     }
 
 
+# níveis: "erro" quebra o mapa no jogo; "aviso" pede uma decisão de quem mapeia; "info" não pede ação (o build já
+# conserta sozinho, ou é estética/dica de desempenho). O painel Problemas do EchoHammer esconde "info" por padrão.
+LEVELS = ("erro", "aviso", "info")
+
+
 @dataclass
 class Report:
     issues: list[Issue] = field(default_factory=list)
@@ -371,7 +384,7 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
         for s in v.brushes + [s for e in v.entities for s in e.solids]:
             lo, hi = s.get_bbox()
             if min(lo) < -lim or max(hi) > lim:
-                rep.add("erro", "extents", f"brush {s.id} vai até {min(lo):.0f}..{max(hi):.0f}: o mapa tem que ficar dentro de ±{lim} "
+                rep.add("info", "extents", f"brush {s.id} vai até {min(lo):.0f}..{max(hi):.0f}: o mapa tem que ficar dentro de ±{lim} "
                         f"(com o mundo encostando em ±{extents.ENGINE} o engine recusa o mapa: \"Map coordinate extents are too large\"); "
                         "o ht-vbsp corta no build/, mas mova no mapa", (lo + hi) / 2)
         for e in v.entities:
@@ -387,7 +400,7 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
                 f"(o ht-vbsp tira sozinho do build/)", None)
     n_hidden = hidden_count(v)
     if n_hidden:
-        rep.add("aviso" if n_hidden < 50 else "erro", "markers", f"{n_hidden} objeto(s) oculto(s) no Hammer (Hide/Ctrl+H): o vbsp NÃO compila "
+        rep.add("aviso", "markers", f"{n_hidden} objeto(s) oculto(s) no Hammer (Hide/Ctrl+H): o vbsp NÃO compila "
                 f"objeto oculto; mostre tudo (View > Show All / Ctrl+Shift+H) antes de compilar o mapa inteiro", None)
     box = active_cordon(v)
     if box:
@@ -429,7 +442,7 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
                     shader = _shader(res, mat)
                     if brush_users and shader in MODEL_SHADERS:
                         ex = _texture_examples(brush_users)
-                        rep.add("aviso", "textures", f"material de modelo ({shader}) em brush: '{mat}' ({len(brush_users)} face(s)); "
+                        rep.add("info", "textures", f"material de modelo ({shader}) em brush: '{mat}' ({len(brush_users)} face(s)); "
                                 f"sem lightmap, a luz sai errada e muda com a distância. O ht compile/ht-vbsp troca sozinho no build por uma cópia "
                                 f"LightmappedGeneric (o fonte não muda)",
                                 ex[0][0] if ex else None, group="shader de modelo", name=mat, count=len(brush_users), examples=ex,
@@ -468,11 +481,20 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
         for s, e in all_solids:
             if e is not None and e["classname"] == "func_detail" and not detail_grid:
                 continue
-            bad = [side for side in s.sides if any(not vmfio.is_on_grid(c, grid) for p in side.planes for c in (p.x, p.y, p.z))]
+            # pelos VÉRTICES das faces, não pelos 3 pontos do plano: mapa descompilado (ou salvo pelo Hammer++) tem pontos
+            # de plano como -267.999 com o vértice em -268 exato (o Hammer++ desenha pelos vertices_plus): 952 avisos
+            # falsos no rp_surdonoso. Tolerância de 0,01u (a precisão que o vbsp guarda)
+            # e só face alinhada a um eixo: em rampa/escada inclinada o vértice fora do grid é inevitável e inofensivo;
+            # em face axial ele abre fresta (o plano fica entre unidades)
+            def axial_off(sd, poly):
+                n = geom.outward(sd)[0]
+                k = max(range(3), key=lambda i: abs(n[i]))
+                return abs(abs(n[k]) - 1) < 1e-4 and not vmfio.is_on_grid(poly[0][k], grid, eps=0.01 / grid)
+            bad = [sd for sd, poly in geom.face_polys(s) if poly and axial_off(sd, poly)]
             if bad:
                 owner = "mundo" if e is None else e["classname"]
                 kind = "displacement" if any(side.is_disp for side in s.sides) else "brush"
-                rep.add("aviso", "grid", f"{owner} solid {s.id} ({kind}): {len(bad)} face(s) fora do grid {grid}", _center(s))
+                rep.add("info", "grid", f"{owner} solid {s.id} ({kind}): {len(bad)} face(s) fora do grid {grid}", _center(s))
 
     if "tjunctions" in checks:
         _tjunctions(v, rep)
@@ -652,7 +674,7 @@ def _overlaps(v: VMF, rep: Report, min_depth: float) -> None:
         return cache[s.id]
 
     active: list = []
-    world_pairs = 0
+    world_pairs = hidden_pairs = 0
     for lo, hi, s, e in items:
         active = [t for t in active if t[1].x > lo.x + min_depth]
         for lo2, hi2, s2, e2 in active:
@@ -670,10 +692,52 @@ def _overlaps(v: VMF, rep: Report, min_depth: float) -> None:
             if e is None and e2 is None:
                 world_pairs += 1
                 continue
+            # só há problema visível com faces COPLANARES desenhadas uma sobre a outra (z-fighting); detail enfiado no
+            # mundo sem isso só gasta face escondida (428 avisos no rp_surdonoso, quase todos assim)
+            co = _coplanar_visible_overlap(s, s2)
+            if co is None:
+                hidden_pairs += 1
+                continue
             what = lambda ent, sol: f"{ent['classname']} solid {sol.id}" if ent is not None else f"mundo solid {sol.id}"
-            rep.add("aviso", "overlaps", f"{what(e2, s2)} e {what(e, s)} se sobrepõem ({depth:.1f}u): face escondida não é cortada, possível z-fighting", _center(s))
+            same = co[0].lower() == co[1].lower()
+            # mesma textura nas duas faces coplanares (rodapé que entra no outro, guia de calçada): o z-fighting não
+            # aparece — não vale decisão de quem mapeia
+            rep.add("info" if same else "aviso", "overlaps",
+                    f"{what(e2, s2)} e {what(e, s)} se sobrepõem com faces no mesmo plano"
+                    + (f" (mesma textura {co[0].lower()}: sem efeito visível)" if same else f": z-fighting entre {co[0].lower()} e {co[1].lower()}"), _center(s))
         active.append((lo, hi, s, e))
     rep.stats["sobreposições mundo x mundo (inofensivas)"] = world_pairs
+    rep.stats["sobreposições sem face coplanar (só face escondida)"] = hidden_pairs
+
+
+def _coplanar_visible_overlap(a, b, min_area: float = 1.0):
+    """Duas faces desenhadas (não ferramenta) no mesmo plano e mesma direção, com área em comum: z-fighting.
+    Devolve (material de a, material de b) do primeiro par, ou None. Área pela caixa dos polígonos projetados no
+    plano (aproximada, mas sem falso negativo em retângulos)."""
+    def faces(s):
+        out = []
+        for sd, poly in geom.face_polys(s):
+            if len(poly) < 3 or sd.mat.lower().startswith("tools/"):
+                continue
+            n, p0 = geom.outward(sd)
+            out.append((n, n.dot(p0), poly, sd.mat))
+        return out
+    fb = faces(b)
+    for n, d, pa, ma in faces(a):
+        for n2, d2, pb, mb in fb:
+            if n.dot(n2) < 0.999 or abs(d - d2) > 0.1:
+                continue
+            # dois eixos do plano
+            u = (Vec(0, 0, 1) if abs(n.z) < 0.9 else Vec(1, 0, 0)).cross(n).norm()
+            w = n.cross(u)
+            def box(poly):
+                us = [p.dot(u) for p in poly]; ws = [p.dot(w) for p in poly]
+                return min(us), max(us), min(ws), max(ws)
+            a0, a1, b0, b1 = box(pa)
+            c0, c1, d0, d1 = box(pb)
+            if (min(a1, c1) - max(a0, c0)) * (min(b1, d1) - max(b0, d0)) > min_area and min(a1, c1) > max(a0, c0) and min(b1, d1) > max(b0, d0):
+                return (ma, mb)
+    return None
 
 
 # --------------------------------------------------------------------------- t-junctions
@@ -748,7 +812,7 @@ def _tjunctions(v: VMF, rep: Report, top: int = 40, eps: float = 0.1) -> None:
                               for idx, extra, s, side, poly, owner, pts, srcs in scored]
     rep.data["tjunctions_total"] = total
     for idx, extra, s, side, poly, owner, _, _ in scored[:top]:
-        rep.add("aviso", "tjunctions", f"{owner} solid {s.id} face {side.id} ({side.mat}): {extra} vértice(s) de vizinhos nas arestas, ~{idx} índices",
+        rep.add("info", "tjunctions", f"{owner} solid {s.id} face {side.id} ({side.mat}): {extra} vértice(s) de vizinhos nas arestas, ~{idx} índices",
                 geom.centroid(poly), group=owner)
 
 
@@ -917,7 +981,7 @@ def _prop_fades(v: VMF, res: Resources, rep: Report) -> None:
             fix.append((e.id, int(dist * 0.8), dist))
     for mdl, lst in sorted(by_model.items(), key=lambda kv: -len(kv[1])):
         e, dist = lst[0]
-        rep.add("aviso", "perf", f"{len(lst)} prop(s) '{mdl}' sem distância de desaparecer (sugerido {int(dist * 0.8)}/{dist}u)",
+        rep.add("info", "perf", f"{len(lst)} prop(s) '{mdl}' sem distância de desaparecer (sugerido {int(dist * 0.8)}/{dist}u)",
                 _origin(e), group="sem fade", name=mdl, count=len(lst), examples=[(_origin(x), x["classname"]) for x, _ in lst[:MAX_EXAMPLES] if _origin(x)])
     rep.data["perf_fade"] = fix
     rep.stats["props sem fade"] = sum(len(x) for x in by_model.values())

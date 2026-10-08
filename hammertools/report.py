@@ -30,13 +30,13 @@ PRIORITY = [
     ("outputs", "erro", "Outputs órfãos", "I/O mirando nome que não existe: o evento não acontece no jogo."),
     ("textures", "erro", "Texturas faltando", "Aparecem como xadrez rosa e preto. Instale o conteúdo (ht content) ou troque o material."),
     ("models", "erro", "Modelos faltando", "Aparecem como ERROR vermelho. Instale o conteúdo ou troque o prop."),
-    ("tjunctions", "aviso", "T-junctions", "Cada vértice no meio da aresta de outra face obriga o vbsp a triangular a face; acima de 65536 índices a compilação para. Junte os blocos fatiados das regiões abaixo."),
+    ("tjunctions", "info", "T-junctions", "Cada vértice no meio da aresta de outra face obriga o vbsp a triangular a face; acima de 65536 índices a compilação para. Junte os blocos fatiados das regiões abaixo."),
     ("models", "aviso", "prop_static com modelo dinâmico", "O modelo não é static prop: vira prop_dynamic ou some. Troque por prop_dynamic."),
     ("nodraw", "aviso", "Nodraw à vista", "Face invisível virada pra área jogável: vira um buraco pro céu/vazio."),
     ("overlaps", "aviso", "Sobreposição com detail/entidade", "Face escondida não é cortada: desperdício e possível z-fighting."),
     ("duplicates", "aviso", "Brushes duplicados", "Dois brushes idênticos no mesmo lugar: z-fighting. Apague um."),
     ("logic", "aviso", "Templates", "Template nunca acionado (o que ele recria não volta) ou entidade em dois templates (nasce duplicada)."),
-    ("grid", "aviso", "Fora do grid", "Vértices fracionários: risco de microfrestas e t-junctions."),
+    ("grid", "info", "Fora do grid", "Vértices fracionários: risco de microfrestas e t-junctions."),
 ]
 
 

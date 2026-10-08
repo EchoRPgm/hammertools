@@ -131,7 +131,12 @@ def test_overlaps_only_detail_or_entities():
     assert not _checks(rep, "overlaps") and rep.stats["sobreposições mundo x mundo (inofensivas)"] == 1
     _brush_ent(v, "func_detail", [v.make_prism(Vec(48, 16, 0), Vec(80, 48, 32), "dev/dev_measuregeneric01b").solid])
     hits = _checks(lint.run(v, checks={"overlaps"}), "overlaps")
-    assert len(hits) == 2 and all("func_detail" in h.msg for h in hits)
+    assert len(hits) == 2 and all("func_detail" in h.msg and h.level == "info" for h in hits)   # mesma textura: info
+    # texturas diferentes no mesmo plano: aviso (as duas piscam)
+    v3 = _room()
+    v3.add_brush(v3.make_prism(Vec(0, 0, 0), Vec(64, 64, 64), "dev/dev_measuregeneric01b").solid)
+    _brush_ent(v3, "func_detail", [v3.make_prism(Vec(48, 16, 0), Vec(80, 48, 32), "dev/dev_measurewall01a").solid])
+    assert all(h.level == "aviso" and "z-fighting" in h.msg for h in _checks(lint.run(v3, checks={"overlaps"}), "overlaps"))
     # encostado (sem interpenetrar) não conta
     v2 = _room()
     v2.add_brush(v2.make_prism(Vec(0, 0, 0), Vec(64, 64, 64), "dev/dev_measuregeneric01b").solid)
@@ -611,3 +616,41 @@ def test_stormfox_tonemap():
     v.create_ent("env_tonemap_controller", origin="0 0 80")
     msgs = [i.msg for i in lint.run(v, checks=["logic"]).issues]
     assert not any("StormFox" in m for m in msgs)
+
+
+def test_overlap_without_coplanar_face_is_only_a_stat():
+    """Detail enfiado no mundo sem face no mesmo plano não pisca: vai para a estatística, não para o painel."""
+    v = _room()
+    v.add_brush(v.make_prism(Vec(0, 0, 0), Vec(64, 64, 64), "dev/dev_measuregeneric01b").solid)
+    _brush_ent(v, "func_detail", [v.make_prism(Vec(16, 16, 16), Vec(80, 48, 48), "dev/dev_measuregeneric01b").solid])
+    rep = lint.run(v, checks={"overlaps"})
+    assert not _checks(rep, "overlaps")
+    assert rep.stats["sobreposições sem face coplanar (só face escondida)"] == 1
+
+
+def test_grid_only_axial_faces_and_vertices_not_plane_points():
+    """Ponto de plano impreciso (-267.999) com vértice no grid não é aviso; rampa com vértice fracionário também
+    não; face axial fora do grid é (info: o build não quebra, mas pode abrir fresta)."""
+    from srctools.vmf import Side
+    v = VMF()
+    ok = v.make_prism(Vec(0, 0, 0), Vec(64, 64, 64), "dev/dev_measuregeneric01b").solid
+    for sd in ok.sides:                                  # pontos de plano com erro de ponto flutuante
+        sd.planes = [p + Vec(0.0004, -0.0004, 0.0004) for p in sd.planes]
+    v.add_brush(ok)
+    ramp = v.make_prism(Vec(128, 0, 0), Vec(192, 64, 64), "dev/dev_measuregeneric01b").solid
+    top = max(ramp.sides, key=lambda sd: geom.outward(sd)[0].z)
+    top.planes = [Vec(128, 0, 64), Vec(128, 64, 64), Vec(192, 64, 33.3)]   # topo inclinado, vértices fracionários
+    v.add_brush(ramp)
+    assert not _checks(lint.run(v, checks={"grid"}), "grid")
+    off = v.make_prism(Vec(256, 0, 0), Vec(320.4, 64, 64), "dev/dev_measuregeneric01b").solid
+    v.add_brush(off)
+    hits = _checks(lint.run(v, checks={"grid"}), "grid")
+    assert len(hits) == 1 and hits[0].level == "info" and f"solid {off.id}" in hits[0].msg
+
+
+def test_phantom_material_names_match_build_copies():
+    from hammertools.bspcheck import _norm_mat
+    assert _norm_mat("models/ht_prop/rp_x/lm/custom_textures/preto") == "custom_textures/preto"
+    assert _norm_mat("materials/models/props/gov_planter/grass_01") == "models/props/gov_planter/grass_01"
+    assert _norm_mat("maps/rp_x/materials/wall/warehouse6_-1393_-14932_-290") == "wall/warehouse6"
+    assert _norm_mat("MAPS/RP_X/CONCRETE/BLENDCONCDIRT004A_WVT_PATCH") == "concrete/blendconcdirt004a"

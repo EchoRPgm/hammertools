@@ -1186,6 +1186,11 @@ def vbsp_main(argv=None) -> int:
         return _vbsp_main(args)
     m = Path(args[-1])
     lock = (m if m.suffix.lower() == ".vmf" else m.with_suffix(".vmf")).with_suffix(".ht-vbsp.lock")
+    # filho do auto-update: a trava é do processo pai (aviso explícito, ou o pai é quem a segura: o auto-update de
+    # versões antigas não avisa)
+    held = os.environ.get("HT_VBSP_LOCK_HELD") or str(os.getppid())
+    if lock.exists() and lock.read_text().strip() == held:
+        return _vbsp_main_retry(args, m)
     if lock.exists():
         try:
             pid = int(lock.read_text().strip() or "0")
@@ -1200,25 +1205,29 @@ def vbsp_main(argv=None) -> int:
     except OSError:
         lock = None
     try:
-        rc = _vbsp_main(list(args))
-        # primeira compilação de um mapa (clone novo, sem <mapa>.tjfix.json): o auto-prop só liga lendo o registro, e
-        # o registro só nasce no fim desta compilação. Se ela falhou por vértice sem auto-prop, uma segunda rodada no
-        # mesmo F9 já o usa — senão quem acabou de clonar o projeto via o primeiro compile falhar (teste e2e na VM)
-        if rc != 0 and os.environ.get("HT_AUTOPROP") != "0" and "-onlyents" not in {a.lower() for a in args}:
-            import json
-            rec_f = m.with_suffix(".tjfix.json")
-            try:
-                rec = json.loads(rec_f.read_text()) if rec_f.exists() else {}
-            except ValueError:
-                rec = {}
-            if rec.get("falhou") and rec.get("verts") and not rec["verts"].get("ok") and "autoprop" not in rec:
-                print("\nht-vbsp: não coube nos vértices e o auto-prop ainda não tinha registro deste mapa: "
-                      "recompilando já com ele.\n", flush=True)
-                rc = _vbsp_main(list(args))
-        return rc
+        return _vbsp_main_retry(args, m)
     finally:
         if lock is not None:
             lock.unlink(missing_ok=True)
+
+
+def _vbsp_main_retry(args: list[str], m: Path) -> int:
+    rc = _vbsp_main(list(args))
+    # primeira compilação de um mapa (clone novo, sem <mapa>.tjfix.json): o auto-prop só liga lendo o registro, e
+    # o registro só nasce no fim desta compilação. Se ela falhou por vértice sem auto-prop, uma segunda rodada no
+    # mesmo F9 já o usa — senão quem acabou de clonar o projeto via o primeiro compile falhar (teste e2e na VM)
+    if rc != 0 and os.environ.get("HT_AUTOPROP") != "0" and "-onlyents" not in {a.lower() for a in args}:
+        import json
+        rec_f = m.with_suffix(".tjfix.json")
+        try:
+            rec = json.loads(rec_f.read_text()) if rec_f.exists() else {}
+        except ValueError:
+            rec = {}
+        if rec.get("falhou") and rec.get("verts") and not rec["verts"].get("ok") and "autoprop" not in rec:
+            print("\nht-vbsp: não coube nos vértices e o auto-prop ainda não tinha registro deste mapa: "
+                  "recompilando já com ele.\n", flush=True)
+            rc = _vbsp_main(list(args))
+    return rc
 
 
 def _vbsp_main(args: list[str]) -> int:

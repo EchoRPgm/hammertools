@@ -279,9 +279,13 @@ def before_compile(argv: list[str], log=print) -> int | None:
             return None
         log("ht-vbsp: entidades novas do FGD só aparecem depois de reabrir o Hammer++")
         sys.stdout.flush()
-        env = dict(os.environ, HT_NO_UPDATE="1")
+        # a trava do mapa é deste processo (vbsp_main a pegou antes): o filho é a mesma compilação, não outra.
+        # Sem isto ele via a trava do pai vivo e saía com 3 ("já há uma compilação rodando") a cada auto-update
+        env = dict(os.environ, HT_NO_UPDATE="1", HT_VBSP_LOCK_HELD=str(os.getpid()))
         code = "import sys; from hammertools.cli import vbsp_main; sys.exit(vbsp_main())"
-        return subprocess.call([sys.executable, "-c", code, *argv], env=env)
+        rc = subprocess.call([sys.executable, "-c", code, *argv], env=env)
+        os.environ["HT_NO_UPDATE"] = "1"      # o pai (código velho) não tenta atualizar de novo nesta execução
+        return rc
     except Exception as e:  # noqa: BLE001
         log(f"ht-vbsp: auto-update falhou ({e}); compilando com a versão {__version__}")
         return None

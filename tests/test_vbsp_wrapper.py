@@ -466,3 +466,24 @@ def test_tjfix_skips_conversion_that_already_failed(room, tmp_path, monkeypatch,
     assert calls.read_text() == "pcnpn"          # sem nova 'c': pula a conversão e vai direto pro -notjunc
     again = json.loads(src.with_suffix(".tjfix.json").read_text())
     assert again["conv_falhou"] == fix["conv_falhou"]   # e a memória continua lá
+
+
+def test_update_child_reuses_parent_lock(room, tmp_path, monkeypatch, capsys):
+    """O auto-update roda a compilação num processo filho enquanto o pai segura a trava do mapa: o filho tem que
+    compilar, não sair com 3 ("já há uma compilação"). Achado no e2e na VM: todo auto-update antes do F9 falhava."""
+    src = tmp_path / "mapsrc" / "m.vmf"; src.parent.mkdir()
+    vmfio.save(room, src)
+    lock = src.with_suffix(".ht-vbsp.lock")
+    lock.write_text(str(os.getpid()))                   # o pai vivo segura a trava
+    fake = tmp_path / "vbsp.py"
+    fake.write_text("import sys, pathlib\np = pathlib.Path(sys.argv[-1]).with_suffix('.vmf')\np.with_suffix('.bsp').write_text('ok')\n")
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    monkeypatch.setenv("HT_NO_PHANTOM", "1")
+    args = [str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]
+    assert vbsp_main(list(args)) == 3                    # sem o aviso do pai: é outra compilação
+    monkeypatch.setenv("HT_VBSP_LOCK_HELD", str(os.getpid()))
+    assert vbsp_main(list(args)) == 0                    # filho do auto-update: compila
+    assert lock.exists()                                 # e a trava continua do pai
+    monkeypatch.delenv("HT_VBSP_LOCK_HELD")
+    lock.write_text(str(os.getppid()))                   # auto-update de versão antiga: não avisa, mas o pai segura
+    assert vbsp_main(list(args)) == 0

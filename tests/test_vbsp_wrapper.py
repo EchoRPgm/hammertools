@@ -369,7 +369,9 @@ def test_ht_flags_become_env_and_are_not_passed_to_vbsp(room, tmp_path, monkeypa
     assert vbsp_main([str(fake), "--ht-no-seal", "--ht-no-autoprop", "-game", str(tmp_path / "game"), str(src.with_suffix(""))]) == 0
     assert os.environ["HT_NO_SEAL"] == "1" and os.environ["HT_AUTOPROP"] == "0"
     assert "--ht-" not in src.with_suffix(".bsp").read_text()
-    monkeypatch.delenv("HT_NO_SEAL"); monkeypatch.delenv("HT_AUTOPROP")
+    # o vbsp_main pôs direto no os.environ (não foi o monkeypatch): pop simples, senão o teardown do monkeypatch
+    # "restauraria" o 0 e vazaría HT_AUTOPROP pros testes seguintes
+    os.environ.pop("HT_NO_SEAL", None); os.environ.pop("HT_AUTOPROP", None)
 
 
 def test_wrapper_isolates_prop_light_for_ht_prop_models(room, tmp_path, monkeypatch):
@@ -388,3 +390,77 @@ def test_wrapper_isolates_prop_light_for_ht_prop_models(room, tmp_path, monkeypa
     assert props["models/ht_prop/m/abc123def456.mdl"]["disablevertexlighting"] != "1"
     # o fonte não muda
     assert {e["disablevertexlighting"] for e in vmfio.load(src).by_class["prop_static"] if "oildrum" in e["model"]} == {"0"}
+
+
+FAKE_NUNCA_FECHA = (
+    "import sys, pathlib\n"
+    "p = pathlib.Path(sys.argv[-1]); txt = p.with_suffix('.vmf').read_text()\n"
+    "log = p.with_name('calls.txt')\n"
+    "ch = 'n' if '-notjunc' in sys.argv else ('c' if 'func_brush' in txt else 'p')\n"
+    "log.write_text((log.read_text() if log.exists() else '') + ch)\n"
+    "if '-notjunc' in sys.argv:\n"
+    "    print('Too many unique verts, max = 65536 (map has too much brush geometry)'); sys.exit(1)\n"
+    "print('Too many t-junctions to fix up! (1 prims, max 32768 :: 65583 indices, max 65536)'); sys.exit(1)\n")
+
+
+def test_tjfix_record_saved_when_compile_fails_and_drives_next(room, tmp_path, monkeypatch, capsys):
+    """A compilação que não fecha ainda ensina: o registro é gravado com "falhou" e a próxima já vai de -notjunc
+    (sem redescobrir a conversão) e dispara o auto-prop (ele lê este registro). Sem isso o mapa ficava em loop:
+    toda compilação refazia as mesmas rodadas e falhava igual, porque o registro nunca nascia."""
+    import json
+    src = tmp_path / "mapsrc" / "m.vmf"; src.parent.mkdir()
+    vmfio.save(_room_with_detail_tjunctions(room), src)
+    fake = tmp_path / "vbsp.py"
+    fake.write_text(FAKE_NUNCA_FECHA)
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    monkeypatch.delenv("HT_TJ_RETRY", raising=False)
+    args = [str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]
+
+    assert vbsp_main(args) != 0                                   # nada fecha: t-junction e depois vértices
+    out1 = capsys.readouterr().out
+    fix = json.loads(src.with_suffix(".tjfix.json").read_text())  # gravado MESMO na falha
+    assert fix["falhou"] and fix["result"] == "notjunc" and fix["est_idx"] > 0
+    assert fix["conv_falhou"]["k"] >= 1 and "quando" in fix
+    assert "auto-prop" not in out1                                # primeiro: sem registro, sem auto-prop
+    calls = tmp_path / "mapsrc" / "build" / "calls.txt"
+    antes = calls.read_text()
+    assert antes[0] == "p" and "c" in antes and "n" in antes      # descobriu conversão, depois -notjunc
+
+    assert vbsp_main(args) != 0
+    out2 = capsys.readouterr().out
+    depois = calls.read_text()[len(antes):]
+    assert depois and "p" not in depois and "c" not in depois     # já vai direto com -notjunc, sem redescoberta
+    fix2 = json.loads(src.with_suffix(".tjfix.json").read_text())
+    assert "autoprop" in fix2 and fix2["memoria"] and fix2["falhou"]
+    assert fix2["conv_falhou"] == fix["conv_falhou"]              # a tentativa que falhou continua na memória
+
+
+def test_tjfix_skips_conversion_that_already_failed(room, tmp_path, monkeypatch, capsys):
+    """conv_falhou: a conversão que não coube não é refeta enquanto a estimativa não mudar de verdade — uma
+    compilação a menos por rodada; a próxima vai direto pro -notjunc."""
+    import json
+    src = tmp_path / "mapsrc" / "m.vmf"; src.parent.mkdir()
+    vmfio.save(_room_with_detail_tjunctions(room), src)
+    fake = tmp_path / "vbsp.py"
+    fake.write_text(FAKE_NUNCA_FECHA.replace(
+        "print('Too many unique verts, max = 65536 (map has too much brush geometry)'); sys.exit(1)",
+        "p.with_suffix('.bsp').write_text('ok'); sys.exit(0)"))
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    monkeypatch.delenv("HT_TJ_RETRY", raising=False)
+    args = [str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))]
+
+    assert vbsp_main(args) == 0                    # conversão tentada, não coube -> -notjunc fecha (sem vértice)
+    calls = tmp_path / "mapsrc" / "build" / "calls.txt"
+    assert calls.read_text() == "pcn"
+    fix = json.loads(src.with_suffix(".tjfix.json").read_text())
+    assert fix["result"] == "notjunc" and fix["conv_falhou"]["k"] >= 1 and "falhou" not in fix
+
+    # estimativa cai 5% -> o plano manda recalcular, mas a tentativa continua válida: não refaz a conversão
+    fix["est_idx"] = fix["conv_falhou"]["est"] / 0.94
+    src.with_suffix(".tjfix.json").write_text(json.dumps(fix))
+    assert vbsp_main(args) == 0
+    out = capsys.readouterr().out
+    assert "recalculando" in out and "não refaço" in out
+    assert calls.read_text() == "pcnpn"          # sem nova 'c': pula a conversão e vai direto pro -notjunc
+    again = json.loads(src.with_suffix(".tjfix.json").read_text())
+    assert again["conv_falhou"] == fix["conv_falhou"]   # e a memória continua lá

@@ -139,15 +139,29 @@ def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags:
     if vvis and not vis_done:
         if cache and keys.vis:
             try:
+                leaves_before = bspcache.leaf_bytes(bsp) if keys.visprt and not cache.has_vis_prt(keys.visprt) else None
                 got = cache.restore_vis(keys.vis, bsp)
+                if got is not None and leaves_before is not None:   # cache de versão anterior: ganha a entrada por portais
+                    cache.save_vis_prt(keys.visprt, leaves_before, bsp)
             except Exception as e:  # noqa: BLE001
                 got = None
                 say(f"cache do vvis ilegível ({e}); compilando")
             if got is not None:
                 vis_done = True
                 say(f"vvis: geometria e portais iguais a uma compilação anterior; visibilidade do cache ({', '.join(got)})")
+        if not vis_done and cache and keys.visprt:
+            try:
+                got = cache.restore_vis_prt(keys.visprt, bsp)
+            except Exception as e:  # noqa: BLE001
+                got = None
+                say(f"cache do vvis por portais ilegível ({e}); compilando")
+            if got is not None:
+                vis_done = True
+                say("vvis: portais e folhas iguais a uma compilação anterior (só detail, props ou entidades mudaram); "
+                    "visibilidade do cache. --no-cache recompila")
         if not vis_done:
             before = bspcache.lump_hashes(bsp) if cache and keys.vis else None
+            leaves_before = bspcache.leaf_bytes(bsp) if cache and keys.visprt else None
             args = [str(vvis), *vflags, "-game", str(game), tool_target(vvis)]
             say("vvis " + " ".join(vflags))
             rc, _ = cli._run_streaming(args)
@@ -157,6 +171,8 @@ def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags:
             if before is not None:
                 try:
                     cache.save_vis(keys.vis, before, bsp)
+                    if leaves_before is not None and not cache.save_vis_prt(keys.visprt, leaves_before, bsp):
+                        say("vvis mexeu nas folhas além do esperado; cache por portais não guardado")
                 except Exception as e:  # noqa: BLE001
                     say(f"não consegui guardar o vvis no cache ({e})")
     if vrad and not rad_done:

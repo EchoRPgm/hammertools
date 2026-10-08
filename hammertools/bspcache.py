@@ -14,6 +14,12 @@ volta para o BSP novo.
   Guarda o BSP final inteiro; na volta só troca ENTITIES (e a revisão do mapa) pelos do BSP novo — o resto é, por
   construção da chave, o mesmo que entraria no vrad.
 
+- **vis por portais**: chave = .prt + a estrutura das folhas (tudo de cada dleaf_t menos as listas de faces e brushes,
+  que o detail muda) + água + o mesmo das entidades/opções/executável. Mexeu só em detail, prop ou entidade, o vbsp
+  gera os mesmos portais e folhas: a visibilidade (clusters) é a mesma. Guarda VISIBILITY, LEAFMINDISTTOWATER e
+  LEAF_AMBIENT_* inteiros e, das folhas, só os bytes que o vvis escreve (1 e 7 de cada uma: bits de contents e flags);
+  na volta remenda as folhas do BSP novo nesses bytes. Se o vvis mexer em outro byte das folhas, não guarda.
+
 Quando muda: qualquer brush (mundo, detail, entidade de brush), prop_static, overlay, cubemap, material embutido,
 luz ou opção = chave nova = vvis/vrad rodam. Mudou só entidade que nenhum dos dois lê (prop_physics, spawn, lógica,
 trigger de ponto...) = os dois são pulados. Mudou luz ou prop_static = só o vvis é pulado.
@@ -45,6 +51,10 @@ KEEP = 2                    # entradas guardadas por tipo (o BSP final do rad te
 NOT_GEOMETRY = {BSP_LUMPS.ENTITIES, BSP_LUMPS.GAME_LUMP, BSP_LUMPS.PAKFILE}
 # o vvis regrava esses dois sem mudar o conteúdo (o game lump tem offsets absolutos no arquivo)
 VIS_REWRITES = {BSP_LUMPS.GAME_LUMP, BSP_LUMPS.PAKFILE}
+
+LEAF_SIZE = 32              # dleaf_t v1 (sem ambient embutido)
+LEAF_LISTS = slice(20, 28)  # firstleafface, numleaffaces, firstleafbrush, numleafbrushes: mudam com detail
+VIS_LEAF_BYTES = (1, 7)     # o que o vvis escreve em cada folha (contents bits 8-15; area/flags, flags)
 
 DISPINFO_SIZE = 176
 DISP_EDGE_OFS = 48          # CDispNeighbor m_EdgeNeighbors[4]: 2 x CDispSubNeighbor (u16 vizinho, 3 x u8, 1 pad)
@@ -260,10 +270,28 @@ def pak_digest(b: BSP) -> str:
     return _h("pak", items)
 
 
+def leaf_digest(b: BSP) -> str | None:
+    """Estrutura das folhas sem as listas de faces/brushes (o que o detail muda) + dados de água. None: formato
+    de folha que não é o v1 de 32 bytes (sem cache por portais)."""
+    L = b.lumps.get(BSP_LUMPS.LEAFS)
+    if L is None or L.version != 1 or not L.data or len(L.data) % LEAF_SIZE:
+        return None
+    out = bytearray(L.data)
+    for o in range(0, len(out), LEAF_SIZE):
+        out[o + LEAF_LISTS.start:o + LEAF_LISTS.stop] = bytes(LEAF_LISTS.stop - LEAF_LISTS.start)
+    # água (dleafwaterdata_t, 12 bytes): alturas contam; o índice do texinfo da superfície não (o detail desloca
+    # os índices de texinfo e a visibilidade não depende da textura)
+    water = bytearray(b.lumps[BSP_LUMPS.LEAFWATERDATA].data if BSP_LUMPS.LEAFWATERDATA in b.lumps else b"")
+    for o in range(0, len(water) - 11, 12):
+        water[o + 8:o + 12] = b"\0\0\0\0"
+    return _h("folhas", bytes(out), bytes(water))
+
+
 @dataclass
 class Keys:
     vis: str | None       # None: vvis desligado
     rad: str | None       # None: vrad desligado
+    visprt: str | None = None  # None: sem .prt ou folhas em outro formato
 
 
 def compute_keys(bsp: Path, prt: Path | None, vis_args: list[str] | None, vvis: Path | None,
@@ -272,15 +300,18 @@ def compute_keys(bsp: Path, prt: Path | None, vis_args: list[str] | None, vvis: 
     b = BSP(str(bsp))
     ents = parse_entities(b.lumps[BSP_LUMPS.ENTITIES].data)
     geo = geometry_digest(b)
-    vis = None
+    vis = visprt = None
     if vis_args is not None:
         prt_data = prt.read_bytes() if prt and prt.exists() else b""
         vis = _h(FORMAT, "vis", geo, prt_data, vis_entities(ents), list(vis_args), tool_id(vvis))
+        leaves = leaf_digest(b)
+        if prt_data and leaves:
+            visprt = _h(FORMAT, "visprt", prt_data, leaves, vis_entities(ents), list(vis_args), tool_id(vvis))
     rad = None
     if rad_args is not None:
         rad = _h(FORMAT, "rad", geo, vis or "sem-vis", props_digest(b), pak_digest(b), rad_entities(ents),
                  list(rad_args), tool_id(vrad))
-    return Keys(vis, rad)
+    return Keys(vis, rad, visprt)
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +321,11 @@ def compute_keys(bsp: Path, prt: Path | None, vis_args: list[str] | None, vvis: 
 def lump_hashes(bsp: Path) -> dict[int, str]:
     b = BSP(str(bsp))
     return {k.value: hashlib.blake2b(L.data, digest_size=16).hexdigest() for k, L in b.lumps.items()}
+
+
+def leaf_bytes(bsp: Path) -> bytes:
+    """Lump LEAFS cru (antes do vvis, para o save_vis_prt conferir o que ele mexeu)."""
+    return BSP(str(bsp)).lumps[BSP_LUMPS.LEAFS].data
 
 
 class Cache:
@@ -330,35 +366,14 @@ class Cache:
                 continue
             if hashlib.blake2b(L.data, digest_size=16).hexdigest() != before.get(k.value):
                 changed[k.value] = (L.version, L.data)
-        buf = io.BytesIO()
-        buf.write(b"HTVC")
-        buf.write(struct.pack("<ii", FORMAT, len(changed)))
-        for k, (ver, data) in sorted(changed.items()):
-            buf.write(struct.pack("<iiq", k, ver, len(data)))
-            buf.write(data)
-        tmp = self._vis_file(key).with_suffix(".tmp")
-        tmp.write_bytes(buf.getvalue())
-        os.replace(tmp, self._vis_file(key))
+        _write_lumps(self._vis_file(key), changed)
         self._prune("vis", self._vis_file(key))
         return [BSP_LUMPS(k).name for k in sorted(changed)]
 
     def load_vis(self, key: str) -> dict[int, tuple[int, bytes]] | None:
-        f = self._vis_file(key)
-        if not f.exists():
-            return None
-        data = f.read_bytes()
-        if data[:4] != b"HTVC":
-            return None
-        fmt, n = struct.unpack_from("<ii", data, 4)
-        if fmt != FORMAT:
-            return None
-        o, out = 12, {}
-        for _ in range(n):
-            k, ver, ln = struct.unpack_from("<iiq", data, o)
-            o += 16
-            out[k] = (ver, data[o:o + ln])
-            o += ln
-        self._touch(f)
+        out = _read_lumps(self._vis_file(key))
+        if out is not None:
+            self._touch(self._vis_file(key))
         return out
 
     def restore_vis(self, key: str, bsp: Path) -> list[str] | None:
@@ -372,6 +387,57 @@ class Cache:
             L.data, L.version = data, ver
         _save_atomic(b, bsp)
         return [BSP_LUMPS(k).name for k in sorted(lumps)]
+
+    # ---- vis por portais ----
+    def _prt_file(self, key: str) -> Path:
+        return self.folder / f"visprt-{key}.lumps"
+
+    def has_vis_prt(self, key: str) -> bool:
+        return self._prt_file(key).exists()
+
+    def save_vis_prt(self, key: str, leaves_before: bytes, bsp: Path) -> bool:
+        """Guarda a saída do vvis para reaplicar em outro BSP com os mesmos portais e folhas. False: o vvis mexeu nas
+        folhas fora dos bytes conhecidos (não dá para remendar com segurança; fica só o cache exato)."""
+        b = BSP(str(bsp))
+        leaves = b.lumps[BSP_LUMPS.LEAFS].data
+        if len(leaves) != len(leaves_before) or len(leaves) % LEAF_SIZE:
+            return False
+        keep = set(VIS_LEAF_BYTES)
+        for o in range(0, len(leaves), LEAF_SIZE):
+            a, z = leaves_before[o:o + LEAF_SIZE], leaves[o:o + LEAF_SIZE]
+            if a != z and any(a[i] != z[i] for i in range(LEAF_SIZE) if i not in keep):
+                return False
+        patch = bytes(leaves[o + i] for o in range(0, len(leaves), LEAF_SIZE) for i in VIS_LEAF_BYTES)
+        lumps = {k.value: (b.lumps[k].version, b.lumps[k].data) for k in VIS_PRT_LUMPS if k in b.lumps}
+        lumps[-1] = (0, patch)              # -1: bytes das folhas
+        self.folder.mkdir(parents=True, exist_ok=True)
+        _write_lumps(self._prt_file(key), lumps)
+        self._prune("visprt", self._prt_file(key))
+        return True
+
+    def restore_vis_prt(self, key: str, bsp: Path) -> list[str] | None:
+        """Visibilidade de um BSP com os mesmos portais e folhas. None = não estava no cache (ou não encaixa)."""
+        lumps = _read_lumps(self._prt_file(key))
+        if lumps is None or -1 not in lumps:
+            return None
+        b = BSP(str(bsp))
+        L = b.lumps[BSP_LUMPS.LEAFS]
+        patch = lumps.pop(-1)[1]
+        if len(L.data) % LEAF_SIZE or len(L.data) // LEAF_SIZE * len(VIS_LEAF_BYTES) != len(patch):
+            return None
+        leaves = bytearray(L.data)
+        j = 0
+        for o in range(0, len(leaves), LEAF_SIZE):
+            for i in VIS_LEAF_BYTES:
+                leaves[o + i] = patch[j]
+                j += 1
+        L.data = bytes(leaves)
+        for k, (ver, data) in lumps.items():
+            T = b.lumps[BSP_LUMPS(k)]
+            T.data, T.version = data, ver
+        _save_atomic(b, bsp)
+        self._touch(self._prt_file(key))
+        return ["LEAFS", *(BSP_LUMPS(k).name for k in sorted(lumps))]
 
     # ---- rad ----
     def save_rad(self, key: str, bsp: Path) -> None:
@@ -393,6 +459,40 @@ class Cache:
         _save_atomic(old, bsp)
         self._touch(f)
         return True
+
+
+VIS_PRT_LUMPS = (BSP_LUMPS.VISIBILITY, BSP_LUMPS.LEAFMINDISTTOWATER, BSP_LUMPS.LEAF_AMBIENT_INDEX,
+                 BSP_LUMPS.LEAF_AMBIENT_INDEX_HDR, BSP_LUMPS.LEAF_AMBIENT_LIGHTING, BSP_LUMPS.LEAF_AMBIENT_LIGHTING_HDR)
+
+
+def _write_lumps(f: Path, lumps: dict[int, tuple[int, bytes]]) -> None:
+    buf = io.BytesIO()
+    buf.write(b"HTVC")
+    buf.write(struct.pack("<ii", FORMAT, len(lumps)))
+    for k, (ver, data) in sorted(lumps.items()):
+        buf.write(struct.pack("<iiq", k, ver, len(data)))
+        buf.write(data)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_bytes(buf.getvalue())
+    os.replace(tmp, f)
+
+
+def _read_lumps(f: Path) -> dict[int, tuple[int, bytes]] | None:
+    if not f.exists():
+        return None
+    data = f.read_bytes()
+    if data[:4] != b"HTVC":
+        return None
+    fmt, n = struct.unpack_from("<ii", data, 4)
+    if fmt != FORMAT:
+        return None
+    o, out = 12, {}
+    for _ in range(n):
+        k, ver, ln = struct.unpack_from("<iiq", data, o)
+        o += 16
+        out[k] = (ver, data[o:o + ln])
+        o += ln
+    return out
 
 
 def _save_atomic(b: BSP, dest: Path) -> None:

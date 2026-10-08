@@ -345,3 +345,59 @@ def test_phantom_check_cached_by_bsp_geometry_and_vmf_brushes(room, tmp_path, mo
     monkeypatch.setenv("HT_NO_CACHE", "1")
     run()
     assert len(calls) == 4
+
+
+def _leaves(n, lists=0, b1=0, b7=0):
+    out = bytearray()
+    for i in range(n):
+        leaf = bytearray(32)
+        leaf[0] = 1
+        leaf[1], leaf[7] = b1, b7
+        struct.pack_into("<hhh", leaf, 8, -i, -i, -i)
+        struct.pack_into("<HH", leaf, 20, lists + i, lists)
+        out += leaf
+    return bytes(out)
+
+
+def _leaf_bsp(path, leaves, planes=b"P" * 20, vis=b""):
+    p = make_bsp(path, {BSP_LUMPS.LEAFS: leaves, BSP_LUMPS.PLANES: planes, BSP_LUMPS.VISIBILITY: vis})
+    b = BSP(str(p))
+    b.lumps[BSP_LUMPS.LEAFS].version = 1
+    b.save(str(p))
+    return p
+
+
+def test_prt_key_survives_detail_but_not_portal_or_leaf_changes(tmp_path):
+    prt = tmp_path / "m.prt"
+    prt.write_text("PRT1\n2\n1\n")
+    base = keys(_leaf_bsp(tmp_path / "a.bsp", _leaves(4)), prt)
+    # detail: outros planos e listas de faces/brushes das folhas, mesmos portais -> mesma chave por portais
+    detail = keys(_leaf_bsp(tmp_path / "b.bsp", _leaves(4, lists=9), planes=b"Q" * 40), prt)
+    assert detail.vis != base.vis and detail.visprt == base.visprt and detail.rad != base.rad
+    assert keys(_leaf_bsp(tmp_path / "c.bsp", _leaves(5)), prt).visprt != base.visprt
+    other = tmp_path / "o.prt"
+    other.write_text("PRT1\n2\n2\n")
+    assert keys(_leaf_bsp(tmp_path / "d.bsp", _leaves(4)), other).visprt != base.visprt
+    assert keys(_leaf_bsp(tmp_path / "e.bsp", _leaves(4)), None).visprt is None
+
+
+def test_vis_prt_cache_patches_only_vvis_leaf_bytes(tmp_path):
+    cache = bc.Cache(tmp_path / "cache")
+    m = _leaf_bsp(tmp_path / "m.bsp", _leaves(3))
+    before = bc.leaf_bytes(m)
+    b = BSP(str(m))                                     # "vvis"
+    b.lumps[BSP_LUMPS.VISIBILITY].data = b"VIS!"
+    b.lumps[BSP_LUMPS.LEAFS].data = _leaves(3, b1=0x10, b7=0x02)
+    b.save(str(m))
+    assert cache.save_vis_prt("k", before, m)
+    n = _leaf_bsp(tmp_path / "n.bsp", _leaves(3, lists=7))   # detail mudou as listas
+    assert cache.restore_vis_prt("k", n)[:2] == ["LEAFS", "VISIBILITY"]
+    nb = BSP(str(n))
+    assert nb.lumps[BSP_LUMPS.LEAFS].data == _leaves(3, lists=7, b1=0x10, b7=0x02)
+    assert nb.lumps[BSP_LUMPS.VISIBILITY].data == b"VIS!"
+    assert cache.restore_vis_prt("k", _leaf_bsp(tmp_path / "x.bsp", _leaves(4))) is None   # não encaixa
+    assert cache.restore_vis_prt("outra", n) is None
+    # vvis mexendo em outro byte das folhas: não guarda
+    b.lumps[BSP_LUMPS.LEAFS].data = _leaves(3, lists=1)
+    b.save(str(m))
+    assert not cache.save_vis_prt("k2", before, m)

@@ -818,12 +818,23 @@ def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str,
         # a grade grossa não vê a fresta: segue pro refino pelo pointfile
     # fresta menor que o voxel: o caminho que o vbsp gravou (.lin) diz onde; tampa com grade fina e recompila
     removed_ents = []
+    caminhos = set()
     for _ in range(LEAK_REFINE):
         lin = out.with_suffix(".lin")
         if "leaked" not in text.lower() or not lin.exists():
             break
         v = vmfio.load(out)
         pts = seal.read_pointfile(lin)
+        # o mesmo caminho do pointfile depois de uma rodada de tampas = a tampa não o fechou: refazer as mesmas
+        # tampas não tem progresso e CADA rodada é uma compilação inteira. O cache guardava o resultado, não a
+        # tentativa inútil, então a compilação seguinte refazia o ciclo inteiro até LEAK_REFINE
+        caminho = tuple((round(p.x), round(p.y), round(p.z)) for p in pts)
+        if caminho in caminhos:
+            print("ht-vbsp: o vbsp segue pelo MESMO caminho do pointfile depois das tampas: sem progresso, paro as "
+                  "rodadas (as tampas continuam no cache). Feche o vão no Hammer (Map > Load Pointfile) ou recompile "
+                  "com --ht-seal-grosso.", flush=True)
+            break
+        caminhos.add(caminho)
         made = seal.seal_at_pointfile(v, res, pts)
         # outros bolsões perto do mesmo caminho, sem esperar o vbsp mostrar um por compilação
         coarse = seal.coarse_classifier(v, res)
@@ -1277,19 +1288,24 @@ def _vbsp_main(args: list[str]) -> int:
     cache = src.with_suffix(".seal.json")
     from hammertools import seal
     geometry = seal.fingerprint(out.read_text(encoding="utf-8", errors="replace"))
-    if cache.exists() and os.environ.get("HT_NO_SEAL") != "1" and not seal.cache_valid(cache, geometry):
-        stale = cache.with_suffix(".velho.json")
-        cache.replace(stale)
-        print(f"ht-vbsp: cache de tampas {cache.name} é de outra geometria (o mapa mudou); não vale mais, guardado "
-              f"em {stale.name}\n", flush=True)
     if cache.exists() and os.environ.get("HT_NO_SEAL") != "1":
+        # validade por tampa: a de outra geometria só cai se a VIZINHANÇA dela mudou — uma edição longe não
+        # invalida o cache inteiro (antes, qualquer brush movido custava a selagem inteira na compilação seguinte)
+        valido = seal.cache_valid(cache, geometry)
         v = vmfio.load(out)
-        used, dropped = seal.apply_cache(v, cache)
+        used, dropped = seal.apply_cache(v, cache, geometry)
         if used:
             vmfio.save(v, out)
-        print(f"ht-vbsp: {used} tampa(s) de leak do cache {cache.name}" +
-              (f" ({dropped} velha(s) descartada(s): o mapa mudou ali)" if dropped else "") +
-              " (apague o arquivo pra refazer do zero)\n", flush=True)
+        if not valido and not used:
+            stale = cache.with_suffix(".velho.json")
+            cache.replace(stale)
+            print(f"ht-vbsp: cache de tampas {cache.name} é de outra geometria (o mapa mudou); não vale mais, guardado "
+                  f"em {stale.name}\n", flush=True)
+        else:
+            print(f"ht-vbsp: {used} tampa(s) de leak do cache {cache.name}" +
+                  (f" ({dropped} velha(s) descartada(s): o mapa mudou ali)" if dropped else "") +
+                  ("" if valido else " (o resto do cache é de outra geometria e caiu na conferência local)") +
+                  " (apague o arquivo pra refazer do zero)\n", flush=True)
     # auto-prop: o mapa não coube nos tetos da última vez (precisou de -notjunc, passou de 90% dos vértices ou os
     # passos de redução não resolveram): tira geometria de detail do BSP virando prop_static antes de compilar
     # (HT_AUTOPROP=0 desliga). O registro é gravado mesmo quando a compilação falha, senão ele nunca nasce e o
@@ -1411,15 +1427,17 @@ def _vbsp_main(args: list[str]) -> int:
         # falhou sem aprender nada novo (erro que não teve a ver com tetos): não sobrescreve um registro bom
         if rc == 0 or set(info) - {"result", "quando", "falhou", "seal"}:
             src.with_suffix(".tjfix.json").write_text(json.dumps(info))
-    # tampas de leak (visgroup ht_seal do build/) viram cache: a próxima compilação começa delas
+    # tampas de leak (visgroup ht_seal do build/) viram cache: a próxima compilação começa delas (cada uma com a
+    # impressão da própria vizinhança, pra valer mesmo depois de uma edição longe dali)
     if seal_info and os.environ.get("HT_NO_SEAL") != "1":
         from hammertools import seal
         from srctools import Vec
-        plugs = seal.plugs_in(vmfio.load(out))
+        v_cache = vmfio.load(out)
+        plugs = seal.plugs_in(v_cache)
         removed = (seal.cached_removals(cache) if cache.exists() else []) + \
             [(c, Vec(*o)) for c, o in seal_info.get("removidas", [])]
         if plugs or removed:
-            seal.save_cache(cache, plugs, removed, geometry)
+            seal.save_cache(cache, plugs, removed, geometry, v_cache)
     # modelos do auto-prop vão dentro do BSP (não existem no addon de conteúdo de ninguém); HT_PACK_PROPS=0 desliga
     if rc == 0 and ((ap_info and ap_info.get("models")) or fixed_faces) and gamedir and os.environ.get("HT_PACK_PROPS") != "0" \
             and out.with_suffix(".bsp").exists():

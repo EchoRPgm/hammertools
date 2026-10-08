@@ -284,3 +284,56 @@ def test_close_slivers_stays_inside_non_rectangular_faces():
     _box(v, (300, 1, 0), (400, 64, 64))
     _box(v, (300, -64, 0), (400, 0, 64))
     assert len(seal.close_slivers(v, lint.Resources())) == 1
+
+
+def test_cache_keeps_plugs_whose_neighborhood_is_intact(tmp_path):
+    """Validade por tampa: edição LONGE não invalida nada (a impressão é local); em volta da tampa, invalida.
+    Antes a impressão era global: qualquer brush movido derrubava o cache inteiro e a próxima compilação refazia
+    a selagem do zero (vbsp recompilando até LEAK_REFINE vezes, toda vez)."""
+    v = _room(hole=True)
+    seal.seal(v, voxel=16.0)
+    plugs = seal.plugs_in(v)
+    assert plugs
+    a, cache = tmp_path / "a.vmf", tmp_path / "m.seal.json"
+    vmfio.save(v, a)
+    seal.save_cache(cache, plugs, [], seal.fingerprint(a.read_text()), v)
+
+    # edição DISTANTE do mapa: a volta da tampa (porta da parede +x) não muda
+    far = _room(hole=True)
+    _box(far, (3000, 3000, 0), (3200, 3200, 128))
+    b = tmp_path / "b.vmf"
+    vmfio.save(far, b)
+    geo_far = seal.fingerprint(b.read_text())
+    assert geo_far != seal.fingerprint(a.read_text())          # a impressão global mudou...
+    assert seal.apply_cache(far, cache, geo_far) == (len(plugs), 0)   # ...mas a tampa segue valendo
+
+    # edição ENCOSTADA na parede da porta: a geometria ali mudou, a tampa velha ficaria no meio do vão
+    near = _room(hole=True)
+    _box(near, (960, 400, 200), (1024, 640, 240))
+    c = tmp_path / "c.vmf"
+    vmfio.save(near, c)
+    assert seal.apply_cache(near, cache, seal.fingerprint(c.read_text())) == (0, len(plugs))
+
+
+def test_leak_refine_stops_when_pointfile_does_not_move(tmp_path, monkeypatch, capsys):
+    """Tampa que não fecha o caminho: o pointfile volta igual na rodada seguinte -> parar as rodadas. Antes o
+    refino continuava até LEAK_REFINE (30 compilações) e a próxima compilação refazia o ciclo inteiro."""
+    src = tmp_path / "mapsrc" / "m.vmf"; src.parent.mkdir()
+    vmfio.save(_room(hole=True), src)
+    fake = tmp_path / "vbsp.py"
+    fake.write_text(
+        "import sys, pathlib\n"
+        "p = pathlib.Path(sys.argv[-1])\n"
+        "log = p.with_name('calls.txt'); log.write_text(log.read_text() + 'x' if log.exists() else 'x')\n"
+        "print('**** leaked ****')\n"
+        "p.with_suffix('.lin').write_text('200 500 200\\n1008 512 96\\n1400 512 96\\n')\n"
+        "p.with_suffix('.bsp').write_text('ok')\n")
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    monkeypatch.setenv("HT_NO_PHANTOM", "1")
+    monkeypatch.setattr(seal, "coarse_classifier", lambda *a, **k: None)   # sem bolsões: só o caminho do leak
+    monkeypatch.setattr(seal, "seal_at_pointfile", lambda *a, **k: [(Vec(100, 100, 100), Vec(116, 116, 116))])
+    vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))])
+    out = capsys.readouterr().out
+    assert "MESMO caminho" in out and "AINDA VAZA" in out
+    # original + UMA rodada de refino: a segunda leitura do mesmo pointfile já corta (antes: até 30)
+    assert (tmp_path / "mapsrc" / "build" / "calls.txt").read_text() == "xx"

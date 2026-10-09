@@ -37,6 +37,32 @@ def find_tool(gamedir: Path, name: str) -> Path | None:
     return None
 
 
+# luz por path tracing (EchoHammer bake, echort na GPU): raios por luxel conforme o perfil do vrad
+BAKE_SAMPLES = {"rapido": 64, "normal": 256, "final": 1024}
+
+
+def bspcache_tool(exe: Path) -> str:
+    from hammertools import bspcache
+    return bspcache.tool_id(exe)
+
+
+def find_echohammer() -> Path | None:
+    """Executável do EchoHammer (o bake de luz é dele): HT_ECHOHAMMER, o PATH ou a instalação padrão."""
+    env = os.environ.get("HT_ECHOHAMMER")
+    if env and Path(env).exists():
+        return Path(env)
+    for name in ("EchoHammer", "EchoHammer.exe"):
+        if (w := shutil.which(name)):
+            return Path(w)
+    home = Path.home()
+    local = Path(os.environ.get("LOCALAPPDATA", home / "AppData" / "Local"))
+    for cand in (home / ".local/opt/echohammer/EchoHammer", local / "Programs/EchoHammer/EchoHammer.exe",
+                 local / "EchoHammer/EchoHammer.exe"):
+        if cand.exists():
+            return cand
+    return None
+
+
 def wine_safe_dir(d: Path) -> Path:
     """Pasta do mapa para .exe pelo Wine: com maiúscula no caminho, um link só de minúsculas para a pasta real."""
     d = d.resolve()
@@ -84,7 +110,7 @@ def rad_args(profile: str, bsp: Path, extra: list[str]) -> list[str]:
 
 def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags: list[str] | None = None,
         vbsp_args: list[str] | None = None, vis_args: list[str] | None = None, rad_args_extra: list[str] | None = None,
-        copy: bool = True, pack: bool = False, use_cache: bool = True) -> int:
+        copy: bool = True, pack: bool = False, use_cache: bool = True, luz: str = "vrad") -> int:
     from hammertools import cli
     vmf = vmf.resolve()
     noext = vmf.with_suffix("")
@@ -117,13 +143,25 @@ def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags:
             say("vrad não encontrado ao lado do vbsp (defina HT_VRAD)")
             return 2
         flags = rad_args(rad, bsp, rad_args_extra or [])
+    # luz por path tracing: o vrad só monta a estrutura (lightmaps, luzes, cubos, luz dos props) sem rebote, e o
+    # EchoHammer refaz os valores no lugar; o jogo carrega igual (mesmos lumps, mesmo tamanho)
+    eh = None
+    key_flags = flags
+    if luz == "pathtracing" and vrad:
+        eh = find_echohammer()
+        if eh is None:
+            say("EchoHammer não encontrado (defina HT_ECHOHAMMER); luz pelo vrad")
+        else:
+            full_flags = flags
+            flags = [a for i, a in enumerate(flags) if a != "-bounce" and (i == 0 or flags[i - 1] != "-bounce")] + ["-bounce", "0"]
+            key_flags = [*flags, f"luz:pathtracing:{BAKE_SAMPLES.get(rad, 256)}", bspcache_tool(eh)]
     # cache por conteúdo (bspcache): o BSP que o vbsp gerou igual ao de antes no que o vvis/vrad leem = o resultado
     # deles também é igual; volta do cache em vez de rodar (só entidades que ninguém lê mudaram, ou nada mudou)
     from hammertools import bspcache
     cache = keys = None
     if use_cache and bspcache.enabled() and (vvis or vrad):
         try:
-            keys = bspcache.compute_keys(bsp, vmf.with_suffix(".prt"), vflags, vvis, flags, vrad)
+            keys = bspcache.compute_keys(bsp, vmf.with_suffix(".prt"), vflags, vvis, key_flags, vrad)
             cache = bspcache.Cache(vmf.parent / "build" / "cache")
         except Exception as e:  # noqa: BLE001  cache nunca derruba a compilação
             say(f"cache de vvis/vrad indisponível ({e}); compilando sem")
@@ -181,6 +219,17 @@ def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags:
         if rc != 0:
             say(f"vrad falhou (saída {rc}); parado")
             return rc
+        if eh is not None:
+            samples = BAKE_SAMPLES.get(rad, 256)
+            say(f"luz por path tracing (EchoHammer bake, {samples} raios por luxel)")
+            rc, _ = cli._run_streaming([str(eh), "bake", str(bsp), "--samples", str(samples)])
+            if rc != 0:
+                say(f"bake falhou (saída {rc}); refazendo a luz pelo vrad")
+                say("vrad " + " ".join(full_flags))
+                rc, _ = cli._run_streaming([str(vrad), *full_flags, "-game", str(game), tool_target(vrad)])
+                if rc != 0:
+                    say(f"vrad falhou (saída {rc}); parado")
+                    return rc
         if cache and keys.rad and (keys.vis or vis == "off"):
             try:
                 cache.save_rad(keys.rad, bsp)
@@ -208,7 +257,7 @@ def cmd_compile(args) -> int:
     ht_flags = [f for f in cli.VBSP_FLAGS if getattr(args, f.lstrip("-").replace("-", "_"), False)]
     return run(Path(args.vmf), Path(game), args.vis, args.rad, ht_flags, shlex.split(args.vbsp_args or ""),
                shlex.split(args.vis_args or ""), shlex.split(args.rad_args or ""), not args.no_copy, args.pack,
-               not args.no_cache)
+               not args.no_cache, args.luz)
 
 
 def add_parser(sub) -> None:
@@ -219,6 +268,8 @@ def add_parser(sub) -> None:
     p.add_argument("--vis", choices=["full", "fast", "off"], default="full")
     p.add_argument("--rad", choices=["normal", "rapido", "final", "off"], default="normal",
                    help="normal; rapido (-bounce 2 -noextra); final (-final -StaticPropLighting -StaticPropPolys -TextureShadows)")
+    p.add_argument("--luz", choices=["vrad", "pathtracing"], default="vrad",
+                   help="pathtracing: o vrad monta a estrutura e o EchoHammer (echort, GPU) calcula a luz; mesmo custo no jogo")
     p.add_argument("--vbsp-args", help="argumentos extras do vbsp (entre aspas)")
     p.add_argument("--vis-args", help="argumentos extras do vvis")
     p.add_argument("--rad-args", help="argumentos extras do vrad")

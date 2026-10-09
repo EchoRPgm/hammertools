@@ -401,3 +401,63 @@ def test_vis_prt_cache_patches_only_vvis_leaf_bytes(tmp_path):
     b.lumps[BSP_LUMPS.LEAFS].data = _leaves(3, lists=1)
     b.save(str(m))
     assert not cache.save_vis_prt("k2", before, m)
+
+
+FAKE_EH = '''#!{py}
+import sys
+open({log!r}, "a").write("bake " + " ".join(sys.argv[2:]) + "\\n")
+sys.exit({code})
+'''
+
+
+def _fake_eh(tmp_path, code=0):
+    log = tmp_path / "log.txt"
+    eh = tmp_path / "EchoHammer"
+    eh.write_text(FAKE_EH.format(py=sys.executable, log=str(log), code=code))
+    eh.chmod(eh.stat().st_mode | stat.S_IEXEC)
+    return eh
+
+
+def _compile_env(monkeypatch):
+    for k, val in (("HT_NO_PHANTOM", "1"), ("HT_NO_UPDATE", "1"), ("HT_AUTOPROP", "0"), ("HT_NO_SEAL", "1")):
+        monkeypatch.setenv(k, val)
+    monkeypatch.setenv("HT_VBSP", sys.executable)
+    monkeypatch.setattr(htc, "has_generated_props", lambda bsp: False)
+
+
+def test_compile_pathtracing_runs_vrad_without_bounce_then_bake(room, tmp_path, monkeypatch):
+    game, log, vbsp = _fake_game(tmp_path)
+    _compile_env(monkeypatch)
+    monkeypatch.setenv("HT_ECHOHAMMER", str(_fake_eh(tmp_path)))
+    src = tmp_path / "mapas" / "m.vmf"
+    src.parent.mkdir()
+    vmfio.save(room, src)
+    assert htc.run(src, game, vbsp_args=[str(vbsp)], copy=False, use_cache=False, luz="pathtracing", rad="rapido") == 0
+    lines = log.read_text().splitlines()
+    vrad = next(line for line in lines if line.startswith("vrad"))
+    assert "-bounce 0" in vrad and "-bounce 2" not in vrad and "-noextra" in vrad
+    assert any(line.startswith("bake ") and "--samples 64" in line for line in lines)
+
+
+def test_compile_pathtracing_falls_back_to_full_vrad(room, tmp_path, monkeypatch):
+    game, log, vbsp = _fake_game(tmp_path)
+    _compile_env(monkeypatch)
+    monkeypatch.setenv("HT_ECHOHAMMER", str(_fake_eh(tmp_path, code=1)))
+    src = tmp_path / "mapas" / "m.vmf"
+    src.parent.mkdir()
+    vmfio.save(room, src)
+    assert htc.run(src, game, vbsp_args=[str(vbsp)], copy=False, use_cache=False, luz="pathtracing") == 0
+    vrads = [line for line in log.read_text().splitlines() if line.startswith("vrad")]
+    assert len(vrads) == 2 and "-bounce 0" in vrads[0] and "-bounce" not in vrads[1]
+
+
+def test_compile_pathtracing_without_echohammer_uses_vrad(room, tmp_path, monkeypatch):
+    game, log, vbsp = _fake_game(tmp_path)
+    _compile_env(monkeypatch)
+    monkeypatch.setenv("HT_ECHOHAMMER", str(tmp_path / "nao-existe"))
+    monkeypatch.setattr(htc, "find_echohammer", lambda: None)
+    src = tmp_path / "mapas" / "m.vmf"
+    src.parent.mkdir()
+    vmfio.save(room, src)
+    assert htc.run(src, game, vbsp_args=[str(vbsp)], copy=False, use_cache=False, luz="pathtracing") == 0
+    assert [line.split()[0] for line in log.read_text().splitlines()] == ["vvis", "vrad"]

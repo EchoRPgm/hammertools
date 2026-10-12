@@ -1218,6 +1218,7 @@ VBSP_FLAGS = {
     "--ht-no-seal": ("HT_NO_SEAL", "1", "não fecha leaks sozinho"),
     "--ht-seal-grosso": ("HT_SEAL_GROSSO", "1", "vão de verdade também é tampado (toolsskybox no corte mínimo; remendo)"),
     "--ht-no-phantom": ("HT_NO_PHANTOM", "1", "não conserta faces fantasma / textura vazada"),
+    "--ht-no-align": ("HT_NO_ALIGN", "1", "não alinha a textura de faces vizinhas no mesmo plano e material"),
     "--ht-tj-retry": ("HT_TJ_RETRY", "1", "recalcula as t-junctions em vez de repetir o que deu certo"),
     "--ht-keep-preview": ("HT_KEEP_PREVIEW", "1", "mantém o preview dos geradores no fonte"),
     "--ht-no-update": ("HT_NO_UPDATE", "1", "não procura versão nova do hammertools antes de compilar"),

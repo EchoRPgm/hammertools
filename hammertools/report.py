@@ -36,6 +36,7 @@ PRIORITY = [
     ("overlaps", "aviso", "Sobreposição com detail/entidade", "Face escondida não é cortada: desperdício e possível z-fighting."),
     ("duplicates", "aviso", "Brushes duplicados", "Dois brushes idênticos no mesmo lugar: z-fighting. Apague um."),
     ("logic", "aviso", "Templates", "Template nunca acionado (o que ele recria não volta) ou entidade em dois templates (nasce duplicada)."),
+    ("align", "aviso", "Textura desalinhada", "Faces vizinhas no mesmo plano e material com rotação, escala ou deslocamento diferente: cada uma mostra outro pedaço da textura e a emenda vira um retângulo de tom diferente com borda reta (no vrad e no path tracing). O ht-vbsp alinha no build/ (pelo alinhamento de maior área) os materiais listados em <mapa>.align.json; o F9 do EchoHammer pausa a compilação e pergunta quais. No Hammer, alinhe as faces juntas."),
     ("grid", "info", "Fora do grid", "Vértices fracionários: risco de microfrestas e t-junctions."),
 ]
 
@@ -496,7 +497,7 @@ def write(rep: L.Report, path: Path, map_name: str, cluster_radius: float = 256.
     mdl, n_mdl = _tab_models(rep)
     tj, n_tj = _tab_tjunctions(rep, cluster_radius)
     leak, n_leak = _tab_leak(rep)
-    geo, n_geo = _tab_generic(rep, ["phantom", "lightstyles", "nodraw", "overlaps", "duplicates", "grid"])
+    geo, n_geo = _tab_generic(rep, ["phantom", "lightstyles", "nodraw", "overlaps", "duplicates", "align", "grid"])
     ent, n_ent = _tab_generic(rep, ["markers", "outputs", "logic"])
     panels = [("dash", "Painel", None, _dashboard(rep, cluster_radius)), ("tex", "Texturas", n_tex, tex), ("reg", "Texturas por região", n_reg, reg),
               ("mdl", "Modelos", n_mdl, mdl), ("tj", "T-junctions", n_tj, tj), ("leak", "Leak", n_leak, leak),

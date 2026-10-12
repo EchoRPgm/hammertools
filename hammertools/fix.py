@@ -10,11 +10,12 @@ materials/<prefixo>/<caminho original>.vmt e troca nas faces de brush (overlays/
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from srctools import VMF
+from srctools import VMF, Vec
 
 from hammertools import lint
 
@@ -240,13 +241,193 @@ def open_uncovered_areaportals(v: VMF, tol: float = 1.0) -> list[str]:
     return out
 
 
+ALIGN_SKIP = ("tools/", "nature/blendrock", "skybox")
+ALIGN_MIN = 128.0       # lado mínimo (u) da face girada para o material ser sugerido
+
+
+def _poly_area(poly) -> float:
+    tot = Vec()
+    for i in range(len(poly)):
+        tot += Vec.cross(poly[i], poly[(i + 1) % len(poly)])
+    return tot.mag() / 2
+
+
+def _uv_key(sd) -> tuple:
+    """Alinhamento da face: eixos, escala e deslocamento de U e V (iguais = textura contínua entre as faces)."""
+    return tuple((round(a.x, 4), round(a.y, 4), round(a.z, 4), round(a.scale, 4), round(a.offset, 2))
+                 for a in (sd.uaxis, sd.vaxis))
+
+
+def _rot_key(sd) -> tuple:
+    """Eixos e escala, sem o deslocamento."""
+    return tuple((round(a.x, 4), round(a.y, 4), round(a.z, 4), round(a.scale, 4)) for a in (sd.uaxis, sd.vaxis))
+
+
+def misaligned_textures(v: VMF, touch: float = 0.5) -> list[dict]:
+    """Faces vizinhas no mesmo plano e com o mesmo material, mas com alinhamento de textura diferente (rotação,
+    escala ou deslocamento). No jogo, cada uma mostra outro pedaço da textura e a emenda vira um retângulo de tom
+    diferente com borda reta (telhado do rp_surdonoso: o mesmo concreto a 0°, 90° e 180°), no vrad e no path tracing
+    igual: é a cor da textura, não a luz. Vizinhas = polígonos que se encostam por uma aresta (não só pelo canto).
+    Devolve um grupo por superfície contínua com mais de um alinhamento: o alinhamento de maior área (que fica) e as
+    faces que destoam. Fica de fora: displacement (alinhamento na grade), ferramentas e céu."""
+    from hammertools.core import geom
+    planes: dict[tuple, list] = {}
+    for solid in list(v.brushes) + [s for e in v.entities for s in e.solids]:
+        if any(sd.is_disp for sd in solid.sides):
+            continue
+        for sd, poly in geom.face_polys(solid):
+            mat = sd.mat.lower().replace("\\", "/")
+            if len(poly) < 3 or mat.startswith(ALIGN_SKIP):
+                continue
+            n, p = geom.outward(sd)
+            key = (mat, round(n.x, 3), round(n.y, 3), round(n.z, 3), round(n.dot(p), 1))
+            planes.setdefault(key, []).append((sd, poly, n, solid.id))
+    groups = []
+    for (mat, *_), faces in planes.items():
+        if len(faces) < 2 or len({_uv_key(f[0]) for f in faces}) < 2:
+            continue
+        n = faces[0][2]
+        a = Vec(1, 0, 0) if abs(n.x) < 0.9 else Vec(0, 1, 0)
+        u = Vec.cross(n, a).norm()
+        w = Vec.cross(n, u).norm()
+        boxes = []
+        for _, poly, _, _ in faces:
+            us = [q.dot(u) for q in poly]
+            ws = [q.dot(w) for q in poly]
+            boxes.append((min(us), max(us), min(ws), max(ws)))
+        parent = list(range(len(faces)))
+
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+        # vizinhas pela caixa no plano (faces de brush no mesmo plano são quase sempre retângulos alinhados)
+        order = sorted(range(len(faces)), key=lambda i: boxes[i][0])
+        for k, i in enumerate(order):
+            bi = boxes[i]
+            for j in order[k + 1:]:
+                bj = boxes[j]
+                if bj[0] > bi[1] + touch:
+                    break
+                ou = min(bi[1], bj[1]) - max(bi[0], bj[0])
+                ow = min(bi[3], bj[3]) - max(bi[2], bj[2])
+                if ou >= -touch and ow >= -touch and max(ou, ow) > 1:
+                    parent[find(i)] = find(j)
+        comps: dict[int, list[int]] = {}
+        for i in range(len(faces)):
+            comps.setdefault(find(i), []).append(i)
+        for idx in comps.values():
+            area: dict[tuple, float] = {}
+            for i in idx:
+                area[_uv_key(faces[i][0])] = area.get(_uv_key(faces[i][0]), 0) + _poly_area(faces[i][1])
+            if len(area) < 2:
+                continue
+            best = max(area, key=area.get)
+            ref = next(faces[i][0] for i in idx if _uv_key(faces[i][0]) == best)
+            odd_i = [i for i in idx if _uv_key(faces[i][0]) != best]
+            center = sum((geom.centroid(faces[i][1]) for i in idx), Vec()) / len(idx)
+            # sugestão: face grande (os dois lados >= ALIGN_MIN) girada ou em outra escala; deslocamento sozinho e
+            # face estreita costumam ser de propósito (friso, degrau, faixa encaixada na borda)
+            big = any(min(boxes[i][1] - boxes[i][0], boxes[i][3] - boxes[i][2]) >= ALIGN_MIN
+                      and _rot_key(faces[i][0]) != _rot_key(ref) for i in odd_i)
+            groups.append({"material": mat, "ref": ref, "odd": [faces[i][0] for i in odd_i], "faces": len(idx),
+                           "alignments": len(area), "area_odd": sum(a for k, a in area.items() if k != best),
+                           "center": center, "suggested": big, "solids": sorted({faces[i][3] for i in idx})})
+    return groups
+
+
+def align_textures(v: VMF, materials: set[str] | None = None, groups: list[dict] | None = None) -> list[dict]:
+    """Copia o alinhamento de maior área para as faces que destoam em cada grupo de misaligned_textures (eixos,
+    escala e deslocamento: a textura passa a ser contínua). O lightmapscale de cada face fica. materials: só esses
+    (None = todos). Devolve os grupos alinhados."""
+    groups = [g for g in (misaligned_textures(v) if groups is None else groups) if materials is None or g["material"] in materials]
+    for g in groups:
+        ref = g["ref"]
+        for sd in g["odd"]:
+            sd.uaxis = ref.uaxis.copy()
+            sd.vaxis = ref.vaxis.copy()
+    return groups
+
+
+def align_config(src: Path) -> Path:
+    """Decisões de alinhamento do mapa, ao lado do VMF fonte: {"alinhar": [materiais], "ignorar": [materiais]}."""
+    return src.with_suffix(".align.json")
+
+
+def _read_align(path: Path) -> tuple[set[str], set[str]]:
+    import json
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set(), set()
+    low = lambda xs: {str(x).lower().replace("\\", "/") for x in xs or []}
+    return low(d.get("alinhar")), low(d.get("ignorar"))
+
+
+def resolve_alignment(v: VMF, src: Path, log=print, ask: bool = False, poll: float = 0.3) -> list[dict]:
+    """Alinha só os materiais que o usuário escolheu (<mapa>.align.json). Se há material sugerido (face grande
+    girada) ainda sem decisão: com ask (o EchoHammer compilando, HT_ALIGN_ASK=1) grava o pedido em
+    <mapa>.align.pendente.json, imprime "ht-vbsp: PAUSA alinhamento: <pedido>" e espera a resposta em
+    <mapa>.align.resposta.json ({"alinhar": [...], "ignorar": [...]}), que entra nas decisões guardadas; sem ask,
+    só avisa. Devolve os grupos alinhados."""
+    import json
+    import time
+    cfg = align_config(src)
+    groups = misaligned_textures(v)
+    yes, no = _read_align(cfg)
+    by_mat: dict[str, list[dict]] = {}
+    for g in groups:
+        by_mat.setdefault(g["material"], []).append(g)
+    undecided = {m: gs for m, gs in by_mat.items() if m not in yes and m not in no}
+    suggested = sorted((m for m, gs in undecided.items() if any(g["suggested"] for g in gs)),
+                       key=lambda m: -sum(g["area_odd"] for g in undecided[m]))
+    if suggested and ask:
+        pend = src.with_suffix(".align.pendente.json")
+        resp = src.with_suffix(".align.resposta.json")
+        resp.unlink(missing_ok=True)
+        others = sorted((m for m in undecided if m not in suggested), key=lambda m: -sum(g["area_odd"] for g in undecided[m]))[:60]
+        items = []
+        for m in suggested + others:
+            gs = sorted(undecided[m], key=lambda g: -g["area_odd"])
+            c = gs[0]["center"]
+            items.append({"material": m, "sugerido": m in suggested, "superficies": len(gs),
+                          "faces": sum(len(g["odd"]) for g in gs), "area": round(sum(g["area_odd"] for g in gs)),
+                          "centro": [round(c.x, 1), round(c.y, 1), round(c.z, 1)],
+                          "solids": gs[0]["solids"][:200]})
+        pend.write_text(json.dumps({"mapa": src.stem, "decisoes": str(cfg), "resposta": str(resp), "materiais": items},
+                                   ensure_ascii=False, indent=1), encoding="utf-8")
+        log(f"ht-vbsp: {len(suggested)} material(is) com faces grandes de textura girada esperando decisão "
+            f"(alinhar ou deixar): " + ", ".join(suggested[:8]))
+        log(f"ht-vbsp: PAUSA alinhamento: {pend}")
+        while not resp.exists():
+            time.sleep(poll)
+        time.sleep(poll)       # quem responde termina de gravar
+        a, i = _read_align(resp)
+        resp.unlink(missing_ok=True)
+        pend.unlink(missing_ok=True)
+        yes |= a
+        no |= i - a
+        cfg.write_text(json.dumps({"alinhar": sorted(yes), "ignorar": sorted(no)}, ensure_ascii=False, indent=1), encoding="utf-8")
+        log(f"ht-vbsp: alinhamento decidido: {len(a)} material(is) alinhado(s), {len(i - a)} deixado(s) como estão "
+            f"(guardado em {cfg.name})")
+    elif suggested:
+        log(f"ht-vbsp: aviso: {len(suggested)} material(is) com faces grandes de textura girada (retângulos de tom "
+            f"diferente no jogo): " + ", ".join(suggested[:8]) + f". Para alinhar, liste em {cfg.name} "
+            f'("alinhar": [...]) ou compile pelo F9 do EchoHammer, que pergunta')
+    return align_textures(v, yes, groups) if yes else []
+
+
 def autofix_build(out: Path, gamedir: Path | None, map_stem: str, log=print) -> int:
     """Consertos seguros que o ht-vbsp aplica sozinho no build/ (o fonte não muda), para o lint não só avisar:
     - material de modelo em brush vira uma cópia LightmappedGeneric (com lightmap; antes a luz mudava com a distância,
       canteiro do rp_surdonoso), na pasta de materiais gerados do mapa, que o pack embute no BSP;
     - entidade de brush com angles diferente de zero fica com 0 0 0 (o jogo girava o modelo e o Hammer não mostra);
     - face de hint quase coplanar a uma parede encosta nela (senão o vão que o hint atravessa vira parede no jogo);
-    - areaportal ligado a uma porta que não cobre o vão fica sempre aberto (senão a fresta mostra o céu).
+    - areaportal ligado a uma porta que não cobre o vão fica sempre aberto (senão a fresta mostra o céu);
+    - faces vizinhas no mesmo plano e material com alinhamento de textura diferente ficam com o da maior área
+      (senão viram retângulos de tom diferente), só nos materiais escolhidos em <mapa>.align.json; o EchoHammer
+      pausa a compilação para perguntar (resolve_alignment; HT_NO_ALIGN=1 desliga).
     Devolve quantos consertos (faces + entidades)."""
     from hammertools import autoprop
     from hammertools.core import vmf as vmfio
@@ -267,6 +448,15 @@ def autofix_build(out: Path, gamedir: Path | None, map_stem: str, log=print) -> 
         total += len(turned)
         log(f"ht-vbsp: conserto automático: {len(turned)} entidade(s) de brush com angles zerados (o jogo girava o modelo "
             f"e o Hammer mostra sem girar): " + ", ".join(f"{n} ({a})" for n, a in turned))
+    if os.environ.get("HT_NO_ALIGN") != "1":
+        aligned = resolve_alignment(v, out.parent.parent / f"{out.stem}.vmf", log, ask=os.environ.get("HT_ALIGN_ASK") == "1")
+        if aligned:
+            nf = sum(len(g["odd"]) for g in aligned)
+            total += nf
+            mats = sorted({g["material"] for g in aligned})
+            log(f"ht-vbsp: conserto automático: {nf} face(s) em {len(aligned)} superfície(s) com a textura alinhada à "
+                f"vizinha (mesmo plano e material com rotação/escala/deslocamento diferente viravam retângulos de tom "
+                f"diferente): " + ", ".join(mats[:8]) + (f" e mais {len(mats) - 8}" if len(mats) > 8 else ""))
     res = lint.Resources.from_game(str(gamedir), None, ()) if gamedir is not None else None
     if res is not None and res.read is not None:
         prefix = f"models/{autoprop.MODEL_DIR}/{autoprop.safe(map_stem)}/lm"

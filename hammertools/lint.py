@@ -34,7 +34,7 @@ from hammertools.core import geom
 from hammertools.core import vmf as vmfio
 
 MAX_EXAMPLES = 5
-ALL_CHECKS = ("markers", "outputs", "logic", "extents", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid", "tjunctions", "phantom", "lightstyles", "perf")
+ALL_CHECKS = ("markers", "outputs", "logic", "extents", "textures", "models", "leak", "nodraw", "duplicates", "overlaps", "grid", "tjunctions", "phantom", "lightstyles", "align", "perf")
 
 # texturas de ferramenta que NÃO selam o mapa (brush com qualquer face dessas não conta pro selo)
 NONSEAL_TOOLS = {
@@ -498,6 +498,18 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
 
     if "tjunctions" in checks:
         _tjunctions(v, rep)
+
+    if "align" in checks:
+        from hammertools.fix import misaligned_textures
+        mis = misaligned_textures(v)
+        rep.stats["superfícies com textura desalinhada"] = len(mis)
+        for g in sorted(mis, key=lambda g: -g["area_odd"]):
+            rep.add("aviso" if g["suggested"] else "info", "align",
+                    f"{g['material']}: {len(g['odd'])} de {g['faces']} face(s) vizinhas no mesmo plano com outro alinhamento "
+                    f"de textura ({g['alignments']} alinhamentos, ~{g['area_odd']:.0f}u² fora): no jogo vira retângulo de tom "
+                    f"diferente com borda reta" + (" (face grande girada: sugerido alinhar)" if g["suggested"] else "")
+                    + "; o ht-vbsp alinha no build/ os materiais listados em <mapa>.align.json (o F9 do EchoHammer pergunta)",
+                    g["center"], group=g["material"], name=g["material"])
 
     if "perf" in checks:
         _prop_fades(v, res, rep)
@@ -1600,7 +1612,7 @@ def apply_tjfix(rep: Report, fix: dict, stale: bool = False) -> None:
 LABELS = {
     "markers": "marcadores incompletos", "outputs": "outputs órfãos", "textures": "texturas inexistentes",
     "models": "modelos", "leak": "leak", "nodraw": "nodraw visível", "duplicates": "brushes duplicados",
-    "logic": "lógica de entidades", "extents": "fora do limite de coordenadas", "perf": "desempenho", "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions", "phantom": "faces fantasma/vazadas", "lightstyles": "luz com estilo vazada",
+    "logic": "lógica de entidades", "extents": "fora do limite de coordenadas", "perf": "desempenho", "overlaps": "brushes sobrepostos", "grid": "fora do grid", "tjunctions": "t-junctions", "phantom": "faces fantasma/vazadas", "lightstyles": "luz com estilo vazada", "align": "textura desalinhada",
 }
 
 

@@ -208,12 +208,45 @@ def snap_hint_planes(v: VMF) -> list[tuple[int, float]]:
     return out
 
 
+def open_uncovered_areaportals(v: VMF, tol: float = 1.0) -> list[str]:
+    """func_areaportal ligado a uma porta (target) que, fechada, não cobre a abertura do portal: com o portal fechado
+    o motor não desenha a área de trás, e pela fresta entre a porta e o vão aparece o céu (portão do rp_surdonoso:
+    portão 300×144 num vão 316×160). Mapas que vazam nunca mostram isso (o vbsp desliga os areaportais); fechado o
+    leak, aparece. Deixa o portal sempre aberto (sem target, StartOpen 1): a vista fica igual à do mapa vazando.
+    Compara as caixas no plano do portal (o eixo fino da caixa do portal é a normal). Devolve os nomes das portas."""
+    doors: dict[str, list] = {}
+    for e in v.entities:
+        name = (e["targetname"] or "").lower()
+        if name and e.solids and e["classname"].lower().startswith(("func_door", "prop_door", "func_movelinear")):
+            doors.setdefault(name, []).extend(s.get_bbox() for s in e.solids)
+    out = []
+    for e in v.entities:
+        if e["classname"].lower() != "func_areaportal" or not e["target"] or not e.solids:
+            continue
+        boxes = doors.get(e["target"].lower())
+        if not boxes:
+            continue        # porta de modelo (prop_door) ou nome em outra entidade: não dá para medir
+        plo = [min(s.get_bbox()[0][i] for s in e.solids) for i in range(3)]
+        phi = [max(s.get_bbox()[1][i] for s in e.solids) for i in range(3)]
+        thin = min(range(3), key=lambda i: phi[i] - plo[i])
+        axes = [i for i in range(3) if i != thin]
+        dlo = [min(b[0][i] for b in boxes) for i in range(3)]
+        dhi = [max(b[1][i] for b in boxes) for i in range(3)]
+        if all(dlo[i] <= plo[i] + tol and dhi[i] >= phi[i] - tol for i in axes):
+            continue
+        out.append(e["target"])
+        e["target"] = ""
+        e["StartOpen"] = "1"
+    return out
+
+
 def autofix_build(out: Path, gamedir: Path | None, map_stem: str, log=print) -> int:
     """Consertos seguros que o ht-vbsp aplica sozinho no build/ (o fonte não muda), para o lint não só avisar:
     - material de modelo em brush vira uma cópia LightmappedGeneric (com lightmap; antes a luz mudava com a distância,
       canteiro do rp_surdonoso), na pasta de materiais gerados do mapa, que o pack embute no BSP;
     - entidade de brush com angles diferente de zero fica com 0 0 0 (o jogo girava o modelo e o Hammer não mostra);
-    - face de hint quase coplanar a uma parede encosta nela (senão o vão que o hint atravessa vira parede no jogo).
+    - face de hint quase coplanar a uma parede encosta nela (senão o vão que o hint atravessa vira parede no jogo);
+    - areaportal ligado a uma porta que não cobre o vão fica sempre aberto (senão a fresta mostra o céu).
     Devolve quantos consertos (faces + entidades)."""
     from hammertools import autoprop
     from hammertools.core import vmf as vmfio
@@ -224,6 +257,11 @@ def autofix_build(out: Path, gamedir: Path | None, map_stem: str, log=print) -> 
         total += len(snapped)
         log(f"ht-vbsp: conserto automático: {len(snapped)} face(s) de hint encostada(s) na parede vizinha (a menos de "
             f"{HINT_SNAP} u dela, o vbsp fechava o vão como sólido): brushes " + ", ".join(sorted({str(i) for i, _ in snapped})))
+    opened = open_uncovered_areaportals(v)
+    if opened:
+        total += len(opened)
+        log(f"ht-vbsp: conserto automático: {len(opened)} areaportal(is) sempre aberto(s): a porta ligada não cobre o vão "
+            f"e, fechada, deixava ver o céu pela fresta: " + ", ".join(opened))
     turned = brush_angles(v)
     if turned:
         total += len(turned)

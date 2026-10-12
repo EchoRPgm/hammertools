@@ -18,3 +18,27 @@ def test_snap_hint_planes_aligns_near_coplanar_hint():
     assert {round(p.y, 3) for p in hint.south.planes} == {-4842}
     assert {round(p.y, 3) for p in hint.north.planes} == {-4832}
     assert far.get_bbox()[1].y == 64.3
+
+
+def test_open_uncovered_areaportals_only_when_door_leaves_a_gap():
+    from srctools import VMF, Vec, Entity
+    from hammertools import fix
+    v = VMF()
+
+    def door(name, lo, hi):
+        e = Entity(v, {"classname": "func_door", "targetname": name})
+        e.solids.append(v.make_prism(Vec(*lo), Vec(*hi), "metal/door").solid)
+        v.add_ent(e)
+
+    def portal(target, lo, hi):
+        e = Entity(v, {"classname": "func_areaportal", "target": target, "StartOpen": "0"})
+        e.solids.append(v.make_prism(Vec(*lo), Vec(*hi), "tools/toolsareaportal").solid)
+        v.add_ent(e)
+        return e
+    door("portao", (-562, -4127, -320), (-262, -4125, -176))        # 300×144 num vão 316×160
+    gap = portal("portao", (-570, -4127, -328), (-254, -4125, -168))
+    door("cheia", (0, 0, 0), (128, 2, 128))
+    ok = portal("cheia", (0, 0, 0), (128, 2, 128))
+    assert fix.open_uncovered_areaportals(v) == ["portao"]
+    assert gap["target"] == "" and gap["StartOpen"] == "1"
+    assert ok["target"] == "cheia" and ok["StartOpen"] == "0"

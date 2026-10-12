@@ -30,12 +30,20 @@ VTF_PARAMS = {  # parâmetros de .vmt que apontam pra textura (.vtf)
     "$hdrcompressedtexture", "$hdrcompressedtexture0", "$hdrcompressedtexture1", "$hdrcompressedtexture2", "$envmap",
 }
 VMT_PARAMS = {"$fallbackmaterial", "$bottommaterial", "$underwateroverlay"}  # apontam pra outro .vmt
-MODEL_EXTS = (".mdl", ".vvd", ".dx90.vtx", ".dx80.vtx", ".sw.vtx", ".vtx", ".phy", ".ani")
+# o GMod só lê o .dx90.vtx (o .dx80.vtx e o .sw.vtx ficam no disco à toa)
+MODEL_EXTS = (".mdl", ".vvd", ".dx90.vtx", ".phy", ".ani")
 SKY_SUFFIXES = ("up", "dn", "lf", "rt", "ft", "bk")
 
 
 def norm(p: str) -> str:
     return p.replace("\\", "/").lower().lstrip("/")
+
+
+def mat_name(p: str) -> str:
+    """Nome de material como o motor procura: materials/<nome>.vmt, com o nome como o mapa escreve. Um nome que já
+    começa com "materials/" vira materials/materials/... de verdade (o motor não tira o prefixo; os arquivos desses
+    materiais existem nesse caminho duplo)."""
+    return re.sub(r"\.vmt$", "", norm(p))
 
 
 # --------------------------------------------------------------------------- fontes
@@ -121,16 +129,21 @@ def vmf_roots(v: VMF) -> tuple[set[str], set[str], set[str]]:
     mats, models, sounds = set(), set(), set()
     for s in v.brushes:
         for side in s.sides:
-            mats.add(norm(side.mat))
+            mats.add(mat_name(side.mat))
     for e in v.entities:
         for s in e.solids:
             for side in s.sides:
-                mats.add(norm(side.mat))
+                mats.add(mat_name(side.mat))
         cls = e["classname"]
-        if cls in ("info_overlay", "info_overlay_transition") and e.get("material"):
-            mats.add(norm(e["material"]))
-        if cls in ("infodecal", "info_projecteddecal") and e.get("texture"):
-            mats.add(norm(e["texture"]))
+        # chaves de entidade que apontam para material: overlay ("material"), decal ("texture"), corda
+        # ("ropematerial"), textura projetada ("texturename"), e o "material" genérico de várias entidades
+        for key in ("material", "texture", "ropematerial"):
+            val = e.get(key, "")
+            # algumas entidades usam "material"/"texture" para números (tipo de material de quebra etc.)
+            if val and not re.fullmatch(r"[-\d.\s]+", val) and not val.lower().endswith((".mdl", ".wav", ".mp3")):
+                mats.add(mat_name(val))
+        if e.get("texturename"):
+            mats.add(mat_name(e["texturename"]))
         if cls == "env_sprite" and e.get("model", "").lower().endswith((".vmt", ".spr")):
             mats.add(norm(re.sub(r"^materials/", "", e["model"], flags=re.I).rsplit(".", 1)[0]))
         for k, val in e.items():
@@ -138,6 +151,8 @@ def vmf_roots(v: VMF) -> tuple[set[str], set[str], set[str]]:
                 models.add(norm(val))
         if cls == "ambient_generic" and re.search(r"\.(wav|mp3|ogg)$", e.get("message", ""), re.I):
             sounds.add("sound/" + norm(e["message"].lstrip("*#@<>^)(}$!?")))
+    if v.spawn.get("detailmaterial"):
+        mats.add(mat_name(v.spawn["detailmaterial"]))
     sky = v.spawn.get("skyname", "")
     if sky:
         for suf in SKY_SUFFIXES:
@@ -163,6 +178,29 @@ def vmt_deps(text: str) -> tuple[set[str], set[str]]:
         elif key in VTF_PARAMS and not re.fullmatch(r"[\d.\-\s\[\]]+", val):
             vtfs.add(re.sub(r"\.vtf$", "", re.sub(r"^materials/", "", val)))
     return vtfs, vmts
+
+
+def mdl_extra_models(data: bytes) -> list[str]:
+    """Modelos que um .mdl puxa: gibs de prop quebrável (keyvalues "break" { "model" ... }) e $includemodels."""
+    if len(data) < 344 or data[:4] != b"IDST":
+        return []
+    rd = lambda o: struct.unpack_from("<i", data, o)[0]
+    out = []
+    kv_i, kv_n = rd(312), rd(316)
+    if 0 < kv_i < len(data) and 0 < kv_n <= len(data) - kv_i:
+        text = data[kv_i:kv_i + kv_n].decode("latin-1", "replace")
+        out += [norm(m) for m in re.findall(r'"model"\s+"([^"]+\.mdl)"', text, re.I)]
+    n_inc, inc_i = rd(336), rd(340)
+    for k in range(max(0, min(n_inc, 64))):
+        base = inc_i + 8 * k
+        if base + 8 > len(data):
+            break
+        off = base + rd(base + 4)
+        end = data.find(b"\0", off)
+        if 0 <= off < len(data) and end > off:
+            name = norm(data[off:end].decode("latin-1"))
+            out.append(name if name.startswith("models/") else "models/" + name)
+    return out
 
 
 def mdl_textures(data: bytes) -> list[str]:
@@ -226,6 +264,7 @@ def resolve(v: VMF, game_has: Callable[[str], bool], game_read: Callable[[str], 
         return data
 
     def material(m: str, root: str):
+        m = mat_name(m)
         data = take(f"materials/{m}.vmt", True, root)
         if data is None:
             return
@@ -237,16 +276,25 @@ def resolve(v: VMF, game_has: Callable[[str], bool], game_read: Callable[[str], 
 
     for m in sorted(mats):
         material(m, m)
-    for mdl in sorted(models):
+    queue = sorted(models)
+    while queue:
+        mdl = queue.pop(0)
+        if mdl in seen:
+            continue
+        from_game = game_has(mdl)
         data = take(mdl, True, mdl)
         base = mdl[:-4]
-        for ext in MODEL_EXTS[1:]:
-            take(base + ext, False, mdl)
+        # .mdl do jogo: os irmãos também são os do jogo. Copiar .vtx/.phy de uma fonte junto do .mdl de outra
+        # versão dá "Error Vertex File ... checksum" no jogo
+        if not from_game:
+            for ext in MODEL_EXTS[1:]:
+                take(base + ext, False, mdl)
         if data:
             for mt in mdl_textures(data):
                 if not any(game_has(f"materials/{mt}.vmt") or s.has(f"materials/{mt}.vmt") for s in sources):
                     continue  # cdmaterials testa várias pastas; só a que existe vale
                 material(mt, mdl)
+            queue += [m for m in mdl_extra_models(data) if m not in seen]
     for snd in sorted(sounds):
         take(snd, True, snd)
     res.copy = {k: v for k, v in res.copy.items()}

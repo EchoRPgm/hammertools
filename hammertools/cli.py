@@ -215,25 +215,18 @@ def cmd_content(args) -> int:
 
     sources: list = []
     if args.base_only:
-        # para versionar/compartilhar o mapa (Git do EchoHammer): só os VPKs do jogo base contam como "o jogo tem";
-        # o que vem de addons, workshop e arquivos soltos é copiado (quem clonar não tem os mesmos addons)
-        from srctools.filesys import VPKFileSystem
-        # o arquivo achado pela cadeia aponta pra cadeia, não pro VPK de onde veio: consulta cada VPK montado
-        vpks = [x for x in ((s[0] if isinstance(s, tuple) else s) for s in fs.systems) if isinstance(x, VPKFileSystem)]
+        # para versionar/compartilhar o mapa (Git do EchoHammer): só os VPKs do GMod base (garrysmod/ e sourceengine/)
+        # contam como "o jogador tem"; o que vem de addons, workshop, arquivos soltos e jogos montáveis (CS:S...) é
+        # copiado: quem entra no servidor não tem os mesmos addons nem o CS:S montado
+        from hammertools import pack
+        base_has, _ = pack.base_filesystem(gd, mount=False)
 
-        def in_vpk(p):
-            p = content.norm(p)
-            for vpk in vpks:
-                try:
-                    vpk[p]
-                    return True
-                except FileNotFoundError:
-                    pass
-            return False
+        def in_base(p):
+            return bool(base_has(content.norm(p)))
         installed_has = game_has
-        sources.append(content.Source("addons e arquivos soltos do jogo", lambda p: installed_has(p) and not in_vpk(p),
+        sources.append(content.Source("addons, jogos montáveis e arquivos soltos", lambda p: installed_has(p) and not in_base(p),
                                       lambda p: game_read(p) or b""))
-        game_has = in_vpk
+        game_has = in_base
     for b in args.bsp or []:
         sources.append(content.source_bsp(Path(b)))
     for d in args.extra or []:
@@ -625,7 +618,7 @@ def main(argv=None) -> int:
     p.add_argument("--clean", action="store_true", help="apaga a pasta de saída antes de gravar")
     p.add_argument("--dry-run", action="store_true", help="só lista, não grava")
     p.add_argument("--base-only", action="store_true",
-                   help="só o jogo base (VPKs) conta como instalado: copia também o que vem de addons/workshop (para versionar o mapa)")
+                   help="só o GMod base (VPKs de garrysmod/ e sourceengine/) conta como instalado: copia também o que vem de addons, workshop e jogos montáveis como o CS:S (conteúdo do jogador)")
     p.add_argument("--max", type=int, default=30)
     p.set_defaults(fn=cmd_content)
     p = sub.add_parser("rename", help="renomeia entidades por regex e atualiza outputs e keyvalues que apontam pra elas")

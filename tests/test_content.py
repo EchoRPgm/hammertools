@@ -78,3 +78,65 @@ def test_write(tmp_path):
     res = content.Result(copy={"materials/a/b.vmt": "teste"})
     assert content.write(res, [src], tmp_path / "out", "m content") == 1
     assert (tmp_path / "out/materials/a/b.vmt").read_bytes() == b"x" and (tmp_path / "out/addon.json").exists()
+
+
+def _mdl_extra(gibs, includes):
+    """studiohdr_t com keyvalues (break → model) e $includemodels."""
+    head = bytearray(344)
+    head[:4] = b"IDST"
+    kv = ('mdlkeyvalue { prop_data { "base" "Wooden.Small" } '
+          + " ".join('break { "model" "%s" "health" "1" }' % g for g in gibs) + " }").encode()
+    kv_i = len(head)
+    inc_i = kv_i + len(kv)
+    table = bytearray(8 * len(includes))
+    strings = bytearray()
+    base = inc_i + len(table)
+    for k, name in enumerate(includes):
+        struct.pack_into("<ii", table, 8 * k, 0, base + len(strings) - (inc_i + 8 * k))
+        strings += name.encode() + b"\0"
+    struct.pack_into("<ii", head, 312, kv_i, len(kv))
+    struct.pack_into("<ii", head, 336, len(includes), inc_i)
+    return bytes(head + kv + table + strings)
+
+
+def test_mdl_extra_models_gibs_and_includes():
+    data = _mdl_extra(["models/gibs/wood_gib01a.mdl", "Models\\Gibs\\Wood_Gib01b.mdl"], ["humans/male_shared.mdl"])
+    assert content.mdl_extra_models(data) == ["models/gibs/wood_gib01a.mdl", "models/gibs/wood_gib01b.mdl",
+                                              "models/humans/male_shared.mdl"]
+
+
+def _fonte(files: dict):
+    return content.Source("fonte", lambda p: p in files, lambda p: files[p])
+
+
+def test_model_from_game_does_not_copy_stale_siblings():
+    # o .mdl é do jogo base; restos antigos de .vtx/.phy numa fonte não podem vir junto
+    v = VMF()
+    from srctools import Entity
+    v.add_ent(Entity(v, {"classname": "prop_static", "model": "models/props_c17/oildrum001.mdl", "origin": "0 0 0"}))
+    files = {"models/props_c17/oildrum001.dx90.vtx": b"x", "models/props_c17/oildrum001.phy": b"x"}
+    game = {"models/props_c17/oildrum001.mdl"}
+    res = content.resolve(v, lambda p: p in game, lambda p: None, [_fonte(files)])
+    assert res.copy == {}
+
+
+def test_own_model_copies_only_files_gmod_reads():
+    from srctools import Entity
+    v = VMF()
+    v.add_ent(Entity(v, {"classname": "prop_static", "model": "models/eu/caixa.mdl", "origin": "0 0 0"}))
+    files = {f"models/eu/caixa{ext}": b"x" for ext in (".mdl", ".vvd", ".dx90.vtx", ".dx80.vtx", ".sw.vtx", ".phy")}
+    res = content.resolve(v, lambda p: False, lambda p: None, [_fonte(files)])
+    assert set(res.copy) == {"models/eu/caixa.mdl", "models/eu/caixa.vvd", "models/eu/caixa.dx90.vtx", "models/eu/caixa.phy"}
+
+
+def test_entity_material_keys_and_prefix():
+    from srctools import Entity
+    v = VMF()
+    v.spawn["detailmaterial"] = "detail/detailsprites"
+    v.add_ent(Entity(v, {"classname": "infodecal", "texture": "decals/grafite.vmt", "origin": "0 0 0"}))
+    v.add_ent(Entity(v, {"classname": "func_breakable", "material": "2", "origin": "0 0 0"}))
+    v.add_ent(Entity(v, {"classname": "move_rope", "ropematerial": "cable/cable2", "origin": "0 0 0"}))
+    v.add_ent(Entity(v, {"classname": "env_projectedtexture", "texturename": "effects/flashlight001", "origin": "0 0 0"}))
+    mats, _, _ = content.vmf_roots(v)
+    assert {"decals/grafite", "cable/cable2", "effects/flashlight001", "detail/detailsprites"} <= mats
+    assert "2" not in mats

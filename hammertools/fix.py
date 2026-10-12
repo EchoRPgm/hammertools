@@ -156,16 +156,74 @@ def brush_angles(v: VMF) -> list[tuple[str, str]]:
     return out
 
 
+HINT_MATS = {"tools/toolshint", "tools/toolsskip"}
+HINT_SNAP = 0.5     # face de hint a menos disso de uma face estrutural paralela é encostada nela
+
+
+def snap_hint_planes(v: VMF) -> list[tuple[int, float]]:
+    """Brush de hint com face quase coplanar (0 < distância < 0,5 u) a uma face estrutural paralela: o vbsp corta
+    fatias finíssimas entre os dois planos, descarta os portais delas e, com o mapa sem leak, o FillOutside enche de
+    sólido o que nenhuma entidade alcança — o vão de porta que o hint atravessa vira parede no jogo (celas do
+    rp_surdonoso, hint 0,05 u fora do alinhamento das paredes). Encosta a face do hint no plano da parede.
+    Só faces retas (normal num eixo); devolve [(id do brush, deslocamento)]."""
+    def axial(side):
+        n = side.normal()
+        for ax in range(3):
+            if abs(abs(n[ax]) - 1) < 1e-6:
+                return ax, side.planes[0][ax]
+        return None
+
+    structural = []
+    for b in v.brushes:
+        if all(sd.mat.lower() in HINT_MATS for sd in b.sides):
+            continue
+        lo, hi = b.get_bbox()
+        planes = [a for a in (axial(sd) for sd in b.sides) if a]
+        structural.append((lo, hi, planes))
+    out = []
+    for b in v.brushes:
+        if not all(sd.mat.lower() in HINT_MATS for sd in b.sides):
+            continue
+        lo, hi = b.get_bbox()
+        near = [pl for slo, shi, pls in structural
+                if all(slo[i] <= hi[i] + 1 and shi[i] >= lo[i] - 1 for i in range(3)) for pl in pls]
+        for sd in b.sides:
+            a = axial(sd)
+            if not a:
+                continue
+            ax, c = a
+            best = None
+            for ax2, c2 in near:
+                d = c2 - c
+                if ax2 == ax and 1e-4 < abs(d) < HINT_SNAP and (best is None or abs(d) < abs(best)):
+                    best = d
+            if best is None:
+                continue
+            for pt in sd.planes:
+                pt[ax] += best
+            # vértices de precisão (vertices_plus do Hammer++) acompanham o plano
+            for pt in (getattr(sd, "strata_points", None) or []):
+                pt[ax] += best
+            out.append((b.id, round(best, 4)))
+    return out
+
+
 def autofix_build(out: Path, gamedir: Path | None, map_stem: str, log=print) -> int:
     """Consertos seguros que o ht-vbsp aplica sozinho no build/ (o fonte não muda), para o lint não só avisar:
     - material de modelo em brush vira uma cópia LightmappedGeneric (com lightmap; antes a luz mudava com a distância,
       canteiro do rp_surdonoso), na pasta de materiais gerados do mapa, que o pack embute no BSP;
-    - entidade de brush com angles diferente de zero fica com 0 0 0 (o jogo girava o modelo e o Hammer não mostra).
+    - entidade de brush com angles diferente de zero fica com 0 0 0 (o jogo girava o modelo e o Hammer não mostra);
+    - face de hint quase coplanar a uma parede encosta nela (senão o vão que o hint atravessa vira parede no jogo).
     Devolve quantos consertos (faces + entidades)."""
     from hammertools import autoprop
     from hammertools.core import vmf as vmfio
     v = vmfio.load(out)
     total = 0
+    snapped = snap_hint_planes(v)
+    if snapped:
+        total += len(snapped)
+        log(f"ht-vbsp: conserto automático: {len(snapped)} face(s) de hint encostada(s) na parede vizinha (a menos de "
+            f"{HINT_SNAP} u dela, o vbsp fechava o vão como sólido): brushes " + ", ".join(sorted({str(i) for i, _ in snapped})))
     turned = brush_angles(v)
     if turned:
         total += len(turned)

@@ -378,7 +378,8 @@ def misaligned_textures(v: VMF, touch: float = 0.5) -> list[dict]:
                       and _rot_key(faces[i][0]) != _rot_key(ref) for i in odd_i)
             groups.append({"material": mat, "ref": ref, "odd": [faces[i][0] for i in odd_i], "faces": len(idx),
                            "alignments": len(area), "area_odd": sum(a for k, a in area.items() if k != best),
-                           "center": center, "suggested": big, "solids": sorted({faces[i][3] for i in idx})})
+                           "center": center, "suggested": big, "solids": sorted({faces[i][3] for i in idx}),
+                           "polys": [(faces[i][0], faces[i][1], faces[i][3]) for i in idx]})
     return groups
 
 

@@ -281,6 +281,7 @@ def report_json(rep: "Report") -> dict:
         "leak_path": [_vec(p) for p in rep.leak_path],
         "ran": sorted(rep.ran),
         "stats": {k: v for k, v in rep.stats.items() if isinstance(v, (int, float, str, bool))},
+        "align": rep.data.get("align", []),
     }
 
 
@@ -503,6 +504,14 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
         from hammertools.fix import misaligned_textures
         mis = misaligned_textures(v)
         rep.stats["superfícies com textura desalinhada"] = len(mis)
+        # para a prévia do EchoHammer: cada face com polígono e eixos de agora; "ref" = o alinhamento que fica
+        uv = lambda a: [round(a.x, 5), round(a.y, 5), round(a.z, 5), round(a.offset, 3), round(a.scale, 5)]
+        rep.data["align"] = [{"material": g["material"], "suggested": g["suggested"], "solids": g["solids"],
+                              "center": _vec(g["center"]), "ref": [uv(g["ref"].uaxis), uv(g["ref"].vaxis)],
+                              "faces": [{"solid": sid, "side": sd.id, "u": uv(sd.uaxis), "v": uv(sd.vaxis),
+                                         "poly": [[round(q.x, 2), round(q.y, 2), round(q.z, 2)] for q in poly]}
+                                        for sd, poly, sid in g["polys"]]}
+                             for g in mis]
         for g in sorted(mis, key=lambda g: -g["area_odd"]):
             rep.add("aviso" if g["suggested"] else "info", "align",
                     f"{g['material']}: {len(g['odd'])} de {g['faces']} face(s) vizinhas no mesmo plano com outro alinhamento "

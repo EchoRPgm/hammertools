@@ -586,6 +586,15 @@ def isolate_prop_light(v: VMF) -> int:
 
 
 # --------------------------------------------------------------------------- aplicar
+def excluded(path: Path) -> set[int]:
+    """Ids de solid que não viram prop: {"nao_converter": [ids]} (grava a aba Props gerados do EchoHammer)."""
+    import json
+    try:
+        return {int(i) for i in json.loads(path.read_text(encoding="utf-8")).get("nao_converter", [])}
+    except (OSError, ValueError, TypeError):
+        return set()
+
+
 def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, vcalib: float = CALIB_VERTS,
           log=print, run=None) -> dict:
     """Converte os grupos escolhidos do build/ (out) em prop_static compilados. Devolve o resumo para o registro."""
@@ -600,6 +609,12 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
     res = lint.Resources.from_game(str(gamedir), None, ())
     mats = Materials(res)
     cands = candidates(v, mats)
+    # o que o usuário não quer como prop (aba Props gerados do EchoHammer): <mapa>.autoprop.json ao lado do fonte
+    keep = excluded(out.parent.parent / f"{out.stem}.autoprop.json")
+    if keep:
+        n0 = len(cands)
+        cands = [(e, s_) for e, s_ in cands if s_.id not in keep]
+        log(f"ht-vbsp: auto-prop: {n0 - len(cands)} solid(s) ficam como detail por escolha ({out.stem}.autoprop.json).")
     chosen, stats = choose(est, cands, calib, vcalib)
     log(f"ht-vbsp: auto-prop: índices ~{stats['idx_est']}, vértices ~{stats['verts_est']} (meta {GOAL:.0%} de {LIMIT}); "
         f"{stats['candidatos']} solids de detail candidatos.")
@@ -616,9 +631,12 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
         f"({todo} para compilar no studiomdl, o resto do cache)...")
     compiled = compile_jobs(jobs, mdl_dir, gamedir, studiomdl, run)
     made = 0
+    props = []
     for cl, origin, name, dirs in jobs:
         if not all(compiled[m] for m, _ in dirs):
             continue                # sem a colisão inteira o grupo fica como detail (prop sem colisão = parede que some)
+        props.append({"model": f"{folder}/{dirs[0][0]}.mdl", "solids": sorted(s_.id for _, s_ in cl.solids),
+                      "origin": [round(origin.x, 1), round(origin.y, 1), round(origin.z, 1)]})
         for e, s_ in cl.solids:
             e.solids.remove(s_)
             if not e.solids:
@@ -643,7 +661,7 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
     if made:
         log("ht-vbsp: auto-prop: o vrad precisa de -StaticPropLighting (o `ht compile` põe sozinho; compilando por fora, "
             "sem isso o prop gerado sai preto). Os outros props ficam com disablevertexlighting e não mudam.")
-    return {"models": made, "falhas": failed, **stats}
+    return {"models": made, "falhas": failed, **stats, "props": props}
 
 
 # --------------------------------------------------------------------------- `ht prop` (Propper do editor)

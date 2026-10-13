@@ -18,6 +18,7 @@ Fluxo (só no build/, o fonte não muda):
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import re
 from collections import Counter, defaultdict
@@ -314,6 +315,40 @@ def content_name(*parts: str) -> str:
     return h.hexdigest()[:12]
 
 
+# lado máximo dos triângulos do modelo visível: a luz é por vértice, e um piso de 192 u com 4 vértices não marca a
+# sombra de um beiral no meio dele (o canto que via o sol clareava o piso inteiro)
+TESS = 48.0
+
+
+def tessellate(poly: list[Vec], step: float = TESS) -> list[tuple[Vec, Vec, Vec]]:
+    """Triângulos de um polígono convexo com lados de até ~`step`: cada aresta dividida em partes iguais (duas faces
+    vizinhas geram os mesmos pontos na aresta comum, sem rachadura) e anéis concêntricos em volta do centro até a
+    borda. Polígono pequeno sai em leque, como antes. Mantém a orientação de `poly`."""
+    n = len(poly)
+    if max((poly[(i + 1) % n] - poly[i]).mag() for i in range(n)) <= step:
+        return [(poly[0], poly[k], poly[k + 1]) for k in range(1, n - 1)]
+    border: list[Vec] = []
+    for i in range(n):
+        a, b = poly[i], poly[(i + 1) % n]
+        parts = max(1, math.ceil((b - a).mag() / step))
+        border.extend(a + (b - a) * (j / parts) for j in range(parts))
+    c = sum(poly, Vec()) / n
+    rings = max(1, math.ceil(max((p - c).mag() for p in border) / step))
+    ring = lambda r: [c + (p - c) * (r / rings) for p in border]
+    m = len(border)
+    tris = []
+    inner = ring(1)
+    for i in range(m):
+        tris.append((c, inner[i], inner[(i + 1) % m]))
+    for r in range(1, rings):
+        a, b = ring(r), ring(r + 1)
+        for i in range(m):
+            j = (i + 1) % m
+            tris.append((a[i], b[i], b[j]))
+            tris.append((a[i], b[j], a[j]))
+    return tris
+
+
 def build_files(cl: Cluster, mats: Materials, map_name: str) -> tuple[Vec, str, dict[str, str], dict[str, str]]:
     """(origem, nome do modelo, arquivos {nome: texto} do SMD/QC, VMTs {nome do material de modelo: texto})."""
     origin = cluster_origin(cl)
@@ -343,9 +378,9 @@ def build_files(cl: Cluster, mats: Materials, map_name: str) -> tuple[Vec, str, 
             w, h = mats.size(mat)
             ua, va = sd.uaxis, sd.vaxis
             rn = _smd(n)
-            for k in range(1, len(loc) - 1):
+            for tri in tessellate(loc):
                 ref.append(mname + "\n")
-                for p in (loc[0], loc[k], loc[k + 1]):
+                for p in tri:
                     wp = p + origin
                     u = (wp.dot(Vec(ua.x, ua.y, ua.z)) / ua.scale + ua.offset) / w
                     vv = (wp.dot(Vec(va.x, va.y, va.z)) / va.scale + va.offset) / h

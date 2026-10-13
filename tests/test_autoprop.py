@@ -259,3 +259,18 @@ def test_cli_prop_writes_new_vmf(room, tmp_path, monkeypatch, capsys):
     assert cli.main(["prop", str(src), "--solids", str(ids[0]), "--game", str(game)]) == 0
     v = vmfio.load(tmp_path / "m_prop.vmf")
     assert len(v.by_class["func_detail"]) == 1 and any("ht_prop" in e["model"] for e in v.by_class["prop_static"])
+
+
+def test_tessellate_divide_faces_grandes_sem_mudar_area_nem_orientacao():
+    from srctools import Vec
+    from hammertools import autoprop
+    quad = [Vec(0, 0, 0), Vec(192, 0, 0), Vec(192, 192, 0), Vec(0, 192, 0)]
+    tris = autoprop.tessellate(quad)
+    area = sum(Vec.cross(b - a, c - a).mag() / 2 for a, b, c in tris)
+    assert abs(area - 192 * 192) < 1e-6
+    assert all(Vec.cross(b - a, c - a).z >= 0 for a, b, c in tris)        # mesma orientação do polígono
+    assert max(max((b - a).mag(), (c - b).mag(), (a - c).mag()) for a, b, c in tris) <= 48 * 1.5
+    pts = {(round(p.x, 3), round(p.y, 3)) for t in tris for p in t}
+    assert (96.0, 0.0) in pts and (48.0, 0.0) in pts                     # aresta dividida em partes iguais
+    small = [Vec(0, 0, 0), Vec(32, 0, 0), Vec(32, 32, 0)]
+    assert autoprop.tessellate(small) == [(small[0], small[1], small[2])]

@@ -222,7 +222,9 @@ def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags:
         if eh is not None:
             samples = BAKE_SAMPLES.get(rad, 256)
             say(f"luz por path tracing (EchoHammer bake, {samples} raios por luxel)")
-            rc, _ = cli._run_streaming([str(eh), "bake", str(bsp), "--samples", str(samples)])
+            # HT_BAKE_SUAVE=1: lotes curtos com pausas na GPU (o PC continua usável durante o bake)
+            suave = ["--suave"] if os.environ.get("HT_BAKE_SUAVE") == "1" else []
+            rc, _ = cli._run_streaming([str(eh), "bake", str(bsp), "--samples", str(samples), *suave])
             if rc != 0:
                 say(f"bake falhou (saída {rc}); refazendo a luz pelo vrad")
                 say("vrad " + " ".join(full_flags))

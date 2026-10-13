@@ -274,3 +274,13 @@ def test_tessellate_divide_faces_grandes_sem_mudar_area_nem_orientacao():
     assert (96.0, 0.0) in pts and (48.0, 0.0) in pts                     # aresta dividida em partes iguais
     small = [Vec(0, 0, 0), Vec(32, 0, 0), Vec(32, 32, 0)]
     assert autoprop.tessellate(small) == [(small[0], small[1], small[2])]
+
+
+def test_excluded_le_nao_converter(tmp_path):
+    from hammertools import autoprop
+    p = tmp_path / "m.autoprop.json"
+    assert autoprop.excluded(p) == set()
+    p.write_text('{"nao_converter": [12, "34"]}')
+    assert autoprop.excluded(p) == {12, 34}
+    p.write_text("lixo")
+    assert autoprop.excluded(p) == set()

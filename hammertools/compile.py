@@ -110,7 +110,8 @@ def rad_args(profile: str, bsp: Path, extra: list[str]) -> list[str]:
 
 def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags: list[str] | None = None,
         vbsp_args: list[str] | None = None, vis_args: list[str] | None = None, rad_args_extra: list[str] | None = None,
-        copy: bool = True, pack: bool = False, use_cache: bool = True, luz: str = "vrad") -> int:
+        copy: bool = True, pack: bool = False, use_cache: bool = True, luz: str = "vrad",
+        bake_args: list[str] | None = None) -> int:
     from hammertools import cli
     vmf = vmf.resolve()
     noext = vmf.with_suffix("")
@@ -154,7 +155,7 @@ def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags:
         else:
             full_flags = flags
             flags = [a for i, a in enumerate(flags) if a != "-bounce" and (i == 0 or flags[i - 1] != "-bounce")] + ["-bounce", "0"]
-            key_flags = [*flags, f"luz:pathtracing:{BAKE_SAMPLES.get(rad, 256)}", bspcache_tool(eh)]
+            key_flags = [*flags, f"luz:pathtracing:{BAKE_SAMPLES.get(rad, 256)}", *(bake_args or []), bspcache_tool(eh)]
     # cache por conteúdo (bspcache): o BSP que o vbsp gerou igual ao de antes no que o vvis/vrad leem = o resultado
     # deles também é igual; volta do cache em vez de rodar (só entidades que ninguém lê mudaram, ou nada mudou)
     from hammertools import bspcache
@@ -223,8 +224,11 @@ def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags:
             samples = BAKE_SAMPLES.get(rad, 256)
             say(f"luz por path tracing (EchoHammer bake, {samples} raios por luxel)")
             # HT_BAKE_SUAVE=1: lotes curtos com pausas na GPU (o PC continua usável durante o bake)
-            suave = ["--suave"] if os.environ.get("HT_BAKE_SUAVE") == "1" else []
-            rc, _ = cli._run_streaming([str(eh), "bake", str(bsp), "--samples", str(samples), *suave])
+            suave = ["--suave"] if os.environ.get("HT_BAKE_SUAVE") == "1" and "--suave" not in (bake_args or []) else []
+            if bake_args:
+                say("opções do bake: " + " ".join(bake_args))
+            # bake_args depois: --samples dele vale sobre o do perfil
+            rc, _ = cli._run_streaming([str(eh), "bake", str(bsp), "--samples", str(samples), *suave, *(bake_args or [])])
             if rc != 0:
                 say(f"bake falhou (saída {rc}); refazendo a luz pelo vrad")
                 say("vrad " + " ".join(full_flags))
@@ -259,7 +263,7 @@ def cmd_compile(args) -> int:
     ht_flags = [f for f in cli.VBSP_FLAGS if getattr(args, f.lstrip("-").replace("-", "_"), False)]
     return run(Path(args.vmf), Path(game), args.vis, args.rad, ht_flags, shlex.split(args.vbsp_args or ""),
                shlex.split(args.vis_args or ""), shlex.split(args.rad_args or ""), not args.no_copy, args.pack,
-               not args.no_cache, args.luz)
+               not args.no_cache, args.luz, shlex.split(args.bake_args or ""))
 
 
 def add_parser(sub) -> None:
@@ -272,6 +276,7 @@ def add_parser(sub) -> None:
                    help="normal; rapido (-bounce 2 -noextra); final (-final -StaticPropLighting -StaticPropPolys -TextureShadows)")
     p.add_argument("--luz", choices=["vrad", "pathtracing"], default="vrad",
                    help="pathtracing: o vrad monta a estrutura e o EchoHammer (echort, GPU) calcula a luz; mesmo custo no jogo")
+    p.add_argument("--bake-args", help="opções do EchoHammer bake com --luz pathtracing (ex.: \"--samples 512 --bounces 4 --suave\")")
     p.add_argument("--vbsp-args", help="argumentos extras do vbsp (entre aspas)")
     p.add_argument("--vis-args", help="argumentos extras do vvis")
     p.add_argument("--rad-args", help="argumentos extras do vrad")

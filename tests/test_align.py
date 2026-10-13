@@ -101,3 +101,14 @@ def test_pausa_espera_resposta_e_guarda(tmp_path):
     _roof(v2)
     fix.resolve_alignment(v2, src, msgs.append, ask=True, poll=0.01)
     assert not any("PAUSA" in m for m in msgs)
+
+
+def test_lint_json_traz_poligonos_e_eixos_para_a_previa():
+    from hammertools import lint
+    v = VMF()
+    _roof(v)
+    out = lint.report_json(lint.run(v, checks=["align"]))
+    (g,) = out["align"]
+    assert g["suggested"] and len(g["faces"]) == 2
+    f = g["faces"][0]
+    assert len(f["u"]) == 5 and len(f["poly"]) >= 3 and len(g["ref"]) == 2

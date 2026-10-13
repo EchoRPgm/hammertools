@@ -461,3 +461,17 @@ def test_compile_pathtracing_without_echohammer_uses_vrad(room, tmp_path, monkey
     vmfio.save(room, src)
     assert htc.run(src, game, vbsp_args=[str(vbsp)], copy=False, use_cache=False, luz="pathtracing") == 0
     assert [line.split()[0] for line in log.read_text().splitlines()] == ["vvis", "vrad"]
+
+
+def test_compile_pathtracing_passes_bake_args(room, tmp_path, monkeypatch):
+    game, log, vbsp = _fake_game(tmp_path)
+    _compile_env(monkeypatch)
+    monkeypatch.setenv("HT_ECHOHAMMER", str(_fake_eh(tmp_path)))
+    src = tmp_path / "mapas" / "m.vmf"
+    src.parent.mkdir()
+    vmfio.save(room, src)
+    assert htc.run(src, game, vbsp_args=[str(vbsp)], copy=False, use_cache=False, luz="pathtracing",
+                   bake_args=["--samples", "512", "--suave"]) == 0
+    bake = next(line for line in log.read_text().splitlines() if line.startswith("bake "))
+    # o do usuário vem depois do perfil (o bake fica com o último --samples)
+    assert bake.index("--samples 256") < bake.index("--samples 512") and bake.endswith("--suave")

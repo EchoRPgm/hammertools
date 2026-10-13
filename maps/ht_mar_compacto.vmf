@@ -1261,9 +1261,13 @@ entity
 entity
 {
 	"id" "3"
-	"classname" "sky_camera"
-	"origin" "-10000 10000 0"
-	"scale" "16"
+	"SunSpreadAngle" "3"
+	"_ambient" "140 170 200 120"
+	"_light" "255 244 225 420"
+	"angles" "-50 35 0"
+	"classname" "light_environment"
+	"origin" "-10000 10000 400"
+	"pitch" "-50"
 	editor
 	{
 		"color" "255 255 255"
@@ -1275,6 +1279,20 @@ entity
 entity
 {
 	"id" "4"
+	"classname" "sky_camera"
+	"origin" "-10000 10000 0"
+	"scale" "16"
+	editor
+	{
+		"color" "255 255 255"
+		"visgroupshown" "1"
+		"visgroupautoshown" "1"
+		"logicalpos" "[0 4]"
+	}
+}
+entity
+{
+	"id" "5"
 	"classname" "env_fog_controller"
 	"fogcolor" "40 92 118"
 	"fogenable" "1"
@@ -1287,12 +1305,12 @@ entity
 		"color" "255 255 255"
 		"visgroupshown" "1"
 		"visgroupautoshown" "1"
-		"logicalpos" "[0 4]"
+		"logicalpos" "[0 5]"
 	}
 }
 entity
 {
-	"id" "5"
+	"id" "6"
 	"SunSpreadAngle" "3"
 	"_ambient" "140 170 200 120"
 	"_light" "255 244 225 420"
@@ -1305,12 +1323,12 @@ entity
 		"color" "255 255 255"
 		"visgroupshown" "1"
 		"visgroupautoshown" "1"
-		"logicalpos" "[0 5]"
+		"logicalpos" "[0 6]"
 	}
 }
 entity
 {
-	"id" "6"
+	"id" "7"
 	"angles" "0 0 0"
 	"classname" "info_player_start"
 	"origin" "800 0 16"
@@ -1319,7 +1337,7 @@ entity
 		"color" "255 255 255"
 		"visgroupshown" "1"
 		"visgroupautoshown" "1"
-		"logicalpos" "[0 6]"
+		"logicalpos" "[0 7]"
 	}
 }
 cameras

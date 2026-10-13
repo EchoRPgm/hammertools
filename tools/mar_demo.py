@@ -6,13 +6,8 @@ Como funciona:
 - a água vai até a borda do mapa jogável; a borda é uma casca selada de tools/toolsskybox2d (céu 2D). O céu 2D
   (sky34) tem o mar até o horizonte na metade de baixo, então a água do mapa encosta no horizonte do céu sem emenda.
 
-Por que não skybox 3D (testado no Goldberg, gmod-gbe-mar):
-- a passagem 3D desenhava uma faixa preta no horizonte por toda parede com tools/toolsskybox (com r_3dsky 0 a faixa
-  some e o horizonte do sky34 fica limpo); trocar textura, tamanho e luz da sala, cubemap, fog e a altura da água
-  dela não tirou a faixa;
-- a água "cara" dentro da sala da skybox 3D sai escura e a água do mapa a reflete escura;
-- fog junto com a sala apagava a água do mapa.
-Sem a sala o mapa fica mais enxuto e não perde nada no mar aberto (não há o que mostrar em paralaxe).
+Variante só com céu 2D (sem skybox 3D). Funciona, mas o mar pintado do sky34 se distingue da água de verdade; a
+variante usada no Surdonoso é a de skybox 3D (mar_demo3d.py / praia_teste.py), com um plano de mar comum na sala.
 
 `python tools/mar_demo.py`
 """

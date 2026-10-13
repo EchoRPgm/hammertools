@@ -7,7 +7,7 @@ Como funciona (a técnica dos mapas de praia do GMod e da Source):
   da água da sala fica na altura do sky_camera. O motor desenha a sala em escala 16 ao redor da origem do jogo, então o
   mar ocupa todo o horizonte: a água da sala fica com a mesma cor e altura da do mapa, sem fim visível;
 - o céu 2D (sky34, mar com horizonte) fica atrás da sala e completa o fundo;
-- um env_fog_controller suaviza a transição entre o mar do mapa e a miniatura, e esconde o limite do mapa.
+- sem fog: o fog junto da sala da skybox 3D fez a água do mapa sumir no teste do Goldberg.
 
 Sem a sala da skybox 3D, o horizonte seria o limite da geometria (ou o céu 2D, que é uma imagem parada).
 
@@ -95,14 +95,9 @@ def build() -> VMF:
     box(v, (-256, -6144, -576), (6144, 6144, -512), CHAO)
     hull(v)
     sala_skybox(v)
-    # fog da skybox 3D: o sky_camera tem o próprio fog (os mapas padrão do GMod definem fogenable/fogstart/fogend nele;
-    # sem isso a miniatura pode sair com o fog padrão do motor, escura)
-    v.create_ent("sky_camera", origin=f"{SKY_CAM.x:.0f} {SKY_CAM.y:.0f} {SKY_CAM.z:.0f}", scale=str(SCALE),
-                 fogenable="1", fogstart="1024", fogend="250000", fogdir="1 0 0", fogblend="1",
-                 fogcolor="40 92 118", fogcolor2="40 92 118", angles="0 0 0", use_angles="0")
+    # sem fog em lugar nenhum: com a sala da skybox 3D, o fog (do mundo ou do sky_camera) fez a água do mapa sumir
+    v.create_ent("sky_camera", origin=f"{SKY_CAM.x:.0f} {SKY_CAM.y:.0f} {SKY_CAM.z:.0f}", scale=str(SCALE))
     v.create_ent("env_cubemap", origin="-1024 0 -64", cubemapsize="3")
-    v.create_ent("env_fog_controller", origin="0 0 0", fogenable="1", fogcolor="40 92 118", fogstart="3000",
-                 fogend="20000", fogmaxdensity="0.9")
     v.create_ent("light_environment", origin="0 0 900", angles="-50 35 0", pitch="-50",
                  _light="255 244 225 420", _ambient="140 170 200 120", SunSpreadAngle="3")
     v.create_ent("info_player_start", origin="-1024 0 16", angles="0 0 0")

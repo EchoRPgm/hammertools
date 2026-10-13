@@ -714,7 +714,7 @@ world
 		{
 			"id" "55"
 			"plane" "(-12048 7952 -320) (-7952 7952 -320) (-7952 12048 -320)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -725,7 +725,7 @@ world
 		{
 			"id" "56"
 			"plane" "(-12048 12048 -256) (-7952 12048 -256) (-7952 7952 -256)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -736,7 +736,7 @@ world
 		{
 			"id" "60"
 			"plane" "(-12048 12048 -320) (-7952 12048 -320) (-7952 12048 -256)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -747,7 +747,7 @@ world
 		{
 			"id" "59"
 			"plane" "(-7952 7952 -320) (-12048 7952 -320) (-12048 7952 -256)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -758,7 +758,7 @@ world
 		{
 			"id" "58"
 			"plane" "(-7952 12048 -320) (-7952 7952 -320) (-7952 7952 -256)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -769,7 +769,7 @@ world
 		{
 			"id" "57"
 			"plane" "(-12048 12048 -256) (-12048 7952 -256) (-12048 7952 -320)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -790,7 +790,7 @@ world
 		{
 			"id" "61"
 			"plane" "(-12048 7952 512) (-7952 7952 512) (-7952 12048 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -801,7 +801,7 @@ world
 		{
 			"id" "62"
 			"plane" "(-12048 12048 576) (-7952 12048 576) (-7952 7952 576)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -812,7 +812,7 @@ world
 		{
 			"id" "66"
 			"plane" "(-12048 12048 512) (-7952 12048 512) (-7952 12048 576)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -823,7 +823,7 @@ world
 		{
 			"id" "65"
 			"plane" "(-7952 7952 512) (-12048 7952 512) (-12048 7952 576)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -834,7 +834,7 @@ world
 		{
 			"id" "64"
 			"plane" "(-7952 12048 512) (-7952 7952 512) (-7952 7952 576)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -845,7 +845,7 @@ world
 		{
 			"id" "63"
 			"plane" "(-12048 12048 576) (-12048 7952 576) (-12048 7952 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -866,7 +866,7 @@ world
 		{
 			"id" "67"
 			"plane" "(-12112 7952 -256) (-12048 7952 -256) (-12048 12048 -256)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -877,7 +877,7 @@ world
 		{
 			"id" "68"
 			"plane" "(-12112 12048 512) (-12048 12048 512) (-12048 7952 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -888,7 +888,7 @@ world
 		{
 			"id" "72"
 			"plane" "(-12112 12048 -256) (-12048 12048 -256) (-12048 12048 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -899,7 +899,7 @@ world
 		{
 			"id" "71"
 			"plane" "(-12048 7952 -256) (-12112 7952 -256) (-12112 7952 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -910,7 +910,7 @@ world
 		{
 			"id" "70"
 			"plane" "(-12048 12048 -256) (-12048 7952 -256) (-12048 7952 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -921,7 +921,7 @@ world
 		{
 			"id" "69"
 			"plane" "(-12112 12048 512) (-12112 7952 512) (-12112 7952 -256)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -942,7 +942,7 @@ world
 		{
 			"id" "73"
 			"plane" "(-7952 7952 -256) (-7888 7952 -256) (-7888 12048 -256)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -953,7 +953,7 @@ world
 		{
 			"id" "74"
 			"plane" "(-7952 12048 512) (-7888 12048 512) (-7888 7952 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -964,7 +964,7 @@ world
 		{
 			"id" "78"
 			"plane" "(-7952 12048 -256) (-7888 12048 -256) (-7888 12048 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -975,7 +975,7 @@ world
 		{
 			"id" "77"
 			"plane" "(-7888 7952 -256) (-7952 7952 -256) (-7952 7952 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -986,7 +986,7 @@ world
 		{
 			"id" "76"
 			"plane" "(-7888 12048 -256) (-7888 7952 -256) (-7888 7952 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -997,7 +997,7 @@ world
 		{
 			"id" "75"
 			"plane" "(-7952 12048 512) (-7952 7952 512) (-7952 7952 -256)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -1018,7 +1018,7 @@ world
 		{
 			"id" "79"
 			"plane" "(-12048 7888 -256) (-7952 7888 -256) (-7952 7952 -256)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -1029,7 +1029,7 @@ world
 		{
 			"id" "80"
 			"plane" "(-12048 7952 512) (-7952 7952 512) (-7952 7888 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -1040,7 +1040,7 @@ world
 		{
 			"id" "84"
 			"plane" "(-12048 7952 -256) (-7952 7952 -256) (-7952 7952 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -1051,7 +1051,7 @@ world
 		{
 			"id" "83"
 			"plane" "(-7952 7888 -256) (-12048 7888 -256) (-12048 7888 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -1062,7 +1062,7 @@ world
 		{
 			"id" "82"
 			"plane" "(-7952 7952 -256) (-7952 7888 -256) (-7952 7888 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -1073,7 +1073,7 @@ world
 		{
 			"id" "81"
 			"plane" "(-12048 7952 512) (-12048 7888 512) (-12048 7888 -256)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -1094,7 +1094,7 @@ world
 		{
 			"id" "85"
 			"plane" "(-12048 12048 -256) (-7952 12048 -256) (-7952 12112 -256)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -1105,7 +1105,7 @@ world
 		{
 			"id" "86"
 			"plane" "(-12048 12112 512) (-7952 12112 512) (-7952 12048 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -1116,7 +1116,7 @@ world
 		{
 			"id" "90"
 			"plane" "(-12048 12112 -256) (-7952 12112 -256) (-7952 12112 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -1127,7 +1127,7 @@ world
 		{
 			"id" "89"
 			"plane" "(-7952 12048 -256) (-12048 12048 -256) (-12048 12048 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -1138,7 +1138,7 @@ world
 		{
 			"id" "88"
 			"plane" "(-7952 12112 -256) (-7952 12048 -256) (-7952 12048 512)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -1149,7 +1149,7 @@ world
 		{
 			"id" "87"
 			"plane" "(-12048 12112 512) (-12048 12048 512) (-12048 12048 -256)"
-			"material" "tools/toolsskybox"
+			"material" "tools/toolsskybox2d"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"

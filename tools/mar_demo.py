@@ -56,12 +56,12 @@ def sala_skybox(v: VMF) -> None:
     cx, cy = SKY_CAM.x, SKY_CAM.y
     h = 2048
     lo, hi = (cx - h, cy - h), (cx + h, cy + h)
-    box(v, (lo[0], lo[1], -320), (hi[0], hi[1], -256), SKYBOX3D)       # piso
-    box(v, (lo[0], lo[1], 512), (hi[0], hi[1], 576), SKYBOX3D)         # teto
-    box(v, (lo[0] - 64, lo[1], -256), (lo[0], hi[1], 512), SKYBOX3D)   # oeste
-    box(v, (hi[0], lo[1], -256), (hi[0] + 64, hi[1], 512), SKYBOX3D)   # leste
-    box(v, (lo[0], lo[1] - 64, -256), (hi[0], lo[1], 512), SKYBOX3D)   # sul
-    box(v, (lo[0], hi[1], -256), (hi[0], hi[1] + 64, 512), SKYBOX3D)   # norte
+    box(v, (lo[0], lo[1], -320), (hi[0], hi[1], -256), SKYBOX2D)       # piso
+    box(v, (lo[0], lo[1], 512), (hi[0], hi[1], 576), SKYBOX2D)         # teto
+    box(v, (lo[0] - 64, lo[1], -256), (lo[0], hi[1], 512), SKYBOX2D)   # oeste
+    box(v, (hi[0], lo[1], -256), (hi[0] + 64, hi[1], 512), SKYBOX2D)   # leste
+    box(v, (lo[0], lo[1] - 64, -256), (hi[0], lo[1], 512), SKYBOX2D)   # sul
+    box(v, (lo[0], hi[1], -256), (hi[0], hi[1] + 64, 512), SKYBOX2D)   # norte
     # o mar da miniatura: superfície em z = WATER_TOP
     box(v, (lo[0], lo[1], -256), (hi[0], hi[1], WATER_TOP), AGUA, water_top=True)
     v.create_ent("env_cubemap", origin=f"{cx:.0f} {cy:.0f} -64", cubemapsize="3")

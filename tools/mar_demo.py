@@ -95,7 +95,11 @@ def build() -> VMF:
     box(v, (-256, -6144, -576), (6144, 6144, -512), CHAO)
     hull(v)
     sala_skybox(v)
-    v.create_ent("sky_camera", origin=f"{SKY_CAM.x:.0f} {SKY_CAM.y:.0f} {SKY_CAM.z:.0f}", scale=str(SCALE))
+    # fog da skybox 3D: o sky_camera tem o próprio fog (os mapas padrão do GMod definem fogenable/fogstart/fogend nele;
+    # sem isso a miniatura pode sair com o fog padrão do motor, escura)
+    v.create_ent("sky_camera", origin=f"{SKY_CAM.x:.0f} {SKY_CAM.y:.0f} {SKY_CAM.z:.0f}", scale=str(SCALE),
+                 fogenable="1", fogstart="1024", fogend="250000", fogdir="1 0 0", fogblend="1",
+                 fogcolor="40 92 118", fogcolor2="40 92 118", angles="0 0 0", use_angles="0")
     v.create_ent("env_cubemap", origin="-1024 0 -64", cubemapsize="3")
     v.create_ent("env_fog_controller", origin="0 0 0", fogenable="1", fogcolor="40 92 118", fogstart="3000",
                  fogend="20000", fogmaxdensity="0.9")

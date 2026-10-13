@@ -1261,9 +1261,18 @@ entity
 entity
 {
 	"id" "3"
+	"angles" "0 0 0"
 	"classname" "sky_camera"
+	"fogblend" "1"
+	"fogcolor" "40 92 118"
+	"fogcolor2" "40 92 118"
+	"fogdir" "1 0 0"
+	"fogenable" "1"
+	"fogend" "250000"
+	"fogstart" "1024"
 	"origin" "-10000 10000 0"
 	"scale" "16"
+	"use_angles" "0"
 	editor
 	{
 		"color" "255 255 255"

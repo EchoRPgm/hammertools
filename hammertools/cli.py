@@ -1535,6 +1535,15 @@ def _vbsp_main(args: list[str]) -> int:
                   + (f"; {len(pr.missing)} faltando" if pr.missing else ""), flush=True)
         except Exception as e:  # noqa: BLE001
             print(f"ht-vbsp: não consegui embutir os props gerados ({e}); rode `ht pack`", flush=True)
+    # água rasa: o reflexo planar renderiza de uma câmera abaixo do fundo e vaza um pontilhado azul na parede
+    if rc == 0 and out.with_suffix(".bsp").exists():
+        try:
+            from hammertools import agua
+            mats = agua.fix_shallow_water(out.with_suffix(".bsp"))
+            if mats:
+                print(f"ht-vbsp: {len(mats)} água(s) rasa(s) (< {agua.RASA} u) sem reflexo planar (a refração fica)", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"ht-vbsp: não consegui ajustar a água rasa ({e})", flush=True)
     # o vbsp descarta prop_static em silêncio (modelo sem malha): sem o prop de colisão a peça fica atravessável
     if rc == 0 and ap_info and ap_info.get("models") and out.with_suffix(".bsp").exists():
         try:

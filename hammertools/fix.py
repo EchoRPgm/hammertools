@@ -241,6 +241,51 @@ def open_uncovered_areaportals(v: VMF, tol: float = 1.0) -> list[str]:
     return out
 
 
+# brushes sem nada visível: não deviam tirar pedaço da face visível em que encostam
+INVISIBLE_TOOLS = {"tools/toolsinvisibleladder", "tools/toolsplayerclip", "tools/toolsnpcclip", "tools/toolsclip",
+                   "tools/toolsinvisible"}
+
+
+def lift_tools_off_water(v: VMF, lift: float = 1.0) -> list[int]:
+    """Brush só de ferramenta invisível (ladder, clip) apoiado exatamente no topo da água: o vbsp junta o detail ao
+    mundo e apaga a parte da face de água que ele cobre, e pelo buraco aparece o fundo claro (escada de mão do canal
+    do rp_surdonoso: retângulo azul-claro na base). Sobe o fundo do brush `lift` u, sem encostar na água.
+    World, func_detail e func_ladder (o vbsp funde os dois ao mundo; as outras entidades de brush são modelos à parte e
+    não cortam faces do mundo). Devolve os ids."""
+    waters = []
+    for b in v.brushes:
+        for sd in b.sides:
+            # a normal do srctools aponta para dentro do brush: o topo tem z = -1
+            if "water" in sd.mat.lower() and sd.normal().z < -0.999:
+                lo, hi = b.get_bbox()
+                waters.append((sd.planes[0].z, lo, hi))
+    if not waters:
+        return []
+    # o vbsp funde ao mundo o func_detail e o func_ladder (conteúdo de escada); as outras entidades de brush são modelos
+    solids = list(v.brushes) + [s for e in v.entities if e["classname"].lower() in ("func_detail", "func_ladder")
+                                for s in e.solids]
+    out = []
+    for b in solids:
+        if not all(sd.mat.lower() in INVISIBLE_TOOLS for sd in b.sides):
+            continue
+        lo, hi = b.get_bbox()
+        if hi.z - lo.z <= lift * 2:
+            continue
+        for sd in b.sides:
+            if sd.normal().z < 0.999:          # o fundo (normal para dentro = +z)
+                continue
+            z = sd.planes[0].z
+            if not any(abs(z - wz) < 0.01 and wlo.x < hi.x and whi.x > lo.x and wlo.y < hi.y and whi.y > lo.y
+                       for wz, wlo, whi in waters):
+                continue
+            for pt in sd.planes:
+                pt.z += lift
+            for pt in (getattr(sd, "strata_points", None) or []):
+                pt.z += lift
+            out.append(b.id)
+    return out
+
+
 ALIGN_SKIP = ("tools/", "nature/blendrock", "skybox")
 ALIGN_MIN = 128.0       # lado mínimo (u) da face girada para o material ser sugerido
 
@@ -425,6 +470,7 @@ def autofix_build(out: Path, gamedir: Path | None, map_stem: str, log=print) -> 
     - entidade de brush com angles diferente de zero fica com 0 0 0 (o jogo girava o modelo e o Hammer não mostra);
     - face de hint quase coplanar a uma parede encosta nela (senão o vão que o hint atravessa vira parede no jogo);
     - areaportal ligado a uma porta que não cobre o vão fica sempre aberto (senão a fresta mostra o céu);
+    - brush de ferramenta invisível (ladder, clip) apoiado no topo da água sobe 1 u (senão abre buraco na água);
     - faces vizinhas no mesmo plano e material com alinhamento de textura diferente ficam com o da maior área
       (senão viram retângulos de tom diferente), só nos materiais escolhidos em <mapa>.align.json; o EchoHammer
       pausa a compilação para perguntar (resolve_alignment; HT_NO_ALIGN=1 desliga).
@@ -443,6 +489,11 @@ def autofix_build(out: Path, gamedir: Path | None, map_stem: str, log=print) -> 
         total += len(opened)
         log(f"ht-vbsp: conserto automático: {len(opened)} areaportal(is) sempre aberto(s): a porta ligada não cobre o vão "
             f"e, fechada, deixava ver o céu pela fresta: " + ", ".join(opened))
+    lifted = lift_tools_off_water(v)
+    if lifted:
+        total += len(lifted)
+        log(f"ht-vbsp: conserto automático: {len(lifted)} brush(es) de ferramenta invisível apoiado(s) no topo da água "
+            f"subiram 1 u (o vbsp apagava a água embaixo e o buraco aparecia claro): brushes " + ", ".join(map(str, lifted)))
     turned = brush_angles(v)
     if turned:
         total += len(turned)

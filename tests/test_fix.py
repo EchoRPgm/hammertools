@@ -42,3 +42,22 @@ def test_open_uncovered_areaportals_only_when_door_leaves_a_gap():
     assert fix.open_uncovered_areaportals(v) == ["portao"]
     assert gap["target"] == "" and gap["StartOpen"] == "1"
     assert ok["target"] == "cheia" and ok["StartOpen"] == "0"
+
+
+def test_lift_tools_off_water_only_invisible_brush_on_water_top():
+    from srctools import VMF, Vec
+    from hammertools import fix
+    v = VMF()
+    water = v.make_prism(Vec(-2002, -7280, -964), Vec(-1810, -7216, -948), "TOOLS/TOOLSNODRAW")
+    water.top.mat = "NATURE/WATER_CANALS_CITY_MURKY"
+    v.add_brush(water.solid)
+    ladder = v.make_prism(Vec(-1817, -7260, -948), Vec(-1810, -7236, -836), "TOOLS/TOOLSINVISIBLELADDER")
+    det = v.create_ent("func_detail")
+    det.solids.append(ladder.solid)
+    clip_off = v.make_prism(Vec(-1900, -7260, -940), Vec(-1890, -7236, -836), "TOOLS/TOOLSPLAYERCLIP").solid   # não encosta
+    v.add_brush(clip_off)
+    wall = v.make_prism(Vec(-1950, -7260, -948), Vec(-1940, -7236, -836), "CONCRETE/X").solid            # visível: fica
+    v.add_brush(wall)
+    assert fix.lift_tools_off_water(v) == [ladder.solid.id]
+    assert {p.z for p in ladder.bottom.planes} == {-947}          # o plano do fundo subiu (a caixa do srctools usa os pontos dos planos)
+    assert clip_off.get_bbox()[0].z == -940 and wall.get_bbox()[0].z == -948

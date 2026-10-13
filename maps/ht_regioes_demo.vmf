@@ -3298,7 +3298,7 @@ world
 		{
 			"id" "259"
 			"plane" "(-992 -672 0) (-928 -672 0) (-928 -608 0)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -3309,7 +3309,7 @@ world
 		{
 			"id" "260"
 			"plane" "(-992 -608 256) (-928 -608 256) (-928 -672 256)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -3320,7 +3320,7 @@ world
 		{
 			"id" "264"
 			"plane" "(-992 -608 0) (-928 -608 0) (-928 -608 256)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3331,7 +3331,7 @@ world
 		{
 			"id" "263"
 			"plane" "(-928 -672 0) (-992 -672 0) (-992 -672 256)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3342,7 +3342,7 @@ world
 		{
 			"id" "262"
 			"plane" "(-928 -608 0) (-928 -672 0) (-928 -672 256)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3353,7 +3353,7 @@ world
 		{
 			"id" "261"
 			"plane" "(-992 -608 256) (-992 -672 256) (-992 -672 0)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3374,7 +3374,7 @@ world
 		{
 			"id" "265"
 			"plane" "(-608 -928 0) (-544 -928 0) (-544 -864 0)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -3385,7 +3385,7 @@ world
 		{
 			"id" "266"
 			"plane" "(-608 -864 192) (-544 -864 192) (-544 -928 192)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -3396,7 +3396,7 @@ world
 		{
 			"id" "270"
 			"plane" "(-608 -864 0) (-544 -864 0) (-544 -864 192)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3407,7 +3407,7 @@ world
 		{
 			"id" "269"
 			"plane" "(-544 -928 0) (-608 -928 0) (-608 -928 192)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3418,7 +3418,7 @@ world
 		{
 			"id" "268"
 			"plane" "(-544 -864 0) (-544 -928 0) (-544 -928 192)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3429,7 +3429,7 @@ world
 		{
 			"id" "267"
 			"plane" "(-608 -864 192) (-608 -928 192) (-608 -928 0)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3450,7 +3450,7 @@ world
 		{
 			"id" "271"
 			"plane" "(-832 -1024 0) (-800 -1024 0) (-800 -992 0)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -3461,7 +3461,7 @@ world
 		{
 			"id" "272"
 			"plane" "(-832 -992 160) (-800 -992 160) (-800 -1024 160)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -3472,7 +3472,7 @@ world
 		{
 			"id" "276"
 			"plane" "(-832 -992 0) (-800 -992 0) (-800 -992 160)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3483,7 +3483,7 @@ world
 		{
 			"id" "275"
 			"plane" "(-800 -1024 0) (-832 -1024 0) (-832 -1024 160)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3494,7 +3494,7 @@ world
 		{
 			"id" "274"
 			"plane" "(-800 -992 0) (-800 -1024 0) (-800 -1024 160)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3505,7 +3505,7 @@ world
 		{
 			"id" "273"
 			"plane" "(-832 -992 160) (-832 -1024 160) (-832 -1024 0)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3526,7 +3526,7 @@ world
 		{
 			"id" "277"
 			"plane" "(-736 -1024 0) (-704 -1024 0) (-704 -992 0)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -3537,7 +3537,7 @@ world
 		{
 			"id" "278"
 			"plane" "(-736 -992 160) (-704 -992 160) (-704 -1024 160)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -3548,7 +3548,7 @@ world
 		{
 			"id" "282"
 			"plane" "(-736 -992 0) (-704 -992 0) (-704 -992 160)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3559,7 +3559,7 @@ world
 		{
 			"id" "281"
 			"plane" "(-704 -1024 0) (-736 -1024 0) (-736 -1024 160)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3570,7 +3570,7 @@ world
 		{
 			"id" "280"
 			"plane" "(-704 -992 0) (-704 -1024 0) (-704 -1024 160)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3581,7 +3581,7 @@ world
 		{
 			"id" "279"
 			"plane" "(-736 -992 160) (-736 -1024 160) (-736 -1024 0)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3602,7 +3602,7 @@ world
 		{
 			"id" "283"
 			"plane" "(-832 -1024 160) (-704 -1024 160) (-704 -992 160)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -3613,7 +3613,7 @@ world
 		{
 			"id" "284"
 			"plane" "(-832 -992 192) (-704 -992 192) (-704 -1024 192)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 -1 0 0] 0.25"
 			"rotation" "0"
@@ -3624,7 +3624,7 @@ world
 		{
 			"id" "288"
 			"plane" "(-832 -992 160) (-704 -992 160) (-704 -992 192)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3635,7 +3635,7 @@ world
 		{
 			"id" "287"
 			"plane" "(-704 -1024 160) (-832 -1024 160) (-832 -1024 192)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[1 0 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3646,7 +3646,7 @@ world
 		{
 			"id" "286"
 			"plane" "(-704 -992 160) (-704 -1024 160) (-704 -1024 192)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"
@@ -3657,7 +3657,7 @@ world
 		{
 			"id" "285"
 			"plane" "(-832 -992 192) (-832 -1024 192) (-832 -1024 160)"
-			"material" "stone/stonewall007a"
+			"material" "stone/stonewall006a"
 			"uaxis" "[0 1 0 0] 0.25"
 			"vaxis" "[0 0 -1 0] 0.25"
 			"rotation" "0"

@@ -30,7 +30,7 @@ YARDS = [
     ("DIA", (-768, 768), "nature/blendgrassgravel001a", "brick/brickwall001a"),
     ("ENTARDECER", (768, 768), "concrete/concretefloor001a", "plaster/plasterwall003a"),
     ("NOITE", (768, -768), "metal/metalfloor001a", "concrete/concretewall008a"),
-    ("NEBLINA", (-768, -768), "nature/dirtfloor003a", "stone/stonewall007a"),
+    ("NEBLINA", (-768, -768), "nature/dirtfloor003a", "stone/stonewall006a"),
 ]
 
 

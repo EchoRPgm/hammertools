@@ -65,9 +65,6 @@ def sala_skybox(v: VMF) -> None:
     # o mar da miniatura: superfície em z = WATER_TOP
     box(v, (lo[0], lo[1], -256), (hi[0], hi[1], WATER_TOP), AGUA, water_top=True)
     v.create_ent("env_cubemap", origin=f"{cx:.0f} {cy:.0f} -64", cubemapsize="3")
-    # a skybox 3D tem a própria luz: sem light_environment dentro da sala, a miniatura fica sem iluminação (escura)
-    v.create_ent("light_environment", origin=f"{cx:.0f} {cy:.0f} 400", angles="-50 35 0", pitch="-50",
-                 _light="255 244 225 420", _ambient="140 170 200 120", SunSpreadAngle="3")
 
 
 

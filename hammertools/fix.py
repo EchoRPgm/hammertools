@@ -509,6 +509,12 @@ def autofix_build(out: Path, gamedir: Path | None, map_stem: str, log=print) -> 
             log(f"ht-vbsp: conserto automático: {nf} face(s) em {len(aligned)} superfície(s) com a textura alinhada à "
                 f"vizinha (mesmo plano e material com rotação/escala/deslocamento diferente viravam retângulos de tom "
                 f"diferente): " + ", ".join(mats[:8]) + (f" e mais {len(mats) - 8}" if len(mats) > 8 else ""))
+    from hammertools import regioes
+    if (reg := regioes.load(out.parent.parent / f"{out.stem}.vmf")) is not None:
+        n = regioes.apply_lightmapscale(v, reg)
+        if n:
+            total += n
+            log(f"ht-vbsp: regiões: {n} face(s) com a escala de lightmap da região ({out.stem}.regioes.json)")
     res = lint.Resources.from_game(str(gamedir), None, ()) if gamedir is not None else None
     if res is not None and res.read is not None:
         prefix = f"models/{autoprop.MODEL_DIR}/{autoprop.safe(map_stem)}/lm"

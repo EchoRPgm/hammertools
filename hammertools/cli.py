@@ -1535,6 +1535,15 @@ def _vbsp_main(args: list[str]) -> int:
                   + (f"; {len(pr.missing)} faltando" if pr.missing else ""), flush=True)
         except Exception as e:  # noqa: BLE001
             print(f"ht-vbsp: não consegui embutir os props gerados ({e}); rode `ht pack`", flush=True)
+    # regiões (<mapa>.regioes.json): o JSON vai dentro do BSP para o addon de céu do jogo ler
+    if rc == 0 and out.with_suffix(".bsp").exists():
+        try:
+            from hammertools import regioes
+            if (reg := regioes.load(src)) is not None:
+                name = regioes.embed(out.with_suffix(".bsp"), reg, src.stem)
+                print(f"ht-vbsp: regiões embutidas no BSP ({name}: {len(reg['regioes'])} região(ões))", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"ht-vbsp: não consegui embutir as regiões ({e})", flush=True)
     # água rasa: o reflexo planar renderiza de uma câmera abaixo do fundo e vaza um pontilhado azul na parede
     if rc == 0 and out.with_suffix(".bsp").exists():
         try:

@@ -155,7 +155,13 @@ def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags:
         else:
             full_flags = flags
             flags = [a for i, a in enumerate(flags) if a != "-bounce" and (i == 0 or flags[i - 1] != "-bounce")] + ["-bounce", "0"]
-            key_flags = [*flags, f"luz:pathtracing:{BAKE_SAMPLES.get(rad, 256)}", *(bake_args or []), bspcache_tool(eh)]
+            # luz por região: o bake lê o mesmo <mapa>.regioes.json (o conteúdo dele entra na chave do cache)
+            from hammertools import regioes
+            if regioes.path_for(vmf).exists():
+                bake_args = [*(bake_args or []), "--regioes", str(regioes.path_for(vmf))]
+            key_flags = [*flags, f"luz:pathtracing:{BAKE_SAMPLES.get(rad, 256)}", *(bake_args or []),
+                         *([hashlib.sha1(regioes.path_for(vmf).read_bytes()).hexdigest()] if regioes.path_for(vmf).exists() else []),
+                         bspcache_tool(eh)]
     # cache por conteúdo (bspcache): o BSP que o vbsp gerou igual ao de antes no que o vvis/vrad leem = o resultado
     # deles também é igual; volta do cache em vez de rodar (só entidades que ninguém lê mudaram, ou nada mudou)
     from hammertools import bspcache

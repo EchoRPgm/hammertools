@@ -1,0 +1,137 @@
+{
+ "versao": 1,
+ "transicao": 128,
+ "regioes": [
+  {
+   "nome": "DIA",
+   "mins": [
+    -1472,
+    0,
+    -64
+   ],
+   "maxs": [
+    0,
+    1472,
+    1088
+   ],
+   "luz": {},
+   "ceu": {
+    "skyname": "sky_day01_01"
+   }
+  },
+  {
+   "nome": "ENTARDECER",
+   "mins": [
+    0,
+    0,
+    -64
+   ],
+   "maxs": [
+    1472,
+    1472,
+    1088
+   ],
+   "luz": {
+    "mult_sol": 0.55,
+    "sol_cor": [
+     255,
+     150,
+     70
+    ],
+    "mult_ceu": 0.8,
+    "ceu_cor": [
+     255,
+     170,
+     120
+    ]
+   },
+   "ceu": {
+    "skyname": "sky_day03_06"
+   }
+  },
+  {
+   "nome": "NOITE",
+   "mins": [
+    0,
+    -1472,
+    -64
+   ],
+   "maxs": [
+    1472,
+    0,
+    1088
+   ],
+   "luz": {
+    "mult_sol": 0.0,
+    "mult_ceu": 0.15,
+    "ceu_cor": [
+     60,
+     80,
+     160
+    ],
+    "mult_indireta": 1.2
+   },
+   "ceu": {
+    "skyname": "sky_borealis01",
+    "neblina": {
+     "cor": [
+      10,
+      14,
+      30
+     ],
+     "inicio": 512,
+     "fim": 4096,
+     "densidade": 0.5
+    }
+   }
+  },
+  {
+   "nome": "NEBLINA",
+   "mins": [
+    -1472,
+    -1472,
+    -64
+   ],
+   "maxs": [
+    0,
+    0,
+    1088
+   ],
+   "luz": {
+    "mult_sol": 0.3,
+    "mult_ceu": 1.2,
+    "ceu_cor": [
+     150,
+     170,
+     150
+    ],
+    "rebotes": 12,
+    "filtro": 5,
+    "escala_lightmap": 8,
+    "ambiente": [
+     10,
+     14,
+     10
+    ]
+   },
+   "ceu": {
+    "cor": [
+     140,
+     155,
+     140
+    ],
+    "neblina": {
+     "cor": [
+      140,
+      155,
+      140
+     ],
+     "inicio": 64,
+     "fim": 900,
+     "densidade": 0.85
+    },
+    "skybox3d": false
+   }
+  }
+ ]
+}

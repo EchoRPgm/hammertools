@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import logging
 import re
-import zipfile
-from io import BytesIO
 from pathlib import Path
 
 # canais rasos (12-16 u): a câmera do reflexo cai no fundo; mar e lago mais fundos ficam com o reflexo do céu
@@ -59,15 +57,6 @@ def fix_shallow_water(bsp_path: Path, rasa: int = RASA) -> list[str]:
             changed[name] = new.encode("latin-1")
     if not changed:
         return []
-    # zip não troca um arquivo no lugar: monta outro com os mesmos itens (o Source só lê ZIP_STORED)
-    out = zipfile.ZipFile(BytesIO(), mode="a")
-    for info in pak.infolist():
-        data = changed.get(info.filename, None)
-        out.writestr(zipfile.ZipInfo(info.filename, info.date_time), data if data is not None else pak.read(info),
-                     compress_type=zipfile.ZIP_STORED)
-    out.filename = pak.filename
-    bsp.pakfile = out
-    tmp = bsp_path.with_name(bsp_path.name + ".tmp")
-    bsp.save(str(tmp))
-    tmp.replace(bsp_path)
+    from hammertools import embutir
+    embutir.write_pak(bsp_path, changed)
     return sorted(changed)

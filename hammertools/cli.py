@@ -1544,6 +1544,14 @@ def _vbsp_main(args: list[str]) -> int:
                 print(f"ht-vbsp: {len(mats)} água(s) rasa(s) (< {agua.RASA} u) sem reflexo planar (a refração fica)", flush=True)
         except Exception as e:  # noqa: BLE001
             print(f"ht-vbsp: não consegui ajustar a água rasa ({e})", flush=True)
+    # pasta embutir/ do projeto: o que os addons leem do mapa (minimapa, regiões) vai junto com cada compilação
+    if rc == 0 and out.with_suffix(".bsp").exists() and (src.parent / "embutir").is_dir():
+        try:
+            from hammertools import embutir
+            names = embutir.embed_dir(out.with_suffix(".bsp"), src.parent / embutir.PASTA)
+            print(f"ht-vbsp: {len(names)} arquivo(s) de {embutir.PASTA}/ embutidos no BSP", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"ht-vbsp: não consegui embutir {src.parent / 'embutir'} ({e})", flush=True)
     # o vbsp descarta prop_static em silêncio (modelo sem malha): sem o prop de colisão a peça fica atravessável
     if rc == 0 and ap_info and ap_info.get("models") and out.with_suffix(".bsp").exists():
         try:

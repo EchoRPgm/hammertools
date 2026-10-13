@@ -1,6 +1,7 @@
 """Gera maps/ht_regioes_demo.vmf + .regioes.json: 4 pátios a céu aberto (DIA, ENTARDECER, NOITE, NEBLINA) em grade
 2×2, ligados em anel por túneis de 128×128 que atravessam paredes de 512u; a borda de cada região passa no meio dos
-túneis (a faixa de transição fica dentro deles). Demonstração da luz e do céu por região. `python tools/regioes_demo.py`."""
+túneis (a faixa de transição fica dentro deles). Demonstração da luz e do céu por região. Gera também a versão
+`ht_regioes_demo_aberto`, com os túneis sem teto. `python tools/regioes_demo.py`."""
 from __future__ import annotations
 
 import json
@@ -37,7 +38,8 @@ def box(v: VMF, lo, hi, mat: str) -> None:
     v.add_brush(v.make_prism(Vec(*lo), Vec(*hi), mat).solid)
 
 
-def build() -> tuple[VMF, dict]:
+def build(open_tunnels: bool = False) -> tuple[VMF, dict]:
+    """open_tunnels: túneis sem teto (corredor aberto até o céu): a troca de céu aparece durante a transição."""
     v = VMF()
     v.spawn["skyname"] = "sky_day01_01"
     # piso de cada pátio e dos túneis/paredes (uma laje só por baixo de tudo)
@@ -66,11 +68,11 @@ def build() -> tuple[VMF, dict]:
                 if s1 <= s0:
                     continue
                 tunnel = (a, b) in ((-t[1], -t[0]), (t[0], t[1]))
+                if tunnel and open_tunnels:
+                    continue
                 z0 = TUN_H if tunnel else 0
                 lo, hi = ((-SEP, s0, z0), (SEP, s1, H)) if axis == 1 else ((s0, -SEP, z0), (s1, SEP, H))
                 box(v, lo, hi, SEPMAT)
-                if tunnel:   # paredes laterais do túnel já são as peças vizinhas; teto = a peça de cima
-                    pass
     bar_with_tunnels(1)
     bar_with_tunnels(0)
     # peças para sombra em cada pátio: dois pilares e um pórtico
@@ -112,11 +114,12 @@ def build() -> tuple[VMF, dict]:
 
 
 def main() -> None:
-    v, regions = build()
-    out = ROOT / "maps" / "ht_regioes_demo.vmf"
-    vmfio.save(v, out)
-    out.with_suffix(".regioes.json").write_text(json.dumps(regions, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"{out} e {out.with_suffix('.regioes.json').name}")
+    for name, open_tunnels in (("ht_regioes_demo", False), ("ht_regioes_demo_aberto", True)):
+        v, regions = build(open_tunnels)
+        out = ROOT / "maps" / f"{name}.vmf"
+        vmfio.save(v, out)
+        out.with_suffix(".regioes.json").write_text(json.dumps(regions, ensure_ascii=False, indent=1), encoding="utf-8")
+        print(f"{out} e {out.with_suffix('.regioes.json').name}")
 
 
 if __name__ == "__main__":

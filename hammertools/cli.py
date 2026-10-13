@@ -476,7 +476,11 @@ def cmd_detail(args) -> int:
 
 def cmd_diff(args) -> int:
     from hammertools import diffvmf
-    lines = diffvmf.diff(vmfio.load(args.a), vmfio.load(args.b))
+    a, b = vmfio.load(args.a), vmfio.load(args.b)
+    if args.markdown:
+        print(diffvmf.markdown(diffvmf.compare(a, b), args.titulo or f"Diff do mapa `{Path(args.b).name}`"), end="")
+        return 0
+    lines = diffvmf.diff(a, b)
     print("\n".join(lines) if lines else "sem diferenças")
     return 0
 
@@ -641,6 +645,8 @@ def main(argv=None) -> int:
     p.set_defaults(fn=cmd_detail)
     p = sub.add_parser("diff", help="diferenças legíveis entre dois VMFs por ID (entidades, keyvalues, outputs, brushes, materiais)")
     p.add_argument("a"); p.add_argument("b")
+    p.add_argument("--markdown", action="store_true", help="resumo em Markdown (resumo do job e comentário de PR no GitHub)")
+    p.add_argument("--titulo", help="título do resumo em Markdown")
     p.set_defaults(fn=cmd_diff)
     p = sub.add_parser("pack", help="embute no BSP compilado o conteúdo que o mapa usa e o GMod base não tem (pakfile)")
     p.add_argument("vmf"); p.add_argument("--bsp", help="BSP compilado (padrão: <mapa>.bsp)")

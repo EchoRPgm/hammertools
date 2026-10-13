@@ -2,6 +2,7 @@ from srctools import VMF, Vec
 from srctools.vmf import Output
 
 from hammertools import diffvmf, lightmap, rename, retexture
+from srctools import Vec
 
 
 def _mapa():
@@ -55,3 +56,26 @@ def test_diff_by_id():
     lines = diffvmf.diff(a, b)
     assert any(l.startswith("+ entidade light") for l in lines)
     assert any("speed" in l for l in lines) and any("concrete/x" in l for l in lines)
+
+
+def test_diff_markdown_and_whole_map_shift():
+    a = _mapa()
+    import copy
+    b = copy.deepcopy(a)
+    # o mapa inteiro andou (1024, -512, 0) e, além disso, uma porta mudou de velocidade
+    d = Vec(1024, -512, 0)
+    for e in b.entities:
+        if e.get("origin"):
+            e["origin"] = str(Vec.from_str(e["origin"]) + d)
+    for s in list(b.brushes) + [s for e in b.entities for s in e.solids]:
+        s.localise(d)
+    next(iter(b.by_class["func_door"]))["speed"] = "200"
+    r = diffvmf.compare(a, b)
+    assert r.shift == d
+    # só a velocidade da porta: posições e caixas descontam o deslocamento
+    assert [c.kind for c in r.changes] == ["~"]
+    assert any("speed" in x for x in r.changes[0].details)
+    md = diffvmf.markdown(r, "Diff do mapa `m.vmf`")
+    assert "Mapa deslocado **1024 -512 0**" in md and "<details><summary>~1 func_door" in md
+    assert len(diffvmf.markdown(r, "t", limit=200)) < 400            # teto de tamanho respeitado
+

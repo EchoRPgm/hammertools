@@ -353,7 +353,90 @@ def _neighbor_pairs(air, idx, conn: int):
 def cut_masks(blocked, src_mask, sink_mask, protect=None, conn: int = 6):
     """Corte mínimo genérico: voxels de ar que separam `src_mask` de `sink_mask`. Capacidade de um voxel = área
     (TIE²) + desempate pela distância ao sumidouro (o corte fica no plano da abertura, não num funil pra dentro).
-    `protect`: voxels que nunca entram no corte."""
+    `protect`: voxels que nunca entram no corte.
+
+    Mesmo grafo de _cut_masks_full (voxel = nó de entrada -> nó de saída com a capacidade dele), reduzido sem mudar o
+    corte: num corte finito a saída de um voxel do sumidouro nunca fica do lado da fonte (ela liga ao sumidouro com
+    capacidade "infinita"), então vira o próprio sumidouro, e voxel do sumidouro sem vizinho fora dele some; a
+    entrada de um voxel da fonte vira a própria fonte; ar de componente que não liga fonte e sumidouro nunca entra no
+    corte. Conferido voxel a voxel nos 25 cortes de uma rodada do rp_surdonoso (143 s -> 93 s)."""
+    import numpy as np
+    from scipy import ndimage, sparse
+    from scipy.sparse.csgraph import breadth_first_order, maximum_flow
+    air = ~blocked
+    S = src_mask & air
+    K = sink_mask & air & ~src_mask
+    cut = np.zeros(blocked.shape, dtype=bool)
+    if not S.any() or not K.any():
+        return cut
+    st = ndimage.generate_binary_structure(3, 2 if conn == 18 else 1)
+    lab, _ = ndimage.label(air, structure=st)
+    both = np.intersect1d(np.unique(lab[S]), np.unique(lab[K]))
+    both = both[both > 0]
+    if not len(both):
+        return cut
+    live = np.isin(lab, both)
+    del lab
+    S &= live
+    K &= live
+    F = live & ~S & ~K
+    Kb = K & ndimage.binary_dilation(live & ~K, structure=st)     # sumidouro só conta na borda
+    big = 2 ** 30
+    depth = ndimage.distance_transform_cdt(~(sink_mask & air), metric="taxicab").astype(np.int64)
+    capv = TIE * np.minimum(depth, TIE - 1) + TIE * TIE
+    del depth
+    if protect is not None:
+        capv[protect & air] = big
+    # nós: F tem entrada e saída; S só a saída (a entrada é a fonte); K só a entrada (a saída é o sumidouro)
+    nF, nS, nK = int(F.sum()), int(S.sum()), int(Kb.sum())
+    src, snk = 2 * nF + nS + nK, 2 * nF + nS + nK + 1
+    inn = np.full(blocked.shape, -1, dtype=np.int64)
+    out = np.full(blocked.shape, -1, dtype=np.int64)
+    inn[F] = np.arange(nF)
+    out[F] = nF + np.arange(nF)
+    out[S] = 2 * nF + np.arange(nS)
+    inn[Kb] = 2 * nF + nS + np.arange(nK)
+    inn[S] = src
+    out[K] = snk
+    rows, cols, caps = [inn[F], np.full(nS, src), inn[Kb]], [out[F], out[S], np.full(nK, snk)], [capv[F], capv[S], capv[Kb]]
+    pidx = np.full(blocked.shape, -1, dtype=np.int32)
+    pidx[live] = np.arange(int(live.sum()), dtype=np.int32)
+    flat_in, flat_out = inn[live], out[live]
+    for u, w in _neighbor_pairs(live, pidx, conn):
+        for a, b in ((u, w), (w, u)):
+            r, c = flat_out[a], flat_in[b]
+            ok = (r != snk) & (c != src)       # saindo do sumidouro ou entrando na fonte: não leva fluxo
+            rows.append(r[ok])
+            cols.append(c[ok])
+            caps.append(np.full(int(ok.sum()), big, np.int64))
+    N = snk + 1
+    r, c = np.concatenate(rows).astype(np.int32), np.concatenate(cols).astype(np.int32)
+    k = np.minimum(np.concatenate(caps), big).astype(np.int32)
+    del rows, cols, caps, flat_in, flat_out, pidx
+    G = sparse.csr_matrix((k, (r, c)), shape=(N, N))
+    del r, c, k
+    res = maximum_flow(G, src, snk, method="dinic")
+    if res.flow_value >= big:       # fonte encostada no sumidouro sem corte finito: o grafo inteiro decide
+        return _cut_masks_full(blocked, src_mask, sink_mask, protect, conn)
+    # resíduo = capacidade - fluxo (o fluxo é antissimétrico: aresta reversa com fluxo fica positiva)
+    R = (G - res.flow.tocsr()).tocsr()
+    del G, res
+    R.data = (R.data > 0).astype(np.int8)
+    R.eliminate_zeros()
+    reach = np.zeros(N, dtype=bool)
+    reach[breadth_first_order(R, src, directed=True, return_predecessors=False)] = True
+    reach[snk] = False
+    rin = S.copy()
+    rin[F] = reach[inn[F]]
+    rin[Kb] = reach[inn[Kb]]
+    rout = np.zeros(blocked.shape, dtype=bool)
+    rout[F] = reach[out[F]]
+    rout[S] = reach[out[S]]
+    return rin & ~rout
+
+
+def _cut_masks_full(blocked, src_mask, sink_mask, protect=None, conn: int = 6):
+    """cut_masks com o grafo inteiro (todo voxel de ar com entrada e saída)."""
     import numpy as np
     from scipy import ndimage, sparse
     from scipy.sparse.csgraph import breadth_first_order, maximum_flow

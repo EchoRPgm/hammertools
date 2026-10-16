@@ -69,7 +69,7 @@ def poligonos(bsp_path: Path, regioes: dict, grupos: set[str]) -> dict[str, list
         if not sky:
             continue
         n = f.plane.normal if f.same_dir_as_plane else -f.plane.normal   # normal visível: aponta para dentro do mapa
-        out.setdefault(sky, []).append([round(v, 1) for p in pts for v in (p + n).as_tuple()])
+        out.setdefault(sky, []).append([round(v, 1) for p in pts for v in tuple(p + n)])
     return out
 
 
@@ -77,7 +77,7 @@ def faces(bsp: Path, regioes_json: Path, grupos: set[str], embutir: bool) -> Non
     dados = json.loads(regioes_json.read_text())
     imp = poligonos(bsp, dados, grupos)
     for sky, pol in imp.items():
-        print(f"{sky}: {len(pol)} faces, {sum(len(p) // 3 for p in pol)} vértices")
+        print(f"{sky}: {len(pol)} faces, {sum(len(p) // 3 for p in pol)} vértices", file=sys.stderr)
     dados["imposters"] = imp
     txt = json.dumps(dados, ensure_ascii=False, separators=(",", ":")).encode()
     if embutir:

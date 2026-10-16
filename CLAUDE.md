@@ -11,7 +11,7 @@ Geradores de geometria e entidades para o Hammer++ (Garry's Mod). Marcadores `ht
 - Sprint 6: **lint completo pronto** (`ht lint`: texturas/modelos com VPK+addons+BSP, leak por voxel com pointfile, nodraw, duplicados, sobreposições, grid, I/O, t-junctions, faces fantasma e `lightstyles` com `--compiled`) com relatório HTML geral (`--html`, aba Painel primeiro); `ht content` (monta o addon de conteúdo do mapa); `ht optimize` (junta blocos fatiados); ht-vbsp conserta t-junctions sozinho ao estourar (converte os func_detail que mais custam em func_brush no build/; `-notjunc` só se não couber) conserta faces fantasma/textura vazada convertendo os acabamentos do plano em func_detail e fecha leaks sozinho (`ht seal`, cache `<mapa>.seal.json`); `ht fix` (material de modelo em brush). Pendente: abrir rp_surdonoso_w no Hammer++ da VM (Windows-MCP desconectado; precisa `/mcp`). Próximo: `ht detail` (mapa pronto), `ht lightmap`, `ht rename`; sprint 7 = `ht diff`, `ht retexture`, `ht pack`.
 - Compilação: `ht compile <mapa.vmf>` faz tudo (vbsp/vvis/vrad/cópia), independente do Hammer++; é o que o EchoHammer chama.
 - Auto-prop no ht-vbsp (2026-10-05): detail pequeno vira prop_static no build/ até índices e vértices caberem (ver ROADMAP, notas técnicas); compiladores de Windows pelo Wine no Linux (bin/win64 do GMod do host).
-- 161 testes (`.venv/bin/python -m pytest -q`), leak test (`tools/leaktest.sh`, 5 mapas) e lint da fixture limpos.
+- 271 testes (`.venv/bin/python -m pytest -q`; o conftest põe `HT_PARALLEL=0`, os testes contam passadas em série), leak test (`tools/leaktest.sh`, 5 mapas) e lint da fixture limpos.
 
 ## Fluxo de trabalho
 

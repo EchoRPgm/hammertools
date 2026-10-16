@@ -335,8 +335,9 @@ def test_leak_refine_stops_when_pointfile_does_not_move(tmp_path, monkeypatch, c
     vbsp_main([str(fake), "-game", str(tmp_path / "game"), str(src.with_suffix(""))])
     out = capsys.readouterr().out
     assert "MESMO caminho" in out and "AINDA VAZA" in out
-    # original + UMA rodada de refino: a segunda leitura do mesmo pointfile já corta (antes: até 30)
-    assert (tmp_path / "mapsrc" / "build" / "calls.txt").read_text() == "xx"
+    # original + UMA rodada de refino (as duas com -leaktest): a segunda leitura do mesmo pointfile já corta (antes:
+    # até 30); sem selar, mais uma passada inteira para gravar o BSP vazado
+    assert (tmp_path / "mapsrc" / "build" / "calls.txt").read_text() == "xxx"
 
 
 def test_plug_faces_open_to_air_copy_the_nearest_parallel_face():

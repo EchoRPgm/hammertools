@@ -22,8 +22,10 @@ def cmd_list(args) -> int:
     return 0
 
 
-def build(src: Path, out: Path, game: str | None = None, cubemaps: bool = False) -> tuple[int, int, list[str]]:
-    """Retorna (grupos processados, solids gerados, warnings)."""
+def build(src: Path, out: Path, game: str | None = None, cubemaps: bool = False, keep: list | None = None
+          ) -> tuple[int, int, list[str]]:
+    """Retorna (grupos processados, solids gerados, warnings). `keep` (lista) recebe o VMF gravado, para quem segue
+    trabalhando nele não carregar o arquivo de novo."""
     from hammertools.core import models
     models.GAMEDIR = game
     v = vmfio.load(src)
@@ -48,6 +50,8 @@ def build(src: Path, out: Path, game: str | None = None, cubemaps: bool = False)
         vmfio.add_generated(v, "cubemaps_auto", [], [e for e in v.entities if e["classname"] == "env_cubemap" and not e.visgroup_ids], True)
         warnings.append(f"cubemaps automáticos: {n} env_cubemap sob luzes")
     vmfio.save(v, out)
+    if keep is not None:
+        keep.append(v)
     return len(groups), n_solids, warnings
 
 
@@ -761,19 +765,105 @@ def _run_streaming(cmd: list[str]) -> tuple[int, str]:
     return p.wait(), text
 
 
+_CLAMPED: dict[str, tuple[int, int]] = {}   # VMF -> (mtime, tamanho) da última conferência de limite de coordenadas
+
+
+def _clamp_extents(vmf: Path) -> None:
+    """O que passou do limite de coordenadas (inclusive tampas de leak criadas depois do primeiro corte) é cortado,
+    senão o engine recusa o mapa ("Map coordinate extents are too large"). VMF igual ao da última conferência não é
+    carregado de novo (~2 s por carga num VMF de 30 MB, e várias passadas recompilam o mesmo arquivo)."""
+    if not vmf.exists():
+        return
+    st = vmf.stat()
+    if _CLAMPED.get(str(vmf)) == (st.st_mtime_ns, st.st_size):
+        return
+    from hammertools import extents
+    v = vmfio.load(vmf)
+    if any(extents.clamp(v).values()):
+        vmfio.save(v, vmf)
+        st = vmf.stat()
+    _CLAMPED[str(vmf)] = (st.st_mtime_ns, st.st_size)
+
+
 def _run_vbsp(cmd: list[str]) -> tuple[int, str]:
-    """Uma passada do vbsp no build/: antes, o que passou do limite de coordenadas (inclusive tampas de leak criadas
-    depois do primeiro corte) é cortado, senão o engine recusa o mapa ("Map coordinate extents are too large")."""
-    vmf = Path(cmd[-1]).with_suffix(".vmf")
-    if vmf.exists():
-        from hammertools import extents
-        v = vmfio.load(vmf)
-        if any(extents.clamp(v).values()):
-            vmfio.save(v, vmf)
+    """Uma passada do vbsp no build/ (com o limite de coordenadas conferido antes)."""
+    _clamp_extents(Path(cmd[-1]).with_suffix(".vmf"))
     return _run_streaming(cmd)
 
 
+# --------------------------------------------------------------------------- tentativas em paralelo
+# Quando o conserto de um teto tem uma alternativa conhecida para o caso de falhar (conversão de t-junction ->
+# -notjunc; nodraw -> nodraw + optimize), a alternativa compila AO MESMO TEMPO numa cópia do build/
+# (build/paralelo/<nome>/), em vez de esperar a primeira falhar: a escolha é a mesma da ordem em série, só sem a
+# espera. A primeira tentativa mostra a saída; a reserva fica calada e é encerrada se não for usada.
+# HT_PARALLEL=0 volta para uma de cada vez.
+PARALLEL_EXTS = (".bsp", ".prt", ".lin", ".log")
+
+
+def _parallel_enabled() -> bool:
+    return os.environ.get("HT_PARALLEL") != "0"
+
+
+class _Background:
+    """Uma passada do vbsp numa cópia do build/, sem mostrar a saída enquanto roda."""
+
+    def __init__(self, real: Path, opts: list[str], out: Path, name: str, vmf_src: Path):
+        import threading
+        self.dir = out.parent / "paralelo" / name
+        shutil.rmtree(self.dir, ignore_errors=True)
+        self.dir.mkdir(parents=True)
+        self.out = self.dir / out.name
+        shutil.copy2(vmf_src, self.out)
+        _clamp_extents(self.out)
+        cmd = _wine_cmd([str(real), *opts, str(self.out.with_suffix(""))])
+        env = dict(os.environ, WINEDEBUG=os.environ.get("WINEDEBUG", "-all"))
+        self.p = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                  errors="replace")
+        self.lines: list[str] = []
+        self.t = threading.Thread(target=lambda: self.lines.extend(self.p.stdout), daemon=True)
+        self.t.start()
+
+    def wait(self) -> tuple[int, str]:
+        rc = self.p.wait()
+        self.t.join()
+        text = "".join(self.lines)
+        _shader_warning(text)
+        return rc, text
+
+    def adopt(self, out: Path) -> None:
+        """Os arquivos desta tentativa passam a ser os do build/ (VMF incluído: o resto da compilação lê o par certo)."""
+        for ext in (".vmf", *PARALLEL_EXTS):
+            f, dest = self.out.with_suffix(ext), out.with_suffix(ext)
+            if ext == ".log" and f.exists() and dest.exists():
+                with open(dest, "a", encoding="utf-8", errors="replace") as fo:   # o vbsp acumula o log por mapa
+                    fo.write(f.read_text(encoding="utf-8", errors="replace"))
+            elif f.exists():
+                shutil.move(f, dest)
+            elif ext == ".lin":
+                dest.unlink(missing_ok=True)    # o vbsp apaga o pointfile velho ao começar
+        self.discard()
+
+    def discard(self) -> None:
+        if self.p.poll() is None:
+            self.p.kill()
+            self.p.wait()
+        self.t.join(timeout=5)
+        shutil.rmtree(self.dir, ignore_errors=True)
+        try:
+            self.dir.parent.rmdir()     # build/paralelo some quando não sobra tentativa
+        except OSError:
+            pass
+
+
 LEAK_REFINE = 30    # recompilações guiadas pelo pointfile depois do selo grosso (cada uma acha uma fresta; o cache evita refazer)
+
+
+def _leaktest(cmd: list[str]) -> list[str]:
+    """Mesma passada com -leaktest: vazando, o vbsp para logo depois de gravar o pointfile (rp_surdonoso: 23 s em vez
+    de ~70 s da passada inteira, que montava um BSP vazado que ninguém usa); selado, compila igual."""
+    if any(a.lower() == "-leaktest" for a in cmd):
+        return cmd
+    return [*cmd[:-1], "-leaktest", cmd[-1]]
 
 
 def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str, dict]:
@@ -781,6 +871,7 @@ def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str,
     solto no vazio; vão de verdade vira aviso com setpos (tampa automática ali ocupa espaço do mapa). O selo grosso
     (toolsskybox no corte mínimo do voxel) só com --ht-seal-grosso."""
     from hammertools import lint, seal
+    lt = _leaktest(cmd)     # rodadas de caça ao leak param no leak; a que selar já sai completa
     print("\nht-vbsp: LEAK: fechando os vãos automaticamente (só no build/; o fonte não muda) ...", flush=True)
     v = vmfio.load(out)
     try:
@@ -795,12 +886,11 @@ def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str,
     if boxes:
         print(f"ht-vbsp: {len(boxes)} lasca(s) de até {seal.SLIVER_GAP:g}u entre brushes fechadas com nodraw\n", flush=True)
         vmfio.save(v, out)
-        rc, text = _run_vbsp(cmd)
+        rc, text = _run_vbsp(lt)
     # 2º selo grosso, só com --ht-seal-grosso (corte mínimo entre as entidades e o vazio, toolsskybox em voxel de até
     # 88u): a tampa fica onde o corte é menor, que pode ser dentro de cômodo ou no meio de passagem; é remendo
     seal.WIDE.clear()
     if "leaked" in text.lower() and os.environ.get("HT_SEAL_GROSSO") == "1":
-        v = vmfio.load(out)
         try:
             r = seal.seal(v, res)
         except Exception as e:
@@ -813,7 +903,7 @@ def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str,
                   "feche o vão no Hammer (Map > Load Pointfile)", flush=True)
             print("\n".join(_seal_report(r)) + "\n", flush=True)
             vmfio.save(v, out)
-            rc, text = _run_vbsp(cmd)
+            rc, text = _run_vbsp(lt)
         # a grade grossa não vê a fresta: segue pro refino pelo pointfile
     # fresta menor que o voxel: o caminho que o vbsp gravou (.lin) diz onde; tampa com grade fina e recompila
     removed_ents = []
@@ -822,7 +912,7 @@ def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str,
         lin = out.with_suffix(".lin")
         if "leaked" not in text.lower() or not lin.exists():
             break
-        v = vmfio.load(out)
+        # v é o que está em out: cada rodada grava antes de recompilar (sem recarregar o VMF de 30 MB a cada uma)
         pts = seal.read_pointfile(lin)
         # o mesmo caminho do pointfile depois de uma rodada de tampas = a tampa não o fechou: refazer as mesmas
         # tampas não tem progresso e CADA rodada é uma compilação inteira. O cache guardava o resultado, não a
@@ -858,9 +948,12 @@ def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str,
         boxes += made
         print(f"ht-vbsp: fresta no caminho do leak: {len(made)} tampa(s) finas de nodraw:", flush=True)
         print("\n".join(_seal_report(seal.SealResult(boxes=made))) + "\n", flush=True)
-        rc, text = _run_vbsp(cmd)
+        rc, text = _run_vbsp(lt)
     r = seal.SealResult(boxes=boxes)
     still = "leaked" in text.lower()
+    if still and lt is not cmd:
+        # sem selar: a passada inteira, para sair o BSP vazado como antes (o -leaktest para sem gravar o BSP)
+        rc, text = _run_vbsp(cmd)
     if still and seal.WIDE:
         print("ht-vbsp: vão(s) de verdade no caminho do leak (mais largo que "
               f"{seal.CRACK_MAX:g}u: não tampo sozinho, a tampa ocuparia espaço do mapa). Feche no Hammer:", flush=True)
@@ -884,35 +977,65 @@ def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str,
 def _fix_verts(real: Path, args: list[str], out: Path) -> tuple[int, str, dict]:
     """Estourou o teto de vértices únicos (65536, formato do BSP). Em ordem, recompilando depois de cada passo, só no
     build/: (1) nodraw nas faces de detail escondidas por outros brushes (o vbsp não descarta essas); (2) junta blocos
-    fatiados de mesma textura (ht optimize). Devolve (rc, saída do vbsp, registro)."""
+    fatiados de mesma textura (ht optimize). O passo 2 (sobre o 1) compila junto com o 1 numa cópia do build/: a
+    escolha é a da ordem em série, sem esperar o 1 falhar. Devolve (rc, saída do vbsp, registro)."""
     from hammertools import fix, optimize
     rep = {"nodraw": 0, "merged": 0, "ok": False}
     print("\nht-vbsp: estourou o teto de vértices do vbsp (65536). Reduzindo só no build/:", flush=True)
     rc, text = 1, "too many unique verts"
-    for step in ("nodraw", "optimize"):
-        v = vmfio.load(out)
-        if step == "nodraw":
-            n = fix.nodraw_hidden_detail(v)
-            rep["nodraw"] = n
-            print(f"ht-vbsp: {n} face(s) de detail escondidas -> nodraw; recompilando.", flush=True)
-        else:
-            n = sum(optimize.optimize(v).merged.values())
-            rep["merged"] = n
-            print(f"ht-vbsp: {n} bloco(s) fatiados juntados; recompilando.", flush=True)
-        if not n:
-            continue
-        before = out.with_name(out.stem + "_preverts.vmf")
-        shutil.copy2(out, before)
-        vmfio.save(v, out)
-        rc, text = _run_vbsp([str(real), *args[:-1], str(out.with_suffix(""))])
-        if "leaked" in text.lower():        # o passo reabriu um leak (selo automático): volta e para
-            shutil.copy2(before, out)
-            print(f"ht-vbsp: {step} reabriu um leak; desfeito.", flush=True)
-            break
-        if "too many unique verts" not in text.lower():
-            rep["ok"] = True
-            print(f"ht-vbsp: coube nos vértices depois de: {step}.", flush=True)
-            break
+    opts = list(args[:-1])
+    v = vmfio.load(out)
+    rep["nodraw"] = n1 = fix.nodraw_hidden_detail(v)
+    print(f"ht-vbsp: {n1} face(s) de detail escondidas -> nodraw" + ("; recompilando." if n1 else "."), flush=True)
+    step1 = out.with_name(out.stem + "_preverts.vmf")      # build antes de qualquer passo
+    shutil.copy2(out, step1)
+    nodraw_vmf = out.with_name(out.stem + "_nodraw.vmf")   # build com o passo 1 (base do passo 2)
+    vmfio.save(v, nodraw_vmf)
+    from hammertools import extents
+    extents.clamp(v)        # em série o passo 2 lia o build já conferido pela passada do 1
+    rep["merged"] = n2 = sum(optimize.optimize(v).merged.values())
+    print(f"ht-vbsp: {n2} bloco(s) fatiados juntados" + ("; recompilando." if n2 else "."), flush=True)
+    opt_vmf = out.with_name(out.stem + "_optimize.vmf")
+    if n2:
+        vmfio.save(v, opt_vmf)
+    del v
+    spare = None
+    try:
+        if n1:
+            if n2 and _parallel_enabled():
+                spare = _Background(real, opts, out, "optimize", opt_vmf)
+                print("ht-vbsp: (o passo optimize compila em paralelo, para o caso do nodraw não bastar)", flush=True)
+            shutil.copy2(nodraw_vmf, out)
+            rc, text = _run_vbsp([str(real), *opts, str(out.with_suffix(""))])
+            if "leaked" in text.lower():        # o passo reabriu um leak (selo automático): volta e para
+                shutil.copy2(step1, out)
+                print("ht-vbsp: nodraw reabriu um leak; desfeito.", flush=True)
+                n2 = 0
+            elif "too many unique verts" not in text.lower():
+                rep["ok"] = True
+                print("ht-vbsp: coube nos vértices depois de: nodraw.", flush=True)
+                n2 = 0
+        if n2:
+            if spare:
+                rc, text = spare.wait()
+                sys.stdout.write(text)
+                sys.stdout.flush()
+                spare.adopt(out)
+                spare = None
+            else:
+                shutil.copy2(opt_vmf, out)
+                rc, text = _run_vbsp([str(real), *opts, str(out.with_suffix(""))])
+            if "leaked" in text.lower():
+                shutil.copy2(nodraw_vmf if n1 else step1, out)
+                print("ht-vbsp: optimize reabriu um leak; desfeito.", flush=True)
+            elif "too many unique verts" not in text.lower():
+                rep["ok"] = True
+                print("ht-vbsp: coube nos vértices depois de: optimize.", flush=True)
+    finally:
+        if spare:
+            spare.discard()
+        for f in (nodraw_vmf, opt_vmf):
+            f.unlink(missing_ok=True)
     if not rep["ok"]:
         print("ht-vbsp: ainda passa do teto de vértices; o próximo passo é tirar geometria do BSP (ht prop) ou simplificar o mapa.", flush=True)
     return rc, text, rep
@@ -1089,6 +1212,7 @@ def _fix_tjunctions(real: Path, args: list[str], out: Path, text: str = "") -> t
     print(f"\nht-vbsp: estourou o teto de t-junctions do vbsp ({LIMIT} índices); total estimado ~{real_idx:.0f} "
           f"(estimativa {est_total:.0f} x calibração {calib:.2f}). {len(ranked)} func_detail causam t-junctions.", flush=True)
     k = 0
+    spare = None
     verts = rec.get("vertices")
     falhou = rec.get("conv_falhou")
     if verts and verts > TJ_VERT_HEADROOM * LIMIT:
@@ -1130,7 +1254,11 @@ def _fix_tjunctions(real: Path, args: list[str], out: Path, text: str = "") -> t
         v = vmfio.load(base)
         n = optimize.detail_to_brush(v, ranked[:k])
         vmfio.save(v, out)
-        print(f"ht-vbsp: uma compilação: {k} func_detail -> {n} func_brush (~{models0 + n} modelos)", flush=True)
+        if _parallel_enabled():
+            # o -notjunc (o que vem se a conversão não couber) já compila ao lado, numa cópia do build original
+            spare = _Background(real, [*args[:-1], "-notjunc"], out, "notjunc", base)
+        print(f"ht-vbsp: uma compilação: {k} func_detail -> {n} func_brush (~{models0 + n} modelos)"
+              + (" (o -notjunc de reserva compila em paralelo)" if spare else ""), flush=True)
         rc, text2 = _run_vbsp([str(real), *args[:-1], str(out.with_suffix(""))])
         low = text2.lower()
         ok = rc == 0 and out.with_suffix(".bsp").exists() and "too many" not in low and "max_map" not in low
@@ -1153,19 +1281,28 @@ def _fix_tjunctions(real: Path, args: list[str], out: Path, text: str = "") -> t
                    "detail_ids": ranked[:k], "est_idx": est_total}
             if c and c.get("indices"):
                 res["calib"] = round(c["indices"] / max(1.0, est_total - sum(cost[e] for e in ranked[:k])), 4)
+            if spare:
+                spare.discard()
             return 0, res
         print("ht-vbsp: a conversão calculada não coube; sem mais tentativas.", flush=True)
     shutil.copy2(base, out)
     print("\nht-vbsp: recompilando com -notjunc (as t-junctions deste mapa não cabem no teto do vbsp).\n"
           "ht-vbsp: efeito colateral possível: brilhos finos nas emendas (veja a aba T-junctions do `ht lint --html`).\n", flush=True)
-    rc, text_nj = _run_vbsp([str(real), *args[:-1], "-notjunc", str(out.with_suffix(""))])
+    if spare:
+        print("ht-vbsp: usando o -notjunc que já compilava em paralelo.\n", flush=True)
+        rc, text_nj = spare.wait()
+        sys.stdout.write(text_nj)
+        sys.stdout.flush()
+        spare.adopt(out)
+    else:
+        rc, text_nj = _run_vbsp([str(real), *args[:-1], "-notjunc", str(out.with_suffix(""))])
     # conv_falhou: a tentativa que não coube, com a estimativa em que falhou — a próxima compilação não refaz
     # a mesma conversão (k=0: nenhuma tentativa aconteceu, então não há o que lembrar)
     return rc, {"result": "notjunc", "_text": text_nj, "est_idx": est_total,
                 **({"conv_falhou": {"est": est_total, "k": k}} if k else {})}
 
 
-def _autoprop(out: Path, gamedir, real: Path, rec: dict) -> dict:
+def _autoprop(out: Path, gamedir, real: Path, rec: dict, v=None) -> dict:
     """Roda o auto-prop no build/ com a calibração do registro; nunca derruba a compilação."""
     from hammertools import autoprop
     if gamedir is None:
@@ -1180,11 +1317,11 @@ def _autoprop(out: Path, gamedir, real: Path, rec: dict) -> dict:
         vcalib = float(ap["vcalib_used"])
     if not vcalib and rec.get("vertices") and rec.get("result") == "notjunc" and not ap:
         # primeira vez: o mapa compilado da última vez é quase o mesmo -> real / estimativa de agora
-        est = autoprop.estimate(vmfio.load(out))
+        est = autoprop.estimate(v if v is not None else vmfio.load(out))
         vcalib = rec["vertices"] / max(1, est.verts_total)
     try:
         vcalib = vcalib or autoprop.CALIB_VERTS
-        r = autoprop.apply(out, Path(gamedir), Path(real), calib, vcalib, log=lambda m: print(m, flush=True))
+        r = autoprop.apply(out, Path(gamedir), Path(real), calib, vcalib, log=lambda m: print(m, flush=True), v=v)
         r["calib_used"], r["vcalib_used"] = round(calib, 4), round(vcalib, 4)
         return r
     except Exception as e:  # noqa: BLE001
@@ -1192,7 +1329,7 @@ def _autoprop(out: Path, gamedir, real: Path, rec: dict) -> dict:
         return {"models": 0, "erro": str(e)}
 
 
-def _tj_plan(src: Path, out: Path) -> tuple[str, list[int], float] | None:
+def _tj_plan(src: Path, out: Path, v=None) -> tuple[str, list[int], float] | None:
     """O que deu certo na última compilação deste mapa (<mapa>.tjfix.json), se o mapa não mudou o bastante pra
     valer recalcular (a estimativa de índices não caiu {TJ_MEMORY_DROP}). ("notjunc"|"convertido", ids, estimativa)."""
     import json
@@ -1206,7 +1343,7 @@ def _tj_plan(src: Path, out: Path) -> tuple[str, list[int], float] | None:
     if info.get("result") not in ("notjunc", "convertido") or "est_idx" not in info:
         return None
     from hammertools import optimize
-    _, est = optimize.detail_tjunction_costs(vmfio.load(out))
+    _, est = optimize.detail_tjunction_costs(v if v is not None else vmfio.load(out))
     if est < TJ_MEMORY_DROP * float(info["est_idx"]):
         print(f"ht-vbsp: t-junctions estimadas caíram ({info['est_idx']:.0f} -> {est:.0f}); recalculando.", flush=True)
         return None
@@ -1226,6 +1363,7 @@ VBSP_FLAGS = {
     "--ht-no-phantom": ("HT_NO_PHANTOM", "1", "não conserta faces fantasma / textura vazada"),
     "--ht-no-align": ("HT_NO_ALIGN", "1", "não alinha a textura de faces vizinhas no mesmo plano e material"),
     "--ht-tj-retry": ("HT_TJ_RETRY", "1", "recalcula as t-junctions em vez de repetir o que deu certo"),
+    "--ht-serial": ("HT_PARALLEL", "0", "tentativas de conserto (-notjunc, optimize) uma de cada vez, sem cópia paralela"),
     "--ht-keep-preview": ("HT_KEEP_PREVIEW", "1", "mantém o preview dos geradores no fonte"),
     "--ht-no-update": ("HT_NO_UPDATE", "1", "não procura versão nova do hammertools antes de compilar"),
 }
@@ -1318,16 +1456,18 @@ def _vbsp_main(args: list[str]) -> int:
         n_prev = clear_preview(src)
         if n_prev:
             print(f"ht-vbsp: preview removido do fonte ({n_prev} objeto(s)); recarregue o mapa no Hammer++ antes de salvar de novo")
-    n_groups, n_solids, warnings = build(src, out, str(gamedir) if gamedir else None)
+    kept: list = []
+    n_groups, n_solids, warnings = build(src, out, str(gamedir) if gamedir else None, keep=kept)
     # o que o lint acha e tem conserto seguro é consertado aqui, no build/ (o fonte não muda)
     fixed_faces = 0
     try:
         from hammertools import fix as _fix
-        fixed_faces = _fix.autofix_build(out, gamedir, src.stem, log=lambda m: print(m, flush=True))
+        fixed_faces = _fix.autofix_build(out, gamedir, src.stem, log=lambda m: print(m, flush=True), v=kept[0])
     except Exception as e:  # noqa: BLE001  conserto automático nunca derruba o compile
         print(f"ht-vbsp: conserto automático falhou ({e}); seguindo sem ele", flush=True)
     from hammertools.lint import active_cordon, cordon_helper_brushes, hidden_count
-    built = vmfio.load(out)
+    # o mesmo objeto segue até a primeira passada do vbsp (cada carga do VMF de 30 MB custa ~2 s; eram 6)
+    built = kept[0]
     spawns = [e for e in built.entities if e["classname"].lower() in SPAWN_CLASSES]
     if not spawns:
         print("\nht-vbsp: AVISO: o mapa compilado não tem NENHUM ponto de spawn (info_player_start...): o jogador nasce "
@@ -1377,10 +1517,12 @@ def _vbsp_main(args: list[str]) -> int:
         # validade por tampa: a de outra geometria só cai se a VIZINHANÇA dela mudou — uma edição longe não
         # invalida o cache inteiro (antes, qualquer brush movido custava a selagem inteira na compilação seguinte)
         valido = seal.cache_valid(cache, geometry)
-        v = vmfio.load(out)
-        used, dropped = seal.apply_cache(v, cache, geometry)
+        n_ents = len(built.entities)
+        used, dropped = seal.apply_cache(built, cache, geometry)
         if used:
-            vmfio.save(v, out)
+            vmfio.save(built, out)
+        elif len(built.entities) != n_ents:
+            built = vmfio.load(out)     # sem tampa aplicada o build não é regravado: as remoções não valem
         if not valido and not used:
             stale = cache.with_suffix(".velho.json")
             cache.replace(stale)
@@ -1401,9 +1543,11 @@ def _vbsp_main(args: list[str]) -> int:
     if (os.environ.get("HT_AUTOPROP") != "0" and "-onlyents" not in flags and "-notjunc" not in flags and rec0
             and (rec0.get("ap_calib") or rec0.get("result") == "notjunc" or rec0.get("vertices", 0) > 0.90 * LIMIT
                  or (rec0.get("verts") and not rec0["verts"].get("ok")))):
-        ap_info = _autoprop(out, gamedir, real, rec0)
+        ap_info = _autoprop(out, gamedir, real, rec0, v=built)
+        if ap_info.get("erro"):
+            built = vmfio.load(out)     # falhou no meio: o objeto pode ter ficado pela metade, o arquivo não
     # t-junctions: repete o que deu certo da última vez em vez de descobrir de novo compilando
-    plan = None if ap_info and ap_info.get("models") else None if "-notjunc" in (a.lower() for a in args) or "-onlyents" in (a.lower() for a in args) else _tj_plan(src, out)
+    plan = None if ap_info and ap_info.get("models") else None if "-notjunc" in (a.lower() for a in args) or "-onlyents" in (a.lower() for a in args) else _tj_plan(src, out, v=built)
     planned = None
     if plan and plan[0] == "notjunc":
         args = [*args[:-1], "-notjunc", args[-1]]
@@ -1413,15 +1557,23 @@ def _vbsp_main(args: list[str]) -> int:
               "direto (HT_TJ_RETRY=1 recalcula).\n", flush=True)
     elif plan and plan[0] == "convertido" and plan[1]:
         from hammertools import optimize
-        v = vmfio.load(out)
+        v = built
         ids = [i for i in plan[1] if any(e.id == i for e in v.by_class["func_detail"])]
         n = optimize.detail_to_brush(v, ids)
         vmfio.save(v, out)
         planned = {"result": "convertido", "func_detail": len(ids), "func_brush": n, "detail_ids": ids, "est_idx": plan[2], "memoria": True}
         print(f"ht-vbsp: repetindo a conversão que deu certo: {len(ids)} func_detail -> {n} func_brush.\n", flush=True)
-    rc, text = _run_vbsp(cmd)
+    # limite de coordenadas no objeto que já está na memória (tampas do cache podem passar dele); o arquivo fica igual
+    # a ele, então a primeira passada não carrega o VMF de novo só para conferir
+    if any(extents.clamp(built).values()):
+        vmfio.save(built, out)
+    st = out.stat()
+    _CLAMPED[str(out)] = (st.st_mtime_ns, st.st_size)
+    del built
+    sealing = os.environ.get("HT_NO_SEAL") != "1" and "-onlyents" not in flags
+    rc, text = _run_vbsp(_leaktest(cmd) if sealing else cmd)
     seal_info = None
-    if "leaked" in text.lower() and os.environ.get("HT_NO_SEAL") != "1":
+    if "leaked" in text.lower() and sealing:
         rc, text, seal_info = _fix_leak(real, cmd, out, gamedir)
     verts_info = None
     if "too many unique verts" in text.lower() and "leaked" not in text.lower():   # vazando, o vbsp mantém todas as faces: contagem sem sentido

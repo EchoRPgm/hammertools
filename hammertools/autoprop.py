@@ -98,6 +98,7 @@ class Materials:
     def __init__(self, res):
         self.res = res
         self._cache: dict[str, dict | None] = {}
+        self._size: dict[str, tuple[int, int]] = {}
 
     def params(self, mat: str) -> dict | None:
         mat = mat.lower().replace("\\", "/")
@@ -171,15 +172,22 @@ class Materials:
         return c.most_common(1)[0][0] if c else "default"
 
     def size(self, mat: str) -> tuple[int, int]:
+        """Largura e altura da $basetexture (512x512 sem VTF legível). Uma leitura por material: o SMD pede o tamanho
+        a cada face (6.514 leituras do mesmo cabeçalho no rp_surdonoso)."""
         import struct
+        key = mat.lower()
+        if key in self._size:
+            return self._size[key]
         p = self.params(mat) or {}
         tex = p.get("$basetexture", "").replace("\\", "/").lower().removesuffix(".vtf")
         head = self.res.read(f"materials/{tex}.vtf", 32) if tex and self.res.read else None
+        wh = (512, 512)
         if head and head[:4] == b"VTF\0":
             w, h = struct.unpack_from("<HH", head, 16)
             if w and h:
-                return w, h
-        return 512, 512
+                wh = (w, h)
+        self._size[key] = wh
+        return wh
 
     def model_vmt(self, mat: str) -> str:
         """VMT de modelo com a mesma aparência: lightmapped vira VertexLitGeneric, unlit continua unlit."""
@@ -699,7 +707,7 @@ def excluded(path: Path) -> set[int]:
 
 
 def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, vcalib: float = CALIB_VERTS,
-          log=print, run=None) -> dict:
+          log=print, run=None, v: VMF | None = None) -> dict:
     """Converte os grupos escolhidos do build/ (out) em prop_static compilados. Devolve o resumo para o registro."""
     from hammertools import lint
     from hammertools.core import vmf as vmfio
@@ -707,7 +715,8 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
     if studiomdl is None:
         log("ht-vbsp: auto-prop: studiomdl não encontrado ao lado do vbsp; pulando.")
         return {"models": 0, "erro": "sem studiomdl"}
-    v = vmfio.load(out)
+    if v is None:
+        v = vmfio.load(out)
     est = estimate(v)
     res = lint.Resources.from_game(str(gamedir), None, ())
     mats = Materials(res)

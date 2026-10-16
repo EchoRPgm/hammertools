@@ -54,6 +54,9 @@ DEFAULT_GAME_DIRS = [
 
 
 # --------------------------------------------------------------------------- recursos do jogo
+_GAME_RESOURCES: dict = {}   # (gamedir, addons) -> Resources já montado neste processo
+
+
 @dataclass
 class Resources:
     """Consultas sobre arquivos do jogo. Tudo opcional: sem fonte, as checagens dependentes são puladas."""
@@ -67,7 +70,21 @@ class Resources:
     def from_game(cls, gamedir: str | Path | None, bsp: str | Path | None = None, extra: Iterable[str | Path] = (),
                   addons: bool = True) -> "Resources":
         """Fontes, em ordem: BSP (pakfile), pastas extras, VPKs/pastas do jogo (gameinfo), addons .gma
-        (addons/, cache/workshop/, Workshop do Steam)."""
+        (addons/, cache/workshop/, Workshop do Steam). Sem BSP nem pastas extras, o resultado é o mesmo no
+        processo inteiro: montar o sistema de arquivos leva ~13 s no GMod com addons e o ht-vbsp pedia 3 vezes
+        (conserto automático, auto-prop, selo)."""
+        key = None
+        if bsp is None and not extra:
+            key = (str(gamedir), addons)
+            if key in _GAME_RESOURCES:
+                return _GAME_RESOURCES[key]
+        res = cls._from_game(gamedir, bsp, extra, addons)
+        if key is not None:
+            _GAME_RESOURCES[key] = res
+        return res
+
+    @classmethod
+    def _from_game(cls, gamedir, bsp, extra, addons: bool) -> "Resources":
         import logging
         logging.getLogger("srctools").setLevel(logging.ERROR)
         gd = _find_game(gamedir)

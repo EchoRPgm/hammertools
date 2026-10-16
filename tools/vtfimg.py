@@ -117,6 +117,43 @@ def gravar(im: Image.Image, path: str, flags: int = 0x000C) -> None:
             f.write(m.tobytes())
 
 
+CUBO = ("rt", "lf", "bk", "ft", "up", "dn")   # ordem das faces no VTF (+X -X +Y -Y +Z -Z)
+
+
+def gravar_cubo(faces: dict, path: str, flags: int = 0x4000 | 0x000C | 0x0200) -> None:
+    """Cubemap VTF 7.0 (envmap|clamps|clampt|nolod): faces = {"rt": img, ...}, já na orientação do cubemap.
+    Na 7.0 (antes da 7.1, que trouxe a spheremap como 7ª face) o cubemap tem 6 faces."""
+    ims = [faces[k].convert("RGBA") for k in CUBO]
+    w, h = ims[0].size
+    cadeias = []
+    for im in ims:
+        mips, s = [], im
+        while True:
+            mips.append(s)
+            if s.width == 1 and s.height == 1:
+                break
+            s = s.resize((max(1, s.width // 2), max(1, s.height // 2)), Image.BOX)
+        cadeias.append(mips)
+    hdr = bytearray(64)
+    hdr[0:4] = b"VTF\0"
+    struct.pack_into("<II", hdr, 4, 7, 0)
+    struct.pack_into("<I", hdr, 12, 64)
+    struct.pack_into("<HH", hdr, 16, w, h)
+    struct.pack_into("<I", hdr, 20, flags)
+    struct.pack_into("<HH", hdr, 24, 1, 0)
+    r, g, b = [c / 255 for c in ims[0].convert("RGB").resize((1, 1), Image.BOX).getpixel((0, 0))]
+    struct.pack_into("<fff", hdr, 32, r, g, b)
+    struct.pack_into("<f", hdr, 48, 1.0)
+    struct.pack_into("<i", hdr, 52, 0)
+    hdr[56] = len(cadeias[0])
+    struct.pack_into("<i", hdr, 57, -1)
+    with open(path, "wb") as f:
+        f.write(bytes(hdr))
+        for nivel in reversed(range(len(cadeias[0]))):   # mip menor primeiro; dentro do mip, face a face
+            for mips in cadeias:
+                f.write(mips[nivel].tobytes())
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 4 and sys.argv[1] == "png":
         ler(sys.argv[2]).save(sys.argv[3])

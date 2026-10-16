@@ -13,7 +13,8 @@ Fluxo (só no build/, o fonte não muda):
 3. escolha gulosa pelo custo (índices + vértices liberados) até as duas contas ficarem em GOAL do teto;
 4. cada grupo vira SMD (faces visíveis, UV dos eixos de textura) + SMD de colisão (uma peça convexa por brush) +
    QC $staticprop, compilado pelo studiomdl do jogo (pelo Wine fora do Windows), em paralelo e com cache por hash;
-5. os solids saem do build/ e entra um prop_static no lugar.
+5. os solids saem do build/ e entra um prop_static no lugar, com um info_lighting acima da face de cima dele (o GMod
+   acende o prop inteiro por um ponto; sem isso o ponto é o centro do modelo, às vezes dentro de parede).
 """
 from __future__ import annotations
 
@@ -550,20 +551,92 @@ def compile_jobs(jobs: list[tuple], mdl_dir: Path, gamedir: Path, studiomdl: Pat
         return dict(zip((m for m, _ in items), pool.map(compile_one, items)))
 
 
-def prop_keyvalues(folder: str, origin: Vec, dirs: list[tuple]) -> list[dict[str, str]]:
-    """prop_static de um grupo: o visível e os de colisão."""
+LIGHT_LIFT = 16.0        # o ponto de luz fica esta altura acima da face de cima do prop
+LIGHT_FACES = 64         # faces de cima testadas (as maiores) até achar um ponto livre
+LIGHT_GRID = 256.0       # célula do índice de brushes do teste de ponto livre
+# ferramentas que tapam a luz; brush só com as outras (hint, skip, clip, trigger, areaportal...) não conta como sólido
+OPAQUE_TOOLS = {"tools/toolsnodraw", "tools/toolsskybox", "tools/toolsskybox2d", "tools/toolsblack", "tools/toolsblocklight"}
+
+
+def _opaque(s) -> bool:
+    return any(not m.startswith("tools/") or m in OPAQUE_TOOLS for m in (sd.mat.lower() for sd in s.sides))
+
+
+class SolidIndex:
+    """Brushes que tapam a luz num ponto (mundo e func_detail, sem os só de ferramenta), por célula da caixa."""
+
+    def __init__(self, v: VMF, extra: list | None = None):
+        self.cells: dict[tuple, list] = defaultdict(list)
+        solids = list(v.brushes) + [s for e in v.by_class["func_detail"] for s in e.solids] + list(extra or [])
+        seen = set()
+        for s in solids:
+            if id(s) in seen or not _opaque(s):
+                continue
+            seen.add(id(s))
+            lo, hi = s.get_bbox()
+            planes = [geom.outward(sd) for sd in s.sides]
+            for c in self._span(lo, hi):
+                self.cells[c].append((lo, hi, planes))
+
+    @staticmethod
+    def _span(lo: Vec, hi: Vec):
+        g = LIGHT_GRID
+        for x in range(math.floor(lo.x / g), math.floor(hi.x / g) + 1):
+            for y in range(math.floor(lo.y / g), math.floor(hi.y / g) + 1):
+                for z in range(math.floor(lo.z / g), math.floor(hi.z / g) + 1):
+                    yield (x, y, z)
+
+    def solid(self, p: Vec, pad: float = 1.0) -> bool:
+        g = LIGHT_GRID
+        for lo, hi, planes in self.cells.get((math.floor(p.x / g), math.floor(p.y / g), math.floor(p.z / g)), ()):
+            if not (lo.x - pad <= p.x <= hi.x + pad and lo.y - pad <= p.y <= hi.y + pad and lo.z - pad <= p.z <= hi.z + pad):
+                continue
+            if all((p - q).dot(n) < pad for n, q in planes):
+                return True
+        return False
+
+
+def lighting_point(cl: Cluster, index: SolidIndex) -> Vec | None:
+    """Ponto de luz do prop gerado: LIGHT_LIFT acima do centro da maior face de cima (normal z >= 0,7) que não caia
+    dentro de brush. O GMod acende o prop estático inteiro por um ponto só (o .vhv do -StaticPropLighting não vale:
+    clarear o arquivo não muda nada no jogo); sem lightingorigin o ponto é o illumposition do modelo, o centro da
+    caixa, que num grupo grande (escada de vários andares) cai dentro de parede e o prop sai preto. None = nenhuma
+    face de cima com espaço livre (fica o illumposition)."""
+    faces = []
+    for _, s in cl.solids:
+        for sd, poly in geom.face_polys(s):
+            if len(poly) < 3 or sd.mat.lower().startswith("tools/"):
+                continue
+            n, _ = geom.outward(sd)
+            if n.z >= 0.7:
+                faces.append((_area(poly), s.id, geom.centroid(poly)))
+    faces.sort(key=lambda f: (-round(f[0], 1), f[1]))     # estável: maior área, depois id
+    for _, _, c in faces[:LIGHT_FACES]:
+        p = Vec(round(c.x), round(c.y), round(c.z + LIGHT_LIFT))
+        if not index.solid(p):
+            return p
+    return None
+
+
+def prop_keyvalues(folder: str, origin: Vec, dirs: list[tuple], light: Vec | None = None) -> list[dict[str, str]]:
+    """prop_static de um grupo: o visível e os de colisão, e o info_lighting do visível quando há ponto de luz."""
     org = f"{origin.x:g} {origin.y:g} {origin.z:g}"
     name = dirs[0][0]
-    # o visível só desenha, com luz por vértice (vrad -StaticPropLighting): a origem fica dentro da própria colisão
-    # e, iluminado só por ela, saía preto. A sombra vem da colisão, com a forma exata dos brushes
+    # o visível só desenha. Luz: o GMod acende o prop pelo ponto de luz (lighting_point), não pela origem, que fica
+    # dentro da própria colisão. A sombra vem da colisão, com a forma exata dos brushes
     out = [{"classname": "prop_static", "model": f"{folder}/{name}.mdl", "origin": org, "angles": "0 0 0",
             "solid": "0", "skin": "0", "fademindist": "-1", "fadescale": "1", "disableshadows": "1",
             "disableselfshadowing": "1"}]
+    if light is not None:
+        out[0]["lightingorigin"] = f"ht_luz_{name}"
     # colisão: uma peça convexa por brush, em modelos sem brushes encostados; nunca desenhados (fade de 1u)
     for mname, _ in dirs[1:]:
         out.append({"classname": "prop_static", "model": f"{folder}/{mname}.mdl", "origin": org,
                     "angles": "0 0 0", "solid": "6", "skin": "0", "fademindist": "0", "fademaxdist": "1",
                     "fadescale": "1", "disableshadows": "0", "disablevertexlighting": "1"})
+    if light is not None:
+        out.append({"classname": "info_lighting", "targetname": f"ht_luz_{name}",
+                    "origin": f"{light.x:g} {light.y:g} {light.z:g}"})
     return out
 
 
@@ -630,9 +703,12 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
     log(f"ht-vbsp: auto-prop: {len(jobs)} grupo(s) -> prop_static + {len(items) - len(jobs)} modelo(s) de colisão "
         f"({todo} para compilar no studiomdl, o resto do cache)...")
     compiled = compile_jobs(jobs, mdl_dir, gamedir, studiomdl, run)
+    # pontos de luz antes de tirar os solids: a colisão de cada grupo também conta como sólido
+    index = SolidIndex(v)
+    lights = [lighting_point(cl, index) for cl, *_ in jobs]
     made = 0
     props = []
-    for cl, origin, name, dirs in jobs:
+    for (cl, origin, name, dirs), light in zip(jobs, lights):
         if not all(compiled[m] for m, _ in dirs):
             continue                # sem a colisão inteira o grupo fica como detail (prop sem colisão = parede que some)
         props.append({"model": f"{folder}/{dirs[0][0]}.mdl", "solids": sorted(s_.id for _, s_ in cl.solids),
@@ -641,7 +717,7 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
             e.solids.remove(s_)
             if not e.solids:
                 v.remove_ent(e)
-        for kv in prop_keyvalues(folder, origin, dirs):
+        for kv in prop_keyvalues(folder, origin, dirs, light):
             v.add_ent(Entity(v, kv))
         made += 1
     isolate_prop_light(v)
@@ -720,7 +796,7 @@ def convert(v: VMF, solid_ids: list[int], gamedir: Path, map_name: str, studiomd
         r.warnings.append(f"studiomdl falhou em {len(failed)} de {len(dirs)} modelo(s); log em {work}")
         r.model = ""
         return r
-    r.entities = prop_keyvalues(folder, origin, dirs)
+    r.entities = prop_keyvalues(folder, origin, dirs, lighting_point(cl, SolidIndex(v, [s for _, s in picked])))
     r.removed = [s.id for _, s in picked]
     return r
 

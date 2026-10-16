@@ -119,6 +119,9 @@ def test_apply_swaps_detail_for_props_with_fake_studiomdl(room, tmp_path, monkey
     # a colisão vem de modelos à parte, nunca desenhados nem iluminados, e faz a sombra (forma exata dos brushes)
     assert coll and all(p["fademaxdist"] == "1" and p["disableshadows"] == "0" and p["disablevertexlighting"] == "1" for p in coll)
     assert {p["origin"] for p in coll} <= {p["origin"] for p in visual}
+    # cada visível acende pelo próprio info_lighting (fora de brush), não pelo centro do modelo
+    luzes = {e["targetname"]: e for e in v.by_class["info_lighting"]}
+    assert all(p["lightingorigin"] in luzes for p in visual)
     # luz por vértice só nos gerados: o prop do mapa continua iluminado como antes (mapa não escurece)
     own = [p for p in props if "ht_prop" not in p["model"]]
     assert own and all(p["disablevertexlighting"] == "1" for p in own)
@@ -213,8 +216,12 @@ def test_convert_picked_solids_with_collision_split(room, tmp_path):
     assert set(r.skipped) == {clip.id, agua.id, 999999}           # clip e água ficam como brush
     assert any("selar" in w for w in r.warnings)                   # tirou brush do mundo
     assert r.model.startswith("models/ht_prop/mapa_x/") and r.entities[0]["model"] == r.model
-    assert r.entities[0]["solid"] == "0" and all(e["solid"] == "6" for e in r.entities[1:])
-    assert len(r.entities) >= 2 and len({e["origin"] for e in r.entities}) == 1
+    props = [e for e in r.entities if e["classname"] == "prop_static"]
+    assert props[0] is r.entities[0] and props[0]["solid"] == "0" and all(e["solid"] == "6" for e in props[1:])
+    assert len(props) >= 2 and len({e["origin"] for e in props}) == 1
+    # ponto de luz acima das faces de cima, ligado ao visível
+    (luz,) = [e for e in r.entities if e["classname"] == "info_lighting"]
+    assert props[0]["lightingorigin"] == luz["targetname"]
     assert len(list(room.brushes)) == before                        # o VMF não muda: quem aplica é o chamador
 
 
@@ -284,3 +291,32 @@ def test_excluded_le_nao_converter(tmp_path):
     assert autoprop.excluded(p) == {12, 34}
     p.write_text("lixo")
     assert autoprop.excluded(p) == set()
+
+
+def test_lighting_point_fica_acima_da_face_de_cima_e_fora_de_brush(room):
+    # escada de vários andares: o centro da caixa cai dentro da laje; o ponto de luz sai da maior face de cima livre
+    slab = room.make_prism(Vec(-64, -64, 96), Vec(64, 64, 112), "dev/a").solid          # laje do mundo
+    room.add_brush(slab)
+    low = room.make_prism(Vec(-32, -32, 0), Vec(32, 32, 8), "dev/a").solid               # degrau sob a laje
+    big = room.make_prism(Vec(200, 0, 0), Vec(328, 128, 16), "dev/a").solid              # patamar livre, maior
+    cl = autoprop.Cluster((0, 0, 0), [(None, low), (None, big)])
+    p = autoprop.lighting_point(cl, autoprop.SolidIndex(room))
+    assert p == Vec(264, 64, 16 + autoprop.LIGHT_LIFT)
+    # hint/skip e clip por cima não tapam a luz
+    room.add_brush(room.make_prism(Vec(190, -10, 20), Vec(340, 140, 60), "tools/toolshint").solid)
+    room.add_brush(room.make_prism(Vec(190, -10, 20), Vec(340, 140, 60), "tools/toolsplayerclip").solid)
+    assert autoprop.lighting_point(cl, autoprop.SolidIndex(room)) == p
+    # o patamar coberto por outro brush: cai para o degrau
+    room.add_brush(room.make_prism(Vec(190, -10, 20), Vec(340, 140, 60), "dev/a").solid)
+    assert autoprop.lighting_point(cl, autoprop.SolidIndex(room)) == Vec(0, 0, 8 + autoprop.LIGHT_LIFT)
+    # tudo coberto: sem ponto (o prop fica com o illumposition)
+    room.add_brush(room.make_prism(Vec(-40, -40, 9), Vec(40, 40, 40), "dev/a").solid)
+    assert autoprop.lighting_point(cl, autoprop.SolidIndex(room)) is None
+
+
+def test_prop_keyvalues_liga_o_visivel_ao_info_lighting():
+    ents = autoprop.prop_keyvalues("models/ht_prop/m", Vec(1, 2, 3), [("abc", None), ("abc_c", None)], Vec(4, 5, 6))
+    vis, col, luz = ents
+    assert vis["lightingorigin"] == luz["targetname"] == "ht_luz_abc" and "lightingorigin" not in col
+    assert luz["classname"] == "info_lighting" and luz["origin"] == "4 5 6"
+    assert len(autoprop.prop_keyvalues("models/ht_prop/m", Vec(1, 2, 3), [("abc", None)])) == 1

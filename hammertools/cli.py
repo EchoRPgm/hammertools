@@ -546,7 +546,7 @@ def cmd_prop(args) -> int:
         print(f"aviso: {w}")
     if not r.entities:
         return 1
-    print(f"{len(r.removed)} solid(s) -> {r.model} + {len(r.entities) - 1} modelo(s) de colisão")
+    print(f"{len(r.removed)} solid(s) -> {r.model} + {sum(e['classname'] == 'prop_static' for e in r.entities) - 1} modelo(s) de colisão")
     gone = set(r.removed)
     for s in [s for s in v.brushes if s.id in gone]:
         v.remove_brush(s)

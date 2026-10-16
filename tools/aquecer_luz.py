@@ -30,7 +30,8 @@ def main() -> None:
     ap.add_argument("--neblina", nargs=3, type=int)
     ap.add_argument("--saturacao", type=float, default=0.2)
     a = ap.parse_args()
-    txt = a.entrada.read_text(encoding="utf-8", errors="surrogateescape")
+    with open(a.entrada, encoding="utf-8", errors="surrogateescape", newline="") as f:   # mantém CRLF do Hammer
+        txt = f.read()
     cont = {"lampadas": 0, "coloridas": 0}
 
     def entidade(m: re.Match) -> str:
@@ -64,8 +65,9 @@ def main() -> None:
         return b
 
     # entidade de nível 0 (sem blocos aninhados além de editor/connections, que não têm "classname")
-    novo = re.sub(r'^entity\n\{.*?^\}', entidade, txt, flags=re.S | re.M)
-    a.saida.write_text(novo, encoding="utf-8", errors="surrogateescape")
+    novo = re.sub(r'^entity\r?\n\{.*?^\}', entidade, txt, flags=re.S | re.M)
+    with open(a.saida, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
+        f.write(novo)
     print(f"{a.saida}: {cont['lampadas']} lâmpadas aquecidas, {cont['coloridas']} coloridas mantidas")
 
 

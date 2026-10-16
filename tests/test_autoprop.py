@@ -320,3 +320,23 @@ def test_prop_keyvalues_liga_o_visivel_ao_info_lighting():
     assert vis["lightingorigin"] == luz["targetname"] == "ht_luz_abc" and "lightingorigin" not in col
     assert luz["classname"] == "info_lighting" and luz["origin"] == "4 5 6"
     assert len(autoprop.prop_keyvalues("models/ht_prop/m", Vec(1, 2, 3), [("abc", None)])) == 1
+
+
+def test_cleanup_keeps_models_of_other_builds_of_the_same_map(tmp_path):
+    # dois builds do mesmo mapa (worktree principal e a da otimização) dividem models/ht_prop/<mapa>: a limpeza de um
+    # não pode apagar o que o outro usa (o vbsp do outro perdia os props visíveis)
+    import os
+    import time
+    from hammertools import autoprop
+    d = tmp_path / "models"
+    autoprop.write_manifest(d, tmp_path / "a" / "build" / "m.vmf", ["aaaaaaaaaaaa", "aaaaaaaaaaaa_c"])
+    autoprop.write_manifest(d, tmp_path / "b" / "build" / "m.vmf", ["bbbbbbbbbbbb"])
+    assert autoprop.manifests_in_use(d) == {"aaaaaaaaaaaa", "aaaaaaaaaaaa_c", "bbbbbbbbbbbb"}
+    # manifesto do mesmo build é sobrescrito, não somado
+    autoprop.write_manifest(d, tmp_path / "b" / "build" / "m.vmf", ["cccccccccccc"])
+    assert "bbbbbbbbbbbb" not in autoprop.manifests_in_use(d)
+    # build abandonado (manifesto velho) deixa de segurar os modelos
+    old = next(p for p in d.glob(".ht_build_*.json") if "aaaa" in p.read_text())
+    t = time.time() - (autoprop.MANIFEST_DAYS + 1) * 86400
+    os.utime(old, (t, t))
+    assert autoprop.manifests_in_use(d) == {"cccccccccccc"} and not old.exists()

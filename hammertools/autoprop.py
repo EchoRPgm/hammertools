@@ -486,6 +486,36 @@ def work_dir(base: Path, key: str) -> Path:
     return base
 
 
+MANIFEST_DAYS = 7      # manifesto de build mais velho que isso não segura modelo na pasta (build abandonado)
+
+
+def write_manifest(mdl_dir: Path, vmf: Path, models, path: Path | None = None) -> Path:
+    """.ht_build_<hash do VMF de build>.json na pasta de modelos: os modelos que esse build usa."""
+    import json
+    mdl_dir.mkdir(parents=True, exist_ok=True)
+    path = path or mdl_dir / f".ht_build_{hashlib.sha1(str(Path(vmf).resolve()).encode()).hexdigest()[:12]}.json"
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"vmf": str(Path(vmf).resolve()), "modelos": sorted(set(models))}))
+    os.replace(tmp, path)
+    return path
+
+
+def manifests_in_use(mdl_dir: Path, days: float = MANIFEST_DAYS) -> set[str]:
+    """Modelos de todos os builds com manifesto recente; manifesto velho ou ilegível sai."""
+    import json
+    import time
+    keep: set[str] = set()
+    for m in mdl_dir.glob(".ht_build_*.json"):
+        try:
+            if time.time() - m.stat().st_mtime > days * 86400:
+                m.unlink()
+                continue
+            keep |= set(json.loads(m.read_text()).get("modelos", []))
+        except (OSError, ValueError):
+            continue
+    return keep
+
+
 def model_dirs(gamedir: Path, map_name: str) -> tuple[Path, Path, str]:
     """(pasta dos .mdl, pasta dos .vmt, caminho do modelo no jogo sem o nome) de um mapa."""
     rel = f"{MODEL_DIR}/{safe(map_name)}"
@@ -702,6 +732,9 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
     todo = sum(1 for m, _ in items if not (mdl_dir / f"{m}.mdl").exists())
     log(f"ht-vbsp: auto-prop: {len(jobs)} grupo(s) -> prop_static + {len(items) - len(jobs)} modelo(s) de colisão "
         f"({todo} para compilar no studiomdl, o resto do cache)...")
+    # o que este build vai usar entra no manifesto ANTES de compilar: outra compilação do mesmo mapa (outra worktree,
+    # mesma pasta do jogo) que limpe a pasta no meio não apaga estes modelos
+    manifest = write_manifest(mdl_dir, out, [m for *_, dirs in jobs for m, _ in dirs])
     compiled = compile_jobs(jobs, mdl_dir, gamedir, studiomdl, run)
     # pontos de luz antes de tirar os solids: a colisão de cada grupo também conta como sólido
     index = SolidIndex(v)
@@ -722,11 +755,15 @@ def apply(out: Path, gamedir: Path, real_vbsp: Path, calib: float = CALIB_IDX, v
         made += 1
     isolate_prop_light(v)
     vmfio.save(v, out)
-    # modelos que nenhum prop deste build usa (nomes antigos, outra geometria) saem da pasta: o pack embute a pasta
+    # modelos que nenhum build recente usa (nomes antigos, outra geometria) saem da pasta: o pack embute a pasta.
+    # "Nenhum build": a pasta é do mapa, não da worktree; dois builds do mesmo mapa (otimização numa cópia, o principal
+    # noutra) apagavam os modelos um do outro e o vbsp perdia os props visíveis (escada do rp_surdonoso sumiu)
     used = {Path(e["model"]).stem for e in v.by_class["prop_static"] if e["model"].startswith(folder + "/")}
+    write_manifest(mdl_dir, out, used, path=manifest)
+    keep = manifests_in_use(mdl_dir)
     for f in mdl_dir.glob("*"):
         stem = f.name.split(".")[0]
-        if re.fullmatch(r"[0-9a-f]{12}(_c\d*)?", stem) and stem not in used:   # _c0.. = nomes antigos
+        if re.fullmatch(r"[0-9a-f]{12}(_c\d*)?", stem) and stem not in keep:   # _c0.. = nomes antigos
             f.unlink()
     failed = len(jobs) - made
     log(f"ht-vbsp: auto-prop: {made} prop_static no lugar de {sum(len(c.solids) for c, *_ in jobs)} solids de detail "

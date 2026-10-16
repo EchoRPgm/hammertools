@@ -31,15 +31,89 @@ def add_plug(v: VMF, lo: Vec, hi: Vec, material: str):
     lo = Vec(*(max(-WORLD, math.floor(c + 1e-6)) for c in lo))
     hi = Vec(*(min(WORLD, math.ceil(c - 1e-6)) for c in hi))
     solid = v.make_prism(lo, hi, mat=material).solid
+    if material.lower() == "tools/toolsnodraw":
+        paint_exposed(v, solid)
     solid.visgroup_ids.add(vmfio._visgroup(v, SEAL_VISGROUP, (0, 160, 255)).id)
     v.add_brush(solid)
     return solid
 
 
+PAINT_REACH = 8.0   # distância máxima entre a face da tampa e a face vizinha paralela de onde ela copia o material
+
+_paint_index: list = [None, None]     # [vmf, índice]: só o último VMF (id() se repete depois que um VMF morre)
+
+
+def _brush_index(v: VMF) -> list:
+    """(lo, hi, planos pra fora, solid) de cada brush do mundo e de func_detail, menos as tampas; uma vez por VMF
+    (as tampas que entram depois não são vizinhas de onde copiar material)."""
+    from hammertools.core import geom
+    if _paint_index[0] is not v:
+        seal_ids = {vg.id for vg in v.vis_tree if vg.name == SEAL_VISGROUP}
+        solids = [s for s in v.brushes if not s.visgroup_ids & seal_ids]
+        solids += [s for e in v.by_class["func_detail"] for s in e.solids]
+        _paint_index[:] = [v, [(*s.get_bbox(), [geom.outward(sd) for sd in s.sides], s) for s in solids]]
+    return _paint_index[1]
+
+
+def paint_exposed(v: VMF, solid) -> int:
+    """Face de tampa que dá pro ar ganha o material (e o alinhamento) da face vizinha paralela mais próxima, voltada
+    pro mesmo lado: a tampa sai da grade e pode passar uns u da superfície (chão, guia). Nodraw ali apaga a face de
+    baixo e deixa ver o vazio (faixa cinza no pé da parede do rp_surdonoso). Face coberta por brush fica nodraw.
+    Devolve quantas faces pintou."""
+    from hammertools.core import geom
+    lo, hi = solid.get_bbox()
+    near = [b for b in _brush_index(v)
+            if all(b[0][k] <= hi[k] + PAINT_REACH and b[1][k] >= lo[k] - PAINT_REACH for k in range(3))]
+
+    def inside(planes, p):
+        return all(n.dot(p - q) <= 1e-3 for n, q in planes)
+
+    painted = 0
+    for sd in solid.sides:
+        n, q = geom.outward(sd)
+        k = max(range(3), key=lambda j: abs(n[j]))
+        o = [j for j in range(3) if j != k]
+        c = q[k]
+        pts = []
+        for a in (0.1, 0.5, 0.9):
+            for b in (0.1, 0.5, 0.9):
+                p = [0.0, 0.0, 0.0]
+                p[k] = c + n[k] * 0.25
+                p[o[0]] = lo[o[0]] + (hi[o[0]] - lo[o[0]]) * a
+                p[o[1]] = lo[o[1]] + (hi[o[1]] - lo[o[1]]) * b
+                pts.append(Vec(*p))
+        if all(any(inside(b[2], p) for b in near) for p in pts):
+            continue
+        best = None
+        for blo, bhi, _, s in near:
+            if blo[o[0]] > hi[o[0]] + PAINT_REACH or bhi[o[0]] < lo[o[0]] - PAINT_REACH:
+                continue
+            if blo[o[1]] > hi[o[1]] + PAINT_REACH or bhi[o[1]] < lo[o[1]] - PAINT_REACH:
+                continue
+            for other in s.sides:
+                if other.mat.lower().startswith("tools/"):
+                    continue
+                n2, q2 = geom.outward(other)
+                if n2.dot(n) < 0.999:
+                    continue
+                d = abs(q2[k] - c)
+                if d <= PAINT_REACH and (best is None or d < best[0]):
+                    best = (d, other)
+        if best is not None:
+            src = best[1]
+            sd.mat = src.mat
+            sd.uaxis, sd.vaxis = src.uaxis.copy(), src.vaxis.copy()
+            sd.lightmap = src.lightmap
+            painted += 1
+    return painted
+
+
 def plugs_in(v: VMF) -> list:
-    """Tampas (do visgroup ht_seal) já no mapa: [(lo, hi, material)]."""
+    """Tampas (do visgroup ht_seal) já no mapa: [(lo, hi, material)]. O material é o de ferramenta da tampa (as faces
+    que dão pro ar podem estar pintadas, ver paint_exposed)."""
     ids = {vg.id for vg in v.vis_tree if vg.name == SEAL_VISGROUP}
-    return [(*s.get_bbox(), s.sides[0].mat) for s in v.brushes if s.visgroup_ids & ids]
+    return [(*s.get_bbox(), next((sd.mat for sd in s.sides if sd.mat.lower().startswith("tools/")), "tools/toolsnodraw"))
+            for s in v.brushes if s.visgroup_ids & ids]
 
 
 def fingerprint(vmf_text: str) -> str:

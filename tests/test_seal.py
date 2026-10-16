@@ -143,7 +143,7 @@ def test_sliver_plug_fills_off_grid_gap():
     assert len(made) == 1
     lo, hi = made[0]
     assert (lo.x, hi.x) == (0, 32) and (lo.y, hi.y) == (499, 500) and (lo.z, hi.z) == (0, 256)   # arredondada pra fora
-    assert v.brushes[-1].sides[0].mat == "tools/toolsnodraw"
+    assert seal.plugs_in(v)[-1][2] == "tools/toolsnodraw"
 
 
 def test_close_slivers_fills_all_sub_unit_gaps_at_once():
@@ -337,3 +337,26 @@ def test_leak_refine_stops_when_pointfile_does_not_move(tmp_path, monkeypatch, c
     assert "MESMO caminho" in out and "AINDA VAZA" in out
     # original + UMA rodada de refino: a segunda leitura do mesmo pointfile já corta (antes: até 30)
     assert (tmp_path / "mapsrc" / "build" / "calls.txt").read_text() == "xx"
+
+
+def test_plug_faces_open_to_air_copy_the_nearest_parallel_face():
+    # tampa da grade passando 3u acima do chão, no pé da parede (rp_surdonoso): nodraw ali apagava o chão e
+    # deixava ver o vazio. O topo copia a guia (a face paralela mais perto), a frente também, e a base
+    # enterrada fica nodraw
+    v = VMF()
+    _box(v, (-256, 0, -64), (102, 128, 0), mat="concrete/road")          # chão até x=102
+    _box(v, (104, 0, -64), (112, 128, 2), mat="concrete/curb")           # guia, 2u acima do chão
+    _box(v, (112, 0, -64), (144, 128, 128), mat="brick/wall")            # parede
+    plug = seal.add_plug(v, Vec(102, 32, -2), Vec(107, 96, 3), "tools/toolsnodraw")
+    mats = {tuple(round(c) for c in -sd.normal()): sd.mat for sd in plug.sides}
+    assert mats[(0, 0, 1)] == "concrete/curb"
+    assert mats[(-1, 0, 0)] == "concrete/curb"                          # a guia (2u) está mais perto que a parede
+    assert mats[(0, 0, -1)] == "tools/toolsnodraw"                       # enterrada no chão e na guia
+    assert seal.plugs_in(v)[-1][2] == "tools/toolsnodraw"
+
+
+def test_skybox_plug_is_not_painted():
+    v = VMF()
+    _box(v, (0, 0, 0), (64, 64, 64), mat="brick/wall")
+    plug = seal.add_plug(v, Vec(64, 0, 0), Vec(128, 64, 64), "tools/toolsskybox")
+    assert {sd.mat for sd in plug.sides} == {"tools/toolsskybox"}

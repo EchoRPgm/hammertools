@@ -134,16 +134,28 @@ def world_face_problems(v: VMF, bsp_path: str | Path, min_area: float = 16.0) ->
                     continue
                 n, p = geom.outward(side)
                 index[(round(n.x, 1), round(n.y, 1), round(n.z, 1))].append((poly, n, n.dot(p), _norm_mat(side.mat), s, e is None))
+    # pré-filtro vetorizado por grupo de normal (com folga de arredondamento); o teste exato de antes roda só nos que
+    # passam, na mesma ordem: mesma resposta, sem varrer em Python todas as faces de mesma normal para cada face do
+    # BSP (rp_surdonoso: 132 milhões de comparações, ~20 s)
+    import numpy as np
+    arrays = {k: (np.array([tuple(h[1]) for h in hs]), np.array([h[2] for h in hs])) for k, hs in index.items()}
     out = []
     for fi, mat, pts, n in _read_faces(bsp_path):
         t = _norm_mat(mat)
         if "water" in t or t.startswith("tools/"):
             continue
         ctr = sum(pts, Vec()) / len(pts)
+        c = np.array(tuple(ctr))
         hits = []
         for sg in (1, -1):
             nn = n * sg
-            hits += [h for h in index.get((round(nn.x, 1), round(nn.y, 1), round(nn.z, 1)), ())
+            k = (round(nn.x, 1), round(nn.y, 1), round(nn.z, 1))
+            if k not in arrays:
+                continue
+            hs = index[k]
+            N, PD = arrays[k]
+            sel = np.nonzero((N @ np.array(tuple(nn)) > 0.999 - 1e-9) & (np.abs(N @ c - PD) < 1.0 + 1e-6))[0]
+            hits += [h for h in (hs[i] for i in sel)
                      if h[1].dot(nn) > 0.999 and abs(h[1].dot(ctr) - h[2]) < 1.0 and _on_poly(ctr, h[0], h[1])]
         if not hits:
             kind = "fantasma"

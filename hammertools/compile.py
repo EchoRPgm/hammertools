@@ -111,7 +111,7 @@ def rad_args(profile: str, bsp: Path, extra: list[str]) -> list[str]:
 def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags: list[str] | None = None,
         vbsp_args: list[str] | None = None, vis_args: list[str] | None = None, rad_args_extra: list[str] | None = None,
         copy: bool = True, pack: bool = False, use_cache: bool = True, luz: str = "vrad",
-        bake_args: list[str] | None = None) -> int:
+        bake_args: list[str] | None = None, cubemaps: str = "auto") -> int:
     from hammertools import cli
     vmf = vmf.resolve()
     noext = vmf.with_suffix("")
@@ -128,6 +128,14 @@ def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags:
     if rc != 0 or not bsp.exists():
         say(f"vbsp falhou (saída {rc}); parado")
         return rc or 1
+    # cubemaps planejados (posição e face -> cubemap por visibilidade) antes do vvis/vrad, como o vbsp faz os dele;
+    # só com o path tracing, que renderiza os VTFs (sem ele os provisórios ficariam cinza no lugar do buildcubemaps)
+    if luz == "pathtracing" and cubemaps == "auto" and rad != "off" and find_echohammer() is not None:
+        from hammertools import cubemaps as cubemaps_mod
+        try:
+            cubemaps_mod.run(bsp, log=say)
+        except Exception as e:  # noqa: BLE001  plano de cubemaps nunca derruba a compilação
+            say(f"cubemaps: plano falhou ({e}); ficam os do vbsp")
     target = wine_safe_dir(vmf.parent) / vmf.stem
     tool_target = lambda exe: str(target) if str(exe).lower().endswith(".exe") else str(noext)
     vvis = vrad = None
@@ -269,7 +277,7 @@ def cmd_compile(args) -> int:
     ht_flags = [f for f in cli.VBSP_FLAGS if getattr(args, f.lstrip("-").replace("-", "_"), False)]
     return run(Path(args.vmf), Path(game), args.vis, args.rad, ht_flags, shlex.split(args.vbsp_args or ""),
                shlex.split(args.vis_args or ""), shlex.split(args.rad_args or ""), not args.no_copy, args.pack,
-               not args.no_cache, args.luz, shlex.split(args.bake_args or ""))
+               not args.no_cache, args.luz, shlex.split(args.bake_args or ""), args.cubemaps)
 
 
 def add_parser(sub) -> None:
@@ -282,6 +290,9 @@ def add_parser(sub) -> None:
                    help="normal; rapido (-bounce 2 -noextra); final (-final -StaticPropLighting -StaticPropPolys -TextureShadows)")
     p.add_argument("--luz", choices=["vrad", "pathtracing"], default="vrad",
                    help="pathtracing: o vrad monta a estrutura e o EchoHammer (echort, GPU) calcula a luz; mesmo custo no jogo")
+    p.add_argument("--cubemaps", choices=["auto", "autor"], default="auto",
+                   help="com --luz pathtracing: auto = reposiciona os env_cubemap e liga cada face ao cubemap que a "
+                        "enxerga, renderizados pelo bake; autor = os do mapa, com os VTFs padrão do vbsp")
     p.add_argument("--bake-args", help="opções do EchoHammer bake com --luz pathtracing (ex.: \"--samples 512 --bounces 4 --suave\")")
     p.add_argument("--vbsp-args", help="argumentos extras do vbsp (entre aspas)")
     p.add_argument("--vis-args", help="argumentos extras do vvis")

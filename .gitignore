@@ -19,3 +19,9 @@ vm-share/*
 !vm-share/setup.ps1
 /content/
 uv.lock
+# saídas da compilação dos mapas de teste e o recorte da praia (gerado do mapa do usuário por tools/praia_teste.py)
+maps/*.bsp
+maps/*.prt
+maps/*.lin
+maps/*.tjfix.json
+maps/ht_praia_teste.vmf

@@ -464,7 +464,7 @@ def resolve_alignment(v: VMF, src: Path, log=print, ask: bool = False, poll: flo
     return align_textures(v, yes, groups) if yes else []
 
 
-def autofix_build(out: Path, gamedir: Path | None, map_stem: str, log=print) -> int:
+def autofix_build(out: Path, gamedir: Path | None, map_stem: str, log=print, v=None) -> int:
     """Consertos seguros que o ht-vbsp aplica sozinho no build/ (o fonte não muda), para o lint não só avisar:
     - material de modelo em brush vira uma cópia LightmappedGeneric (com lightmap; antes a luz mudava com a distância,
       canteiro do rp_surdonoso), na pasta de materiais gerados do mapa, que o pack embute no BSP;
@@ -475,10 +475,11 @@ def autofix_build(out: Path, gamedir: Path | None, map_stem: str, log=print) -> 
     - faces vizinhas no mesmo plano e material com alinhamento de textura diferente ficam com o da maior área
       (senão viram retângulos de tom diferente), só nos materiais escolhidos em <mapa>.align.json; o EchoHammer
       pausa a compilação para perguntar (resolve_alignment; HT_NO_ALIGN=1 desliga).
-    Devolve quantos consertos (faces + entidades)."""
+    Devolve quantos consertos (faces + entidades). `v`: o VMF do build já carregado (é alterado e gravado)."""
     from hammertools import autoprop
     from hammertools.core import vmf as vmfio
-    v = vmfio.load(out)
+    if v is None:
+        v = vmfio.load(out)
     total = 0
     snapped = snap_hint_planes(v)
     if snapped:

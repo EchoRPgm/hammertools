@@ -42,3 +42,9 @@ def gen_solids(built):
 def all_solids(built):
     """Mundo + func_detail (o que 'existe' geometricamente no mapa)."""
     return list(built.brushes) + [s for e in built.entities if e["classname"] == "func_detail" for s in e.solids]
+
+
+@pytest.fixture(autouse=True)
+def _serial_vbsp(monkeypatch):
+    """Os testes contam as passadas do vbsp em série; os de compilação em paralelo tiram a variável."""
+    monkeypatch.setenv("HT_PARALLEL", "0")

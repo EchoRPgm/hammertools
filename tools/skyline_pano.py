@@ -10,8 +10,9 @@
 Direção de cada pixel como no R_DrawSkyBox do Source (st_to_vec/skytexorder, os mesmos do echorp_ceu): rt = +X,
 bk = +Y, lf = -X, ft = -Y; a volta da esquerda para a direita é bk -> rt -> ft -> lf.
 
-  python tools/skyline_pano.py <panorama.jpg> <pasta skybox> <nome> [horizonte base [graus estica centro]]
-      horizonte/base: frações da altura da foto (linha do horizonte, pé da faixa usada); padrão 0.24 0.60 270 1.3 -45
+  python tools/skyline_pano.py <panorama.jpg> <pasta skybox> <nome> [horizonte base [graus estica centro [quente]]]
+      horizonte/base: frações da altura da foto (linha do horizonte, pé da faixa usada); padrão 0.24 0.60 270 1.3 -45 0
+      quente: 0..1, aquece a foto e o céu (mais vermelho, menos azul) para combinar com uma luz de sol quente
 """
 from __future__ import annotations
 
@@ -88,8 +89,10 @@ def main() -> None:
     graus = float(a[6]) if len(a) > 6 else 270.0
     estica = float(a[7]) if len(a) > 7 else 1.3
     centro = float(a[8]) if len(a) > 8 else -45.0
+    quente = float(a[9]) if len(a) > 9 else 0.0
 
     pano = np.asarray(Image.open(src).convert("RGB")).astype(np.float32)
+    pano = pano * np.array([1 + 0.07 * quente, 1 + 0.01 * quente, 1 - 0.12 * quente], np.float32)
     H, W, _ = pano.shape
     faixa = volta_completa(pano[: int(H * base)], graus)
     hb, wt, _ = faixa.shape

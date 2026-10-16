@@ -6,7 +6,7 @@
 - acima da faixa, gradiente do céu com a cor do topo da foto (fundida na faixa); abaixo, a cor da base continua até o
   pé da face; up e dn em cor lisa.
 
-  python tools/skyline_pano.py <panorama.jpg> <pasta skybox> <nome> [topo base]   (topo/base em fração da altura)
+  python tools/skyline_pano.py <panorama.jpg> <pasta skybox> <nome> [topo base [faces_pano estica]]
 """
 from __future__ import annotations
 
@@ -37,27 +37,32 @@ def gradiente(w: int, h: int, cima, baixo) -> Image.Image:
 def main() -> None:
     src, out, nome = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
     topo, base = (float(sys.argv[4]), float(sys.argv[5])) if len(sys.argv) > 5 else (0.06, 0.50)
+    # faces cobertas pelo panorama (o resto são as pontas espelhadas) e esticamento vertical: numa cidade cercada de
+    # prédios a skyline precisa subir mais no céu para aparecer por cima dos telhados
+    faces_pano = int(sys.argv[6]) if len(sys.argv) > 6 else 3
+    estica = float(sys.argv[7]) if len(sys.argv) > 7 else 1.3
     pano = Image.open(src).convert("RGB")
     W, H = pano.size
     faixa = pano.crop((0, int(H * topo), W, int(H * base)))
-    # 180° = 2 faces
-    fw = 2 * N
-    fh = round(faixa.height * fw / faixa.width)
+    fw = faces_pano * N
+    fh = round(faixa.height * fw / faixa.width * estica)
     faixa = faixa.resize((fw, fh), Image.LANCZOS)
-    # outras 2 faces: só as pontas do panorama (colinas, pontes), espelhadas e esticadas; a direita do panorama
+    # resto da volta: só as pontas do panorama (colinas, pontes), espelhadas e esticadas; a direita do panorama
     # continua na face seguinte e a esquerda fecha a volta, sem emenda
-    q = fw // 5
+    q = fw // (5 * faces_pano // 2)
     m = 900                       # largura da fusão entre as duas pontas (o céu da foto muda de tom de uma ponta à outra)
-    larg = fw // 2 + m // 2       # cada ponta cobre meia volta + meia fusão
+    rw = (4 - faces_pano) * N       # largura do resto da volta
+    m = min(m, rw // 2)
+    larg = rw // 2 + m // 2         # cada ponta cobre metade do resto + meia fusão
     dir_ = faixa.crop((fw - q, 0, fw, fh)).transpose(Image.FLIP_LEFT_RIGHT).resize((larg, fh), Image.LANCZOS)
     esq = faixa.crop((0, 0, q, fh)).transpose(Image.FLIP_LEFT_RIGHT).resize((larg, fh), Image.LANCZOS)
-    resto = Image.new("RGB", (fw, fh))
+    resto = Image.new("RGB", (rw, fh))
     resto.paste(dir_, (0, 0))
-    resto.paste(esq, (fw - larg, 0))
+    resto.paste(esq, (rw - larg, 0))
     mask = Image.linear_gradient("L").rotate(90, expand=True).resize((m, fh))   # horizontal: 0 à esquerda, 255 à direita
     a_ = dir_.crop((larg - m, 0, larg, fh))
     b_ = esq.crop((0, 0, m, fh))
-    resto.paste(Image.composite(b_, a_, mask), (fw - larg, 0))
+    resto.paste(Image.composite(b_, a_, mask), (rw - larg, 0))
     faixa_toda = Image.new("RGB", (4 * N, fh))
     faixa_toda.paste(faixa, (0, 0))
     faixa_toda.paste(resto, (fw, 0))

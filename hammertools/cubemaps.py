@@ -35,6 +35,8 @@ RADIUS = 512.0
 COVER = 0.99
 EYE = 64.0
 SIDE = 32                 # lado do cubemap padrão (tamanho 0 no lump)
+WATER_CELL = 2048.0       # um cubemap de água por célula (lago grande ganha vários: o reflexo muda pela margem)
+WATER_HEIGHT = 96.0       # altura do cubemap da água acima da superfície
 PLACEHOLDER = 0.25        # cinza linear dos VTFs provisórios (se o bake não rodar, reflexo neutro e não preto)
 
 
@@ -56,7 +58,8 @@ class Plan:
     assign: dict[int, int]                 # índice em faces -> índice em origins
     faces: list[RFace]
     include: dict[str, str] = field(default_factory=dict)   # patch velho -> material original
-    kept: int = 0                          # cubemaps do autor mantidos
+    kept: int = 0
+    water: int = 0                         # cubemaps acima da água                          # cubemaps do autor mantidos
     blocked_before: float = 0.0            # fração da área com cubemap atrás de parede (antes)
     blocked_after: float = 0.0
     notes: list[str] = field(default_factory=list)
@@ -193,20 +196,37 @@ def plan(bsp: BSP, radius: float = RADIUS) -> Plan | None:
         got += sum(faces[i].area for i in gain)
         left -= gain
     origins = [cands[ci] for ci in chosen]
+    # água: cubemap próprio acima da superfície (um por célula de WATER_CELL), que vê o céu e a margem como o
+    # reflexo de verdade; o cubemap de terra mais perto (às vezes junto de parede) deixava a água apagada
+    water_idx = set()
+    cells: dict = defaultdict(list)
+    for f in faces:
+        if f.water:
+            cells[(int(f.center.x // WATER_CELL), int(f.center.y // WATER_CELL), round(f.center.z))].append(f)
+    for fs in cells.values():
+        a = sum(f.area for f in fs) or 1.0
+        c = sum((f.center * f.area for f in fs), Vec()) / a
+        for h in (WATER_HEIGHT, WATER_HEIGHT / 2, 32):
+            q = Vec(round(c.x), round(c.y), round(c.z + h))
+            if not _solid(_leaf(bsp, q)):
+                water_idx.add(len(origins))
+                origins.append(q)
+                break
     if not origins:
         return None
 
-    # cada face: o escolhido mais perto que a enxerga; senão o mais perto (regra do vbsp)
+    # cada face: o escolhido mais perto que a enxerga; senão o mais perto (regra do vbsp). Água: só os da água
     assign, after = {}, 0.0
     for fi, (f, p) in enumerate(zip(faces, pts)):
-        order = sorted(range(len(origins)), key=lambda i: (origins[i] - p).mag())
+        pool = [i for i in range(len(origins)) if (i in water_idx) == f.water] if f.water and water_idx else range(len(origins))
+        order = sorted(pool, key=lambda i: (origins[i] - p).mag())
         pick = next((i for i in order[:24] if f.normal.dot(origins[i] - p) > 0 and not blocked(bsp, p, origins[i])), None)
         if pick is None:
             pick = order[0]
             if not f.water:
                 after += f.area
         assign[fi] = pick
-    return Plan(mapname, origins, assign, faces, include, kept=sum(1 for ci in chosen if ci < n_author),
+    return Plan(mapname, origins, assign, faces, include, kept=sum(1 for ci in chosen if ci < n_author), water=len(water_idx),
                 blocked_before=before / total, blocked_after=after / total)
 
 
@@ -381,6 +401,6 @@ def run(path, radius: float = RADIUS, log=print) -> Plan | None:
     hdr = bool(bsp.lumps[BSP_LUMPS.LIGHTING_HDR].data) if BSP_LUMPS.LIGHTING_HDR in bsp.lumps else True
     del bsp
     r = apply(path, p, hdr=hdr)
-    log(f"cubemaps: {r['cubemaps']} (raio {radius:g}u; {p.kept} do autor mantidos), {r['patches']} materiais "
+    log(f"cubemaps: {r['cubemaps']} (raio {radius:g}u; {p.kept} do autor mantidos, {p.water} sobre a água), {r['patches']} materiais "
         f"corrigidos; área com cubemap atrás de parede {100 * p.blocked_before:.1f}% -> {100 * p.blocked_after:.1f}%")
     return p

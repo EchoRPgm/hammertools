@@ -39,6 +39,7 @@ def add_plug(v: VMF, lo: Vec, hi: Vec, material: str):
 
 
 PAINT_REACH = 8.0   # distância máxima entre a face da tampa e a face vizinha paralela de onde ela copia o material
+PAINT_FAR = 64.0    # segunda tentativa, mais longe (tampa da grade passando o chão em mais de 8u)
 
 _paint_index: list = [None, None]     # [vmf, índice]: só o último VMF (id() se repete depois que um VMF morre)
 
@@ -62,8 +63,9 @@ def paint_exposed(v: VMF, solid) -> int:
     Devolve quantas faces pintou."""
     from hammertools.core import geom
     lo, hi = solid.get_bbox()
-    near = [b for b in _brush_index(v)
-            if all(b[0][k] <= hi[k] + PAINT_REACH and b[1][k] >= lo[k] - PAINT_REACH for k in range(3))]
+    index = _brush_index(v)
+    near = [b for b in index if all(b[0][k] <= hi[k] + PAINT_REACH and b[1][k] >= lo[k] - PAINT_REACH for k in range(3))]
+    far = [b for b in index if all(b[0][k] <= hi[k] + PAINT_FAR and b[1][k] >= lo[k] - PAINT_FAR for k in range(3))]
 
     def inside(planes, p):
         return all(n.dot(p - q) <= 1e-3 for n, q in planes)
@@ -85,20 +87,34 @@ def paint_exposed(v: VMF, solid) -> int:
         if all(any(inside(b[2], p) for b in near) for p in pts):
             continue
         best = None
-        for blo, bhi, _, s in near:
-            if blo[o[0]] > hi[o[0]] + PAINT_REACH or bhi[o[0]] < lo[o[0]] - PAINT_REACH:
-                continue
-            if blo[o[1]] > hi[o[1]] + PAINT_REACH or bhi[o[1]] < lo[o[1]] - PAINT_REACH:
-                continue
-            for other in s.sides:
-                if other.mat.lower().startswith("tools/"):
+        # 1º face paralela voltada pro mesmo lado a até PAINT_REACH; 2º até PAINT_FAR (tampa da grade passa o chão em
+        # 9u no rp_surdonoso e o topo ficava nodraw: faixa de vazio no pé da parede); 3º qualquer face visível de
+        # brush que encoste na tampa
+        for reach in (PAINT_REACH, PAINT_FAR):
+            for blo, bhi, _, s in (near if reach == PAINT_REACH else far):
+                if blo[o[0]] > hi[o[0]] + reach or bhi[o[0]] < lo[o[0]] - reach:
                     continue
-                n2, q2 = geom.outward(other)
-                if n2.dot(n) < 0.999:
+                if blo[o[1]] > hi[o[1]] + reach or bhi[o[1]] < lo[o[1]] - reach:
                     continue
-                d = abs(q2[k] - c)
-                if d <= PAINT_REACH and (best is None or d < best[0]):
-                    best = (d, other)
+                for other in s.sides:
+                    if other.mat.lower().startswith("tools/"):
+                        continue
+                    n2, q2 = geom.outward(other)
+                    if n2.dot(n) < 0.999:
+                        continue
+                    d = abs(q2[k] - c)
+                    if d <= reach and (best is None or d < best[0]):
+                        best = (d, other)
+            if best is not None:
+                break
+        if best is None:
+            for blo, bhi, _, s in near:
+                if not all(blo[j] <= hi[j] + 1 and bhi[j] >= lo[j] - 1 for j in range(3)):
+                    continue
+                other = next((x for x in s.sides if not x.mat.lower().startswith("tools/")), None)
+                if other is not None:
+                    best = (0.0, other)
+                    break
         if best is not None:
             src = best[1]
             sd.mat = src.mat

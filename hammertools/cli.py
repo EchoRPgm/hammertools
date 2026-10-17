@@ -489,6 +489,23 @@ def cmd_diff(args) -> int:
     return 0
 
 
+def cmd_overlay(args) -> int:
+    from hammertools import overlay
+    a, b = vmfio.load(args.a), vmfio.load(args.b)
+    res = overlay.compare(a, b, tol=args.tol)
+    print("\n".join(overlay.report(res, args.top)))
+    if args.png:
+        box = None
+        if args.box:
+            box = tuple(args.box)
+        elif args.em:
+            x, y, r = args.em
+            box = (x - r, y - r, x + r, y + r)
+        w, h, upp = overlay.render(res, args.png, box, args.escala, args.zmin, args.zmax)
+        print(f"imagem {args.png} ({w}x{h}, {upp:.2f} u/px; cinza igual, laranja mudou, vermelho só em A, azul só em B)")
+    return 0
+
+
 def cmd_fix(args) -> int:
     """Consertos automáticos seguros num VMF novo (hoje: material de modelo em brush -> cópia LightmappedGeneric)."""
     from hammertools import fix, lint
@@ -647,6 +664,18 @@ def main(argv=None) -> int:
     p = sub.add_parser("detail", help="mapa pronto: brushes de mundo pequenos/finos longe do vazio -> func_detail")
     p.add_argument("vmf"); p.add_argument("--game"); p.add_argument("-o", "--out"); p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_detail)
+    p = sub.add_parser("overlay", help="sobrepõe duas versões do mapa por âncoras (ids iguais), converte A para as coordenadas de B e mostra as diferenças (texto e PNG de cima)")
+    p.add_argument("a")
+    p.add_argument("b")
+    p.add_argument("--png", help="vista de cima com as diferenças coloridas")
+    p.add_argument("--box", nargs=4, type=float, metavar=("X0", "Y0", "X1", "Y1"), help="recorte (coordenadas de B)")
+    p.add_argument("--em", nargs=3, type=float, metavar=("X", "Y", "RAIO"), help="recorte em volta de um ponto (coordenadas de B)")
+    p.add_argument("--zmin", type=float)
+    p.add_argument("--zmax", type=float)
+    p.add_argument("--escala", type=float, default=0.0, help="unidades por pixel (padrão: 2400 px no lado maior)")
+    p.add_argument("--tol", type=float, default=1.0, help="tolerância em unidades para 'igual'")
+    p.add_argument("--top", type=int, default=20, help="regiões listadas")
+    p.set_defaults(fn=cmd_overlay)
     p = sub.add_parser("diff", help="diferenças legíveis entre dois VMFs por ID (entidades, keyvalues, outputs, brushes, materiais)")
     p.add_argument("a"); p.add_argument("b")
     p.add_argument("--markdown", action="store_true", help="resumo em Markdown (resumo do job e comentário de PR no GitHub)")

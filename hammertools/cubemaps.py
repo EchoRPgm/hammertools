@@ -36,6 +36,7 @@ RADIUS = 512.0
 COVER = 0.99
 EYE = 64.0
 SIDE = 32                 # lado do cubemap padrão (tamanho 0 no lump)
+SURF_GAP = 32.0           # faces do mesmo material e plano a até isso uma da outra são a mesma superfície (vidros entre caixilhos)
 WATER_CELL = 2048.0       # um cubemap de água por célula (lago grande ganha vários: o reflexo muda pela margem)
 WATER_HEIGHT = 96.0       # altura do cubemap da água acima da superfície
 PLACEHOLDER = 0.25        # cinza linear dos VTFs provisórios (se o bake não rodar, reflexo neutro e não preto)
@@ -50,6 +51,8 @@ class RFace:
     base: str             # material original (sem materials/ e .vmt), como no include do patch
     water: bool
     index: int            # posição no lump de faces
+    lo: Vec = field(default_factory=Vec)
+    hi: Vec = field(default_factory=Vec)
 
 
 @dataclass
@@ -60,7 +63,8 @@ class Plan:
     faces: list[RFace]
     include: dict[str, str] = field(default_factory=dict)   # patch velho -> material original
     kept: int = 0
-    water: int = 0                         # cubemaps acima da água                          # cubemaps do autor mantidos
+    water: int = 0                         # cubemaps acima da água
+    surfaces: int = 0                      # superfícies contínuas (cada uma com um cubemap só)                          # cubemaps do autor mantidos
     blocked_before: float = 0.0            # fração da área com cubemap atrás de parede (antes)
     blocked_after: float = 0.0
     notes: list[str] = field(default_factory=list)
@@ -131,7 +135,9 @@ def reflective_faces(bsp: BSP) -> tuple[str | None, list[RFace], dict[str, str]]
         c = sum(pts, Vec()) / len(pts)
         area = sum(Vec.cross(pts[i] - pts[0], pts[i + 1] - pts[0]).mag() / 2 for i in range(1, len(pts) - 1))
         base = include[mat]
-        out.append(RFace(f, c, Vec(f.plane.normal), area, base, "water" in base.lower(), fi))
+        out.append(RFace(f, c, Vec(f.plane.normal), area, base, "water" in base.lower(), fi,
+                         Vec(min(q.x for q in pts), min(q.y for q in pts), min(q.z for q in pts)),
+                         Vec(max(q.x for q in pts), max(q.y for q in pts), max(q.z for q in pts))))
     return mapname, out, include
 
 
@@ -220,18 +226,69 @@ def plan(bsp: BSP, radius: float = RADIUS) -> Plan | None:
     if not origins:
         return None
 
-    # cada face: o escolhido mais perto que a enxerga; senão o mais perto (regra do vbsp). Água: só os da água
-    assign, after = {}, 0.0
-    for fi, (f, p) in enumerate(zip(faces, pts)):
+    # cubemaps que cada face enxerga (até 24 mais perto, de frente); água: só os da água
+    sees_face = []
+    for f, p in zip(faces, pts):
         pool = [i for i in range(len(origins)) if (i in water_idx) == f.water] if f.water and water_idx else range(len(origins))
         order = sorted(pool, key=lambda i: (origins[i] - p).mag())
-        pick = next((i for i in order[:24] if f.normal.dot(origins[i] - p) > 0 and not blocked(bsp, p, origins[i])), None)
-        if pick is None:
-            pick = order[0]
-            if not f.water:
-                after += f.area
-        assign[fi] = pick
-    return Plan(mapname, origins, assign, faces, include, kept=sum(1 for ci in chosen if ci < n_author), water=len(water_idx),
+        vis = [i for i in order[:24] if f.normal.dot(origins[i] - p) > 0 and not blocked(bsp, p, origins[i])]
+        sees_face.append((set(vis), order[0] if order else 0))
+
+    # superfície contínua (mesmo material, mesmo plano, faces encostadas com folga SURF_GAP): um cubemap só para
+    # ela inteira. Por face, o asfalto e os vidros da fachada viravam colcha de reflexos (emenda onde muda o cubemap)
+    parent = list(range(len(faces)))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    buckets: dict = defaultdict(list)
+    for fi, f in enumerate(faces):
+        n = f.normal
+        buckets[(f.base.lower(), round(n.x, 2), round(n.y, 2), round(n.z, 2), round(n.dot(f.center)))].append(fi)
+    g = SURF_GAP
+    for idx in buckets.values():
+        for a_i, a in enumerate(idx):
+            fa = faces[a]
+            for b in idx[a_i + 1:]:
+                fb = faces[b]
+                if all(fa.lo[k] - g <= fb.hi[k] and fb.lo[k] - g <= fa.hi[k] for k in range(3)):
+                    parent[find(a)] = find(b)
+    groups: dict = defaultdict(list)
+    for fi in range(len(faces)):
+        groups[find(fi)].append(fi)
+
+    # por superfície: o cubemap que a maior área dela enxerga fica com todas as faces que o enxergam; o resto (outra
+    # sala no mesmo plano, atrás de parede) escolhe de novo entre os que ele enxerga
+    assign, after = {}, 0.0
+    groups_n = 0
+    for members in groups.values():
+        left = list(members)
+        while left:
+            groups_n += 1
+            area = sum(faces[i].area for i in left) or 1.0
+            c = sum((faces[i].center * faces[i].area for i in left), Vec()) / area
+            score: dict = defaultdict(float)
+            for i in left:
+                for ci in sees_face[i][0]:
+                    score[ci] += faces[i].area
+            if not score:
+                for i in left:
+                    assign[i] = sees_face[i][1]
+                    if not faces[i].water:
+                        after += faces[i].area
+                break
+            pick = max(score, key=lambda ci: (score[ci], -(origins[ci] - c).mag()))
+            rest = []
+            for i in left:
+                if pick in sees_face[i][0]:
+                    assign[i] = pick
+                else:
+                    rest.append(i)
+            left = rest
+    return Plan(mapname, origins, assign, faces, include, kept=sum(1 for ci in chosen if ci < n_author), water=len(water_idx), surfaces=groups_n,
                 blocked_before=before / total, blocked_after=after / total)
 
 
@@ -405,6 +462,6 @@ def run(path, radius: float = RADIUS, log=print) -> Plan | None:
     hdr = bool(bsp.lumps[BSP_LUMPS.LIGHTING_HDR].data) if BSP_LUMPS.LIGHTING_HDR in bsp.lumps else True
     del bsp
     r = apply(path, p, hdr=hdr)
-    log(f"cubemaps: {r['cubemaps']} (raio {radius:g}u; {p.kept} do autor mantidos, {p.water} sobre a água), {r['patches']} materiais "
+    log(f"cubemaps: {r['cubemaps']} (raio {radius:g}u; {p.kept} do autor mantidos, {p.water} sobre a água; {p.surfaces} superfícies), {r['patches']} materiais "
         f"corrigidos; área com cubemap atrás de parede {100 * p.blocked_before:.1f}% -> {100 * p.blocked_after:.1f}%")
     return p

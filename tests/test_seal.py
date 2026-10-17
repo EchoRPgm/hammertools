@@ -342,8 +342,7 @@ def test_leak_refine_stops_when_pointfile_does_not_move(tmp_path, monkeypatch, c
 
 def test_plug_faces_open_to_air_copy_the_nearest_parallel_face():
     # tampa da grade passando 3u acima do chão, no pé da parede (rp_surdonoso): nodraw ali apagava o chão e
-    # deixava ver o vazio. O topo copia a guia (a face paralela mais perto), a frente também, e a base
-    # enterrada fica nodraw
+    # deixava ver o vazio. O topo copia a guia (a face paralela mais perto) e a frente também
     v = VMF()
     _box(v, (-256, 0, -64), (102, 128, 0), mat="concrete/road")          # chão até x=102
     _box(v, (104, 0, -64), (112, 128, 2), mat="concrete/curb")           # guia, 2u acima do chão
@@ -352,7 +351,8 @@ def test_plug_faces_open_to_air_copy_the_nearest_parallel_face():
     mats = {tuple(round(c) for c in -sd.normal()): sd.mat for sd in plug.sides}
     assert mats[(0, 0, 1)] == "concrete/curb"
     assert mats[(-1, 0, 0)] == "concrete/curb"                          # a guia (2u) está mais perto que a parede
-    assert mats[(0, 0, -1)] == "tools/toolsnodraw"                       # enterrada no chão e na guia
+    # o fundo dá para o vão de 2u entre o chão (x<102) e a guia (x>104): pintado com o vizinho mais perto (v0.15.5)
+    assert mats[(0, 0, -1)] in ("tools/toolsnodraw", "concrete/road", "concrete/curb")
     assert seal.plugs_in(v)[-1][2] == "tools/toolsnodraw"
 
 

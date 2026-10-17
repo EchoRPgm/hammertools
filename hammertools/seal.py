@@ -56,6 +56,33 @@ def _brush_index(v: VMF) -> list:
     return _paint_index[1]
 
 
+_SEAL_RES: list = []
+_NO_SEAL_WORDS = ("glass", "grate", "water", "fence", "window", "chain", "blinds", "vidro", "foliage", "leaf")
+
+
+def _paint_ok(mat: str) -> bool:
+    """O material, numa tampa, continua vedando? (translúcido/alphatest/água não sela: a tampa pintada com uma grade
+    deixava o rp_surdonoso vazar). Pelos recursos do jogo, como o lint; sem eles, pelo nome."""
+    m = mat.lower()
+    if m.startswith("tools/"):
+        return False
+    if not _SEAL_RES:
+        try:
+            from hammertools import lint
+            _SEAL_RES.append(lint.Resources.from_game(None, None, ()))
+        except Exception:  # noqa: BLE001  sem o jogo (testes): só o nome
+            _SEAL_RES.append(None)
+    if any(w in m for w in _NO_SEAL_WORDS):
+        return False                    # pelo nome primeiro: material que o jogo não acha conta como opaco
+    res = _SEAL_RES[0]
+    if res is not None and getattr(res, "material_seals", None) is not None:
+        try:
+            return bool(res.material_seals(m))
+        except Exception:  # noqa: BLE001
+            pass
+    return True
+
+
 def paint_exposed(v: VMF, solid) -> int:
     """Face de tampa que dá pro ar ganha o material (e o alinhamento) da face vizinha paralela mais próxima, voltada
     pro mesmo lado: a tampa sai da grade e pode passar uns u da superfície (chão, guia). Nodraw ali apaga a face de
@@ -97,7 +124,7 @@ def paint_exposed(v: VMF, solid) -> int:
                 if blo[o[1]] > hi[o[1]] + reach or bhi[o[1]] < lo[o[1]] - reach:
                     continue
                 for other in s.sides:
-                    if other.mat.lower().startswith("tools/"):
+                    if not _paint_ok(other.mat):
                         continue
                     n2, q2 = geom.outward(other)
                     if n2.dot(n) < 0.999:
@@ -111,7 +138,7 @@ def paint_exposed(v: VMF, solid) -> int:
             for blo, bhi, _, s in near:
                 if not all(blo[j] <= hi[j] + 1 and bhi[j] >= lo[j] - 1 for j in range(3)):
                     continue
-                other = next((x for x in s.sides if not x.mat.lower().startswith("tools/")), None)
+                other = next((x for x in s.sides if _paint_ok(x.mat)), None)
                 if other is not None:
                     best = (0.0, other)
                     break

@@ -391,3 +391,12 @@ def test_leak_loop_drops_generated_prop_group_in_the_void():
     assert len(out) == 2
     assert [e["model"] for e in v.by_class["prop_static"]] == ["models/props/do_autor.mdl"]
     assert not v.by_class["info_lighting"]
+
+
+def test_plug_is_not_painted_with_material_that_does_not_seal():
+    # tampa pintada com grade/vidro deixa de vedar: a vizinha translúcida não serve, fica a próxima que sela
+    v = VMF()
+    _box(v, (-256, 0, -64), (102, 128, 0), mat="concrete/road")
+    _box(v, (104, 0, -64), (112, 128, 2), mat="metal/metal_grate01")
+    plug = seal.add_plug(v, Vec(102, 32, -2), Vec(107, 96, 3), "tools/toolsnodraw")
+    assert all("grate" not in sd.mat for sd in plug.sides)

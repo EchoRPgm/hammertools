@@ -920,9 +920,23 @@ def _drop_void_lighting(v, text: str, out: Path) -> list:
             hits = []
     removed = []
     for cls, x, y, z in hits:
+        p = Vec(float(x), float(y), float(z))
+        if cls == "prop_static":
+            # prop do auto-prop no vazio (grupo de brushes fora do mapa, ex.: oculto pelo autor e mostrado depois): o
+            # visível, os de colisão na mesma origem e o ponto de luz dele saem; ninguém vê geometria no vazio
+            group = [e for e in v.by_class["prop_static"] if ((diffvmf._vec(e.get("origin")) or Vec(1e9, 0, 0)) - p).mag() <= 1
+                     and e.get("model", "").lower().startswith("models/ht_prop/")]
+            for e in group:
+                name = e.get("lightingorigin")
+                if name:
+                    for luz in list(v.by_class["info_lighting"]):
+                        if luz.get("targetname") == name:
+                            v.remove_ent(luz)
+                v.remove_ent(e)
+                removed.append(("prop_static", p))
+            continue
         if cls != "info_lighting":
             continue
-        p = Vec(float(x), float(y), float(z))
         for e in list(v.by_class["info_lighting"]):
             o = diffvmf._vec(e.get("origin"))
             name = e.get("targetname", "")
@@ -988,8 +1002,9 @@ def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str,
         luz = _drop_void_lighting(v, text, out)
         if luz:
             removed_ents += luz
-            print(f"ht-vbsp: {len(luz)} ponto(s) de luz de prop gerado no vazio tirado(s) do build/ (o prop usa a "
-                  "própria origem): " + ", ".join(f"{o.x:.0f} {o.y:.0f} {o.z:.0f}" for _, o in luz), flush=True)
+            print(f"ht-vbsp: {len(luz)} entidade(s) do auto-prop no vazio tirada(s) do build/ (ponto de luz: o prop usa "
+                  "a própria origem; prop gerado: geometria fora do mapa): "
+                  + ", ".join(f"{c} {o.x:.0f} {o.y:.0f} {o.z:.0f}" for c, o in luz), flush=True)
             vmfio.save(v, out)
             rc, text = _run_vbsp(lt)
             continue

@@ -377,3 +377,17 @@ def test_leak_loop_drops_generated_lighting_point_in_the_void():
     assert [e["targetname"] for e in v.by_class["info_lighting"]] == ["do_autor"]
     assert not prop.get("lightingorigin")
     assert cli._drop_void_lighting(v, "Entity light (10.00 20.00 30.00) leaked!\n", Path("/nao/existe.vmf")) == []
+
+
+def test_leak_loop_drops_generated_prop_group_in_the_void():
+    from pathlib import Path
+    from hammertools import cli
+    v = VMF()
+    v.create_ent("info_lighting", origin="0 0 64", targetname="ht_luz_g")
+    v.create_ent("prop_static", origin="10 20 30", model="models/ht_prop/m/abc.mdl", lightingorigin="ht_luz_g")
+    v.create_ent("prop_static", origin="10 20 30", model="models/ht_prop/m/abc_c.mdl")
+    v.create_ent("prop_static", origin="10 20 30", model="models/props/do_autor.mdl")
+    out = cli._drop_void_lighting(v, "Entity prop_static (10.00 20.00 30.00) leaked!\n", Path("/nao/existe.vmf"))
+    assert len(out) == 2
+    assert [e["model"] for e in v.by_class["prop_static"]] == ["models/props/do_autor.mdl"]
+    assert not v.by_class["info_lighting"]

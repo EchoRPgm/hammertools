@@ -18,6 +18,7 @@ Raio 512u no rp_surdonoso: 242 cubemaps (eram 278), nenhum conflito de visibilid
 from __future__ import annotations
 
 import io
+from pathlib import Path
 import math
 import re
 import struct
@@ -104,10 +105,14 @@ def blocked(bsp: BSP, a: Vec, b: Vec) -> bool:
 def reflective_faces(bsp: BSP) -> tuple[str | None, list[RFace], dict[str, str]]:
     """Faces que o vbsp ligou a um cubemap. Devolve (pasta do mapa, faces, patch -> material incluído)."""
     pak = bsp.pakfile
+    own = Path(bsp.filename).stem.lower()
     include: dict[str, str] = {}
     for name in pak.namelist():
         low = name.lower()
-        if low.startswith("materials/maps/") and low.endswith(".vmt") and PATCHED.match(low[len("materials/"):-4]):
+        # só os patches que o vbsp fez para ESTE mapa: o VMF pode usar de verdade materiais com nome de patch de
+        # outro mapa (maps/rp_surdonoso/..._x_y_z, herdados de um mapa decompilado), e renomear o slot deles trocava
+        # o material de 679 faces no rp_surdonoso
+        if low.startswith(f"materials/maps/{own}/") and low.endswith(".vmt") and PATCHED.match(low[len("materials/"):-4]):
             m = re.search(r'"include"\s+"([^"]+)"', pak.read(name).decode("latin-1"), re.I)
             if m:
                 inc = m.group(1).replace("\\", "/")
@@ -119,7 +124,7 @@ def reflective_faces(bsp: BSP) -> tuple[str | None, list[RFace], dict[str, str]]
         m = PATCHED.match(mat)
         if not m or mat not in include:
             continue
-        mapname = m.group(1)
+        mapname = m.group(1)                  # = own (só patches deste mapa entram em include)
         pts = [e.a for e in f.edges]
         if len(pts) < 3:
             continue
@@ -295,8 +300,7 @@ def apply(path, p: Plan, hdr: bool = True) -> dict:
     key = lambda o: f"{round(o.x)}_{round(o.y)}_{round(o.z)}"
     old_slots, base_slot = [], {}
     for td in range(n_td):
-        nm = name_of(td).lower()
-        if PATCHED.match(nm):
+        if name_of(td).lower() in p.include:
             old_slots.append(td)
     # material novo de cada face, pela ordem do lump
     mats = {}
@@ -364,8 +368,8 @@ def apply(path, p: Plan, hdr: bool = True) -> dict:
     dropped = 0
     for info in old.infolist():
         low = info.filename.lower()
-        if VTF_NAME.match(low) or (low.startswith("materials/maps/") and low.endswith(".vmt")
-                                    and PATCHED.match(low[len("materials/"):-4])):
+        mine = low.startswith(f"materials/{folder}/")
+        if mine and (VTF_NAME.match(low) or (low.endswith(".vmt") and low[len("materials/"):-4] in p.include)):
             dropped += 1
             continue
         z.writestr(info, old.read(info.filename), zipfile.ZIP_STORED)

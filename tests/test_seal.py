@@ -361,3 +361,19 @@ def test_skybox_plug_is_not_painted():
     _box(v, (0, 0, 0), (64, 64, 64), mat="brick/wall")
     plug = seal.add_plug(v, Vec(64, 0, 0), Vec(128, 64, 64), "tools/toolsskybox")
     assert {sd.mat for sd in plug.sides} == {"tools/toolsskybox"}
+
+
+def test_leak_loop_drops_generated_lighting_point_in_the_void():
+    # o vbsp acusa o info_lighting do auto-prop (fora do mapa): ele sai e o prop volta a usar a própria origem;
+    # info_lighting do autor (sem ht_luz_) e outras classes ficam
+    from pathlib import Path
+    from hammertools import cli
+    v = VMF()
+    v.create_ent("info_lighting", origin="10 20 30", targetname="ht_luz_x")
+    v.create_ent("info_lighting", origin="10 20 30", targetname="do_autor")
+    prop = v.create_ent("prop_static", origin="0 0 0", model="m.mdl", lightingorigin="ht_luz_x")
+    out = cli._drop_void_lighting(v, "Entity info_lighting (10.00 20.00 30.00) leaked!\n", Path("/nao/existe.vmf"))
+    assert len(out) == 1
+    assert [e["targetname"] for e in v.by_class["info_lighting"]] == ["do_autor"]
+    assert not prop.get("lightingorigin")
+    assert cli._drop_void_lighting(v, "Entity light (10.00 20.00 30.00) leaked!\n", Path("/nao/existe.vmf")) == []

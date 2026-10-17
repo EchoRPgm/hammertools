@@ -901,6 +901,41 @@ def _leaktest(cmd: list[str]) -> list[str]:
     return [*cmd[:-1], "-leaktest", cmd[-1]]
 
 
+import re as _re
+from srctools import Vec
+from hammertools import diffvmf
+
+_LEAKED = _re.compile(r"Entity (\S+) \(\s*([-\d.]+) ([-\d.]+) ([-\d.]+)\s*\) leaked!")
+
+
+def _drop_void_lighting(v, text: str, out: Path) -> list:
+    """info_lighting do auto-prop que o vbsp acusou como leak (na saída desta passada; sem ela, a última linha do
+    .log): tira a entidade e o lightingorigin dos props que apontavam para ela. [(classe, origem)]."""
+    hits = _LEAKED.findall(text)
+    if not hits:
+        log = out.with_suffix(".log")
+        try:
+            hits = _LEAKED.findall(log.read_text(errors="replace"))[-1:]
+        except OSError:
+            hits = []
+    removed = []
+    for cls, x, y, z in hits:
+        if cls != "info_lighting":
+            continue
+        p = Vec(float(x), float(y), float(z))
+        for e in list(v.by_class["info_lighting"]):
+            o = diffvmf._vec(e.get("origin"))
+            name = e.get("targetname", "")
+            if o is None or (o - p).mag() > 1 or not name.startswith("ht_luz_"):
+                continue
+            for prop in v.by_class["prop_static"]:
+                if prop.get("lightingorigin") == name:
+                    del prop["lightingorigin"]
+            v.remove_ent(e)
+            removed.append(("info_lighting", p))
+    return removed
+
+
 def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str, dict]:
     """vbsp vazou: fecha no build/ só o que é fresta (lasca fora do grid, rachadura até seal.CRACK_MAX) e tira enfeite
     solto no vazio; vão de verdade vira aviso com setpos (tampa automática ali ocupa espaço do mapa). O selo grosso
@@ -947,6 +982,17 @@ def _fix_leak(real: Path, cmd: list[str], out: Path, gamedir) -> tuple[int, str,
         lin = out.with_suffix(".lin")
         if "leaked" not in text.lower() or not lin.exists():
             break
+        # ponto de luz do auto-prop (info_lighting ht_luz_*) que o vbsp acusou no vazio: sai do build/ e o prop volta
+        # a usar a própria origem. Não é enfeite pela regra do selo (pode haver parede a menos de 256u) e nenhuma
+        # tampa resolve: o ponto está fora do mapa (forro mostrado pela otimização do rp_surdonoso)
+        luz = _drop_void_lighting(v, text, out)
+        if luz:
+            removed_ents += luz
+            print(f"ht-vbsp: {len(luz)} ponto(s) de luz de prop gerado no vazio tirado(s) do build/ (o prop usa a "
+                  "própria origem): " + ", ".join(f"{o.x:.0f} {o.y:.0f} {o.z:.0f}" for _, o in luz), flush=True)
+            vmfio.save(v, out)
+            rc, text = _run_vbsp(lt)
+            continue
         # v é o que está em out: cada rodada grava antes de recompilar (sem recarregar o VMF de 30 MB a cada uma)
         pts = seal.read_pointfile(lin)
         # o mesmo caminho do pointfile depois de uma rodada de tampas = a tampa não o fechou: refazer as mesmas

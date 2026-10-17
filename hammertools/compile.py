@@ -111,7 +111,8 @@ def rad_args(profile: str, bsp: Path, extra: list[str]) -> list[str]:
 def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags: list[str] | None = None,
         vbsp_args: list[str] | None = None, vis_args: list[str] | None = None, rad_args_extra: list[str] | None = None,
         copy: bool = True, pack: bool = False, use_cache: bool = True, luz: str = "vrad",
-        bake_args: list[str] | None = None, cubemaps: str = "auto", luz_base: Path | None = None) -> int:
+        bake_args: list[str] | None = None, cubemaps: str = "auto", luz_base: Path | None = None,
+        luz_base_vmf: Path | None = None) -> int:
     from hammertools import cli
     vmf = vmf.resolve()
     noext = vmf.with_suffix("")
@@ -170,8 +171,18 @@ def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags:
             # luz do BSP publicado: faces iguais longe do que mudou ficam com a luz dele (o bake só assa o resto)
             if luz_base is not None:
                 bake_args = [*(bake_args or []), "--reusar", str(Path(luz_base).resolve())]
+                # áreas sujas pela diferença dos VMFs (o que gerou a referência x o atual); sem o VMF da referência o
+                # bake compara as faces dos BSPs (o vbsp recorta o mapa todo de outro jeito: suja quase tudo)
+                if luz_base_vmf is not None:
+                    from hammertools import luzbase
+                    sujo = vmf.parent / "build" / f"{vmf.stem}.luz_sujo.json"
+                    sujo.parent.mkdir(exist_ok=True)
+                    n = luzbase.write(Path(luz_base_vmf), vmf, sujo)
+                    say(f"luz da referência: {n} área(s) mudada(s) desde {Path(luz_base_vmf).name} (raio {luzbase.RADIUS:g}u)")
+                    bake_args = [*bake_args, "--reusar-sujo", str(sujo)]
             key_flags = [*flags, f"luz:pathtracing:{BAKE_SAMPLES.get(rad, 256)}", *(bake_args or []),
                          *([hashlib.sha1(Path(luz_base).read_bytes()).hexdigest()] if luz_base is not None else []),
+                         *([hashlib.sha1(Path(luz_base_vmf).read_bytes()).hexdigest()] if luz_base_vmf is not None else []),
                          *([hashlib.sha1(regioes.path_for(vmf).read_bytes()).hexdigest()] if regioes.path_for(vmf).exists() else []),
                          bspcache_tool(eh)]
     # cache por conteúdo (bspcache): o BSP que o vbsp gerou igual ao de antes no que o vvis/vrad leem = o resultado
@@ -282,7 +293,7 @@ def cmd_compile(args) -> int:
     return run(Path(args.vmf), Path(game), args.vis, args.rad, ht_flags, shlex.split(args.vbsp_args or ""),
                shlex.split(args.vis_args or ""), shlex.split(args.rad_args or ""), not args.no_copy, args.pack,
                not args.no_cache, args.luz, shlex.split(args.bake_args or ""), args.cubemaps,
-               Path(args.luz_base) if args.luz_base else None)
+               Path(args.luz_base) if args.luz_base else None, Path(args.luz_base_vmf) if args.luz_base_vmf else None)
 
 
 def add_parser(sub) -> None:
@@ -297,6 +308,8 @@ def add_parser(sub) -> None:
                    help="pathtracing: o vrad monta a estrutura e o EchoHammer (echort, GPU) calcula a luz; mesmo custo no jogo")
     p.add_argument("--luz-base", metavar="BSP", help="com --luz pathtracing: BSP publicado cuja luz é mantida; só as faces "
                                                      "novas ou alteradas (e as a até 256u delas) são assadas")
+    p.add_argument("--luz-base-vmf", metavar="VMF", help="o VMF que gerou o --luz-base: só o que mudou desde ele (brush, "
+                                                          "prop, luz movida; cor de luz não) é assado")
     p.add_argument("--cubemaps", choices=["auto", "autor"], default="auto",
                    help="com --luz pathtracing: auto = reposiciona os env_cubemap e liga cada face ao cubemap que a "
                         "enxerga, renderizados pelo bake; autor = os do mapa, com os VTFs padrão do vbsp")

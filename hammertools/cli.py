@@ -139,7 +139,13 @@ def cmd_lint(args) -> int:
         guess = Path(args.vmf).with_suffix(".bsp")  # o ht-vbsp copia o .bsp pra junto do fonte
         if guess.exists() and guess.stat().st_mtime >= Path(args.vmf).stat().st_mtime:
             compiled = guess
-    rep = lint.run(v, res, checks, grid=args.grid, detail_grid=args.detail_grid, voxel=args.voxel, compiled=compiled)
+    # o BSP sai do VMF do build/ (tampas de leak pintadas, cópias lm de material, auto-prop): é contra ele que as faces
+    # do BSP se comparam; contra o fonte, as tampas e as cópias viravam "face fantasma"
+    built = Path(args.vmf).parent / "build" / Path(args.vmf).name
+    compiled_vmf = (vmfio.load(built) if compiled is not None and built.exists()
+                    and built.stat().st_mtime >= Path(args.vmf).stat().st_mtime else None)
+    rep = lint.run(v, res, checks, grid=args.grid, detail_grid=args.detail_grid, voxel=args.voxel, compiled=compiled,
+                   compiled_vmf=compiled_vmf)
     ign = Path(args.ignore) if args.ignore else Path(args.vmf).with_suffix(".lintignore.json")
     if ign.exists():
         import json

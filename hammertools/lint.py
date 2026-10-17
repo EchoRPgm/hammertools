@@ -327,7 +327,7 @@ class Report:
 # --------------------------------------------------------------------------- execução
 def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS, grid: float = 1.0,
         detail_grid: bool = False, voxel: float | None = None, overlap_min: float = 1.0,
-        compiled: str | Path | None = None) -> Report:
+        compiled: str | Path | None = None, compiled_vmf: VMF | None = None) -> Report:
     from hammertools.generators import REGISTRY, SINGLE
     res = res or Resources(source="sem arquivos do jogo")
     checks = set(checks)
@@ -340,7 +340,8 @@ def run(v: VMF, res: Resources | None = None, checks: Iterable[str] = ALL_CHECKS
             rep.skipped["phantom"] = "precisa do BSP compilado deste VMF (--compiled, ou <mapa>.bsp mais novo que o VMF ao lado dele)"
         else:
             from hammertools import bspcheck
-            for f in bspcheck.world_face_problems(v, compiled):
+            # o VMF que gerou o BSP (build/), quando há: as tampas pintadas e as cópias de material só existem nele
+            for f in bspcheck.world_face_problems(compiled_vmf or v, compiled):
                 what = ("face fantasma: o vbsp desenhou uma superfície que não existe no VMF (não aparece no Hammer, dá pra atravessar)"
                         if f["kind"] == "fantasma" else f"textura vazada: devia ser '{f['expected']}' (o vbsp usou a de um brush coplanar vizinho)")
                 rep.add("erro" if f["area"] >= 256 else "aviso", "phantom",

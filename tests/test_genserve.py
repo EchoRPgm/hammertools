@@ -47,3 +47,18 @@ def test_serve_protocolo_de_linhas():
     assert lines[0]["ready"] and "ht_stairs" in lines[0]["generators"]
     assert lines[1]["groups"][0]["classname"] == "ht_stairs"
     assert "error" in lines[2]
+
+
+def test_marcadores_sem_par_dizem_o_que_falta():
+    # caso do santo_andre.vmf: 3 ht_stairs e 1 ht_stairs_end sem nome (o topo da 2a escada era outro ht_stairs)
+    ms = [{"id": 1, "classname": "ht_stairs", "kv": {"origin": "165 1748 -421"}},
+          {"id": 2, "classname": "ht_stairs_end", "kv": {"origin": "-114 1748 -301"}},
+          {"id": 3, "classname": "ht_stairs", "kv": {"origin": "-147 1506 -306"}},
+          {"id": 4, "classname": "ht_stairs", "kv": {"origin": "-147 1310 -421"}},
+          {"id": 5, "classname": "ht_stairs", "kv": {"origin": "0 0 0", "targetname": "x"}}]
+    groups = genserve.generate(ms)
+    first = {g["markers"][0]: g["warnings"][0] for g in groups}
+    assert "o mapa tem 3 ht_stairs e 1 ht_stairs_end sem nome" in first[1]
+    assert first[2].startswith("ht_stairs_end em -114 1748 -301 sem par")
+    assert first[5] == "ht_stairs 'x' em 0 0 0 sem ht_stairs_end com o mesmo targetname"
+    assert all(g["solids"] == 0 for g in groups)

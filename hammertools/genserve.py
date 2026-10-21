@@ -42,6 +42,40 @@ def _ent_json(e) -> dict:
     return out
 
 
+def _pairing_hints(groups: dict[str, vmfio.Group]) -> dict[str, str]:
+    """Grupo sem par (só o início, ou só o _end) diz o que falta: quantos marcadores dessa ferramenta estão sem nome e
+    que, com mais de um par, cada par precisa do mesmo targetname. O aviso do gerador ("precisa de um ... com o mesmo
+    targetname") não dizia por que o par não se formou."""
+    from hammertools.generators import SINGLE
+    hints: dict[str, str] = {}
+    by_base: dict[str, list[vmfio.Group]] = {}
+    for g in groups.values():
+        by_base.setdefault(g.classname, []).append(g)
+    for base, gs in by_base.items():
+        if base in SINGLE:
+            continue
+        unnamed = [g for g in gs if all(not e.get("targetname") for e in g.ents)]
+        starts = sum(1 for g in unnamed for e in g.ents if vmfio.role_of(e) == "start")
+        ends = sum(1 for g in unnamed for e in g.ents if vmfio.role_of(e) == "end")
+        for key, g in groups.items():
+            if g.classname != base:
+                continue
+            roles = {vmfio.role_of(e) for e in g.ents}
+            if "start" in roles and "end" in roles:
+                continue
+            o = vmfio.origin(g.ents[0])
+            where = f"em {o.x:g} {o.y:g} {o.z:g}"
+            cls = base if "start" in roles else f"{base}_end"
+            name = g.ents[0].get("targetname")
+            if name:
+                other = f"{base}_end" if "start" in roles else base
+                hints[key] = f"{cls} '{name}' {where} sem {other} com o mesmo targetname"
+            else:
+                hints[key] = (f"{cls} {where} sem par: o mapa tem {starts} {base} e {ends} {base}_end sem nome; com mais de "
+                              f"um par, dê o mesmo targetname ao pé ({base}) e ao topo ({base}_end) de cada um")
+    return hints
+
+
 def generate(markers: list[dict]) -> list[dict]:
     """Roda os geradores para os marcadores dados (lista do pedido) e devolve os grupos."""
     v = VMF()
@@ -55,6 +89,7 @@ def generate(markers: list[dict]) -> list[dict]:
         by_ent[id(e)] = m.get("id", e.id)
         ents.append(e)
     groups = vmfio.group_markers(vmfio.markers(v))
+    hints = _pairing_hints(groups)
     out = []
     live = set()
     for key, g in groups.items():
@@ -78,7 +113,10 @@ def generate(markers: list[dict]) -> list[dict]:
             cached = False
         else:
             cached = True
-        out.append({"key": key, "markers": ids, "cached": cached, **hit})
+        item = {"key": key, "markers": ids, "cached": cached, **hit}
+        if key in hints:
+            item = {**item, "warnings": [hints[key], *hit["warnings"]]}
+        out.append(item)
     for k in [k for k in _cache if k not in live]:   # grupos que sumiram do mapa saem do cache
         del _cache[k]
     return out

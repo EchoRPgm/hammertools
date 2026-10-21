@@ -60,10 +60,13 @@ def generate(vmf: VMF, group: Group) -> Result:
         return res
 
     a, b = origin(start), origin(end)
+    if b.z < a.z:   # topo abaixo do pé: a mesma escada, descendo (o pé passa a ser o ponto de baixo)
+        a, b = b, a
     rise = b.z - a.z
     run = horizontal_dist(a, b)
     if rise <= 0 or run <= 0:
-        res.warnings.append(f"{group.name}: end precisa estar acima e à frente do start (rise={rise}, run={run})")
+        res.warnings.append(f"{group.name}: pé e topo na mesma altura (ou um em cima do outro): o {group.classname}_end "
+                            f"precisa ficar acima e à frente do {group.classname} (subida {rise:g}, distância {run:g})")
         return res
 
     width = _num(start, "width")

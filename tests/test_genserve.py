@@ -62,3 +62,14 @@ def test_marcadores_sem_par_dizem_o_que_falta():
     assert first[2].startswith("ht_stairs_end em -114 1748 -301 sem par")
     assert first[5] == "ht_stairs 'x' em 0 0 0 sem ht_stairs_end com o mesmo targetname"
     assert all(g["solids"] == 0 for g in groups)
+
+
+def test_escada_com_topo_abaixo_desce_e_mesma_altura_explica():
+    def par(z):
+        return [{"id": 1, "classname": "ht_stairs", "kv": {"origin": "0 0 0", "targetname": "e"}},
+                {"id": 2, "classname": "ht_stairs_end", "kv": {"origin": f"128 0 {z}", "targetname": "e"}}]
+    desce = genserve.generate(par(-128))[0]
+    sobe = genserve.generate(par(128))[0]
+    assert desce["solids"] == sobe["solids"] > 0 and not desce["warnings"]
+    plana = genserve.generate(par(0))[0]
+    assert plana["solids"] == 0 and "mesma altura" in plana["warnings"][0]

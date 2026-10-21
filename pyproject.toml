@@ -3,7 +3,7 @@ name = "hammertools"
 dynamic = ["version"]
 description = "Geradores e lint de VMF para Hammer++ (marcadores ht_* -> geometria)"
 requires-python = ">=3.10"
-dependencies = ["srctools>=2.7"]
+dependencies = ["srctools>=2.7", "pillow"]  # pillow: PNG do `ht overlay`
 
 [project.optional-dependencies]
 lint = ["numpy", "scipy"]  # teste de leak e nodraw do `ht lint`

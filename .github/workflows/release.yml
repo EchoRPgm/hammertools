@@ -12,20 +12,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+      # sem cache de pip/uv: cache salvo numa tag só serve à própria tag, então nunca acertava; o uv baixa rápido
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12", cache: pip, cache-dependency-path: pyproject.toml }   # pip em cache entre releases
+        with: { python-version: "3.12" }
+      - uses: astral-sh/setup-uv@v6
+        with: { enable-cache: false }
       - name: versão da tag = versão do pacote
         run: |
           v=$(python -c "import re;print(re.search(r'__version__ = \"(.+?)\"', open('hammertools/__init__.py').read())[1])")
           test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != __version__ $v"; exit 1; }
       - name: testes
         run: |
-          pip install -e ".[lint]" pytest
-          pytest -q
+          uv pip install --system -e ".[lint]" pytest pytest-xdist
+          pytest -q -n auto
       - name: wheel
-        run: |
-          pip install build
-          python -m build
+        run: uv build
       - name: publica
         env: { GH_TOKEN: "${{ github.token }}" }
         run: gh release create "$GITHUB_REF_NAME" dist/*.whl dist/*.tar.gz tools/install.ps1 --title "$GITHUB_REF_NAME" --generate-notes

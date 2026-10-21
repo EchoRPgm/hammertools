@@ -89,7 +89,8 @@ def serve(game: str | None = None, stdin=None, stdout=None) -> int:
     models.GAMEDIR = game
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
-    stdout.write(json.dumps({"ready": True, "generators": sorted(REGISTRY)}) + "\n")
+    from hammertools import __version__
+    stdout.write(json.dumps({"ready": True, "version": __version__, "generators": sorted(REGISTRY)}) + "\n")
     stdout.flush()
     for line in stdin:
         line = line.strip()

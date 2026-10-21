@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: pyproject.toml }   # pip em cache entre releases
       - name: versão da tag = versão do pacote
         run: |
           v=$(python -c "import re;print(re.search(r'__version__ = \"(.+?)\"', open('hammertools/__init__.py').read())[1])")

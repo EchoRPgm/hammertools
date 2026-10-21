@@ -90,6 +90,14 @@ def clear_preview(src: Path) -> int:
     return n
 
 
+def cmd_gen(args) -> int:
+    from hammertools import genserve
+    if not args.serve:
+        print("uso: ht gen --serve (um pedido JSON por linha; ver hammertools/genserve.py)", file=sys.stderr)
+        return 2
+    return genserve.serve(args.game or os.environ.get("HT_GAME"))
+
+
 def cmd_preview(args) -> int:
     src = Path(args.vmf)
     if src.stem.endswith("_built"):
@@ -611,6 +619,9 @@ def main(argv=None) -> int:
     p = sub.add_parser("preview", help="gera a geometria dentro do próprio VMF fonte (visgroup ht_preview) pra ver no Hammer++")
     p.add_argument("vmf"); p.add_argument("--game", help="pasta com gameinfo.txt (ou env HT_GAME)")
     p.add_argument("--clear", action="store_true", help="só remove o visgroup ht_preview do fonte"); p.set_defaults(fn=cmd_preview)
+    p = sub.add_parser("gen", help="geradores ht_* como serviço para editores (EchoHammer): --serve lê JSON por linha")
+    p.add_argument("--serve", action="store_true", help="um pedido JSON por linha no stdin, uma resposta por linha")
+    p.add_argument("--game", help="pasta com gameinfo.txt (ou env HT_GAME)"); p.set_defaults(fn=cmd_gen)
     p = sub.add_parser("list-markers", help="lista marcadores ht_* do mapa")
     p.add_argument("vmf"); p.set_defaults(fn=cmd_list)
     p = sub.add_parser("lint", help="checagens pré-compile (texturas, modelos, leak, nodraw, duplicados, sobreposição, grid, I/O)")

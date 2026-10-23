@@ -222,8 +222,10 @@ class Cluster:
 def candidates(v: VMF, mats: Materials) -> list[tuple[Entity, Solid]]:
     out = []
     for e in v.by_class["func_detail"]:
+        if e.hidden:        # Ctrl+H do Hammer: o vbsp não compila bloco hidden, então não vira prop
+            continue
         for s in e.solids:
-            if any(sd.is_disp for sd in s.sides):
+            if s.hidden or any(sd.is_disp for sd in s.sides):
                 continue
             polys = geom.face_polys(s)
             vis = [(sd, p) for sd, p in polys if len(p) >= 3 and not sd.mat.lower().startswith("tools/")]

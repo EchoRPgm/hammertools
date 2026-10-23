@@ -39,6 +39,20 @@ def test_candidates_skip_big_and_water(room):
     assert len(c) == 4                                   # o piso grande e a água ficam como detail
 
 
+def test_candidates_skip_hidden(room):
+    # Ctrl+H do Hammer: o vbsp não compila o que está em bloco hidden; o auto-prop também não pode virar prop disso
+    # (rp_surdonoso: as fontes do Propper que o autor escondeu viravam uma escada de prop na rua)
+    _room_with_details(room, n=3)
+    escondida = room.make_prism(Vec(0, 300, 0), Vec(32, 332, 16), "dev/a").solid
+    room.add_ent(Entity(room, {"classname": "func_detail"}, solids=[escondida], hidden=True))
+    brush_escondido = room.make_prism(Vec(64, 300, 0), Vec(96, 332, 16), "dev/a").solid
+    brush_escondido.hidden = True
+    room.add_ent(Entity(room, {"classname": "func_detail"}, solids=[brush_escondido]))
+    c = autoprop.candidates(room, autoprop.Materials(FakeRes()))
+    assert len(c) == 3
+    assert all(not e.hidden and not s.hidden for e, s in c)
+
+
 def test_choose_meets_both_goals(room):
     _room_with_details(room)
     cands = autoprop.candidates(room, autoprop.Materials(FakeRes()))

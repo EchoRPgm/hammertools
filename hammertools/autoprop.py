@@ -219,14 +219,26 @@ class Cluster:
     verts: int = 0
 
 
+DECAL_REACH = 16.0   # infodecal a até isso de um bloco cai nele (o vbsp projeta na face mais perto; prop não recebe)
+
+
 def candidates(v: VMF, mats: Materials) -> list[tuple[Entity, Solid]]:
+    # bloco com overlay ou decal não vira prop: o overlay aponta para as faces dele (sides) e some sem elas, e o
+    # infodecal não pinta prop (rp_surdonoso: o logo do banco e outros 20 overlays sumiam)
+    overlay_sides = {int(x) for e in v.by_class["info_overlay"] for x in (e["sides"] or "").split() if x.lstrip("-").isdigit()}
+    decals = [Vec.from_str(e["origin"]) for e in v.by_class["infodecal"]]
     out = []
     for e in v.by_class["func_detail"]:
         if e.hidden:        # Ctrl+H do Hammer: o vbsp não compila bloco hidden, então não vira prop
             continue
         for s in e.solids:
-            if s.hidden or any(sd.is_disp for sd in s.sides):
+            if s.hidden or any(sd.is_disp for sd in s.sides) or any(sd.id in overlay_sides for sd in s.sides):
                 continue
+            if decals:
+                lo, hi = s.get_bbox()
+                r = DECAL_REACH
+                if any(lo.x - r <= d.x <= hi.x + r and lo.y - r <= d.y <= hi.y + r and lo.z - r <= d.z <= hi.z + r for d in decals):
+                    continue
             polys = geom.face_polys(s)
             vis = [(sd, p) for sd, p in polys if len(p) >= 3 and not sd.mat.lower().startswith("tools/")]
             if not vis:

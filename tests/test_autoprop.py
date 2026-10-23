@@ -53,6 +53,20 @@ def test_candidates_skip_hidden(room):
     assert all(not e.hidden and not s.hidden for e, s in c)
 
 
+def test_candidates_skip_overlay_and_decal_targets(room):
+    # rp_surdonoso: o painel func_detail com o logo do banco (info_overlay) virava prop e o overlay ficava sem face
+    _room_with_details(room, n=3)
+    painel = room.make_prism(Vec(0, 300, 0), Vec(32, 332, 16), "dev/a").solid
+    room.add_ent(Entity(room, {"classname": "func_detail"}, solids=[painel]))
+    room.create_ent("info_overlay", material="logo", origin="16 300 8", sides=str(painel.sides[0].id))
+    pichado = room.make_prism(Vec(64, 300, 0), Vec(96, 332, 16), "dev/a").solid
+    room.add_ent(Entity(room, {"classname": "func_detail"}, solids=[pichado]))
+    room.create_ent("infodecal", texture="decals/x", origin="80 299 8")
+    c = autoprop.candidates(room, autoprop.Materials(FakeRes()))
+    assert len(c) == 3
+    assert painel.id not in {s.id for _, s in c} and pichado.id not in {s.id for _, s in c}
+
+
 def test_choose_meets_both_goals(room):
     _room_with_details(room)
     cands = autoprop.candidates(room, autoprop.Materials(FakeRes()))

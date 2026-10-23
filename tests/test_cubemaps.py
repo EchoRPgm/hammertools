@@ -83,3 +83,17 @@ def test_emenda_sem_mudar_de_coberto_para_aberto_nao_ganha_transicao(monkeypatch
     origins = [Vec(250, 0, -316), Vec(1750, 0, -316)]
     assign = {0: 0, 1: 1}
     assert cubemaps.transitions(None, faces, origins, assign, {0: [0, 1]}) == 0 and len(origins) == 2
+
+
+def test_reflexo_por_regiao_pega_so_faces_da_caixa_com_o_material():
+    from srctools import Vec
+    from hammertools.cubemaps import RFace, reflexo_of, _insert_keys
+    def face(base, x):
+        c = Vec(x, -6287, 100)
+        return RFace(face=None, center=c, normal=Vec(0, -1, 0), area=1.0, base=base, water=False, index=0, lo=c, hi=c)
+    faces = [face("af_omega/clock_glass", 3500), face("agency/concrete/concretewall01", 3500), face("af_omega/clock_glass", 5000)]
+    refl = [{"nome": "banco", "mins": [2990, -6300, -120], "maxs": [3960, -6270, 720],
+             "materiais": ["AF_OMEGA/CLOCK_GLASS"], "brilho": 2, "contraste": 1, "resolucao": 256}]
+    assert reflexo_of(faces, refl) == {0: 0}
+    assert _insert_keys(refl[0]) == {"$envmaptint": "[2 2 2]", "$envmapcontrast": "1"}
+    assert _insert_keys({"brilho": [1.5, 1.6, 2]}) == {"$envmaptint": "[1.5 1.6 2]"}

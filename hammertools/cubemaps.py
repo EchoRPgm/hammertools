@@ -414,7 +414,36 @@ MAX_TEXINFO = 12288
 MAX_TEXDATA = 2048
 
 
-def apply(path, p: Plan, hdr: bool = True) -> dict:
+def reflexo_of(faces, reflexos) -> dict[int, int]:
+    """Face (índice em faces) -> índice do reflexo (`reflexos` do <mapa>.regioes.json) que a pega: centro da face
+    dentro da caixa e material na lista (sem lista, qualquer um). O primeiro da lista vence."""
+    out: dict[int, int] = {}
+    for k, r in enumerate(reflexos or []):
+        mn, mx = Vec(*r["mins"]), Vec(*r["maxs"])
+        mats = {m.lower() for m in r.get("materiais") or []}
+        for fi, f in enumerate(faces):
+            c = f.center
+            if fi in out or (mats and f.base.lower() not in mats):
+                continue
+            if mn.x <= c.x <= mx.x and mn.y <= c.y <= mx.y and mn.z <= c.z <= mx.z:
+                out[fi] = k
+    return out
+
+
+def _insert_keys(r: dict) -> dict[str, str]:
+    """Parâmetros que o reflexo acrescenta ao material (bloco "insert" do patch: cria ou troca)."""
+    out = {}
+    if (b := r.get("brilho")) is not None:
+        v = b if isinstance(b, list) else [b, b, b]
+        out["$envmaptint"] = "[" + " ".join(f"{float(x):g}" for x in v) + "]"
+    if (c := r.get("contraste")) is not None:
+        out["$envmapcontrast"] = f"{float(c):g}"
+    if (c := r.get("saturacao")) is not None:
+        out["$envmapsaturation"] = f"{float(c):g}"
+    return out
+
+
+def apply(path, p: Plan, hdr: bool = True, reflexos: list | None = None) -> dict:
     """Grava o plano no BSP em `path` mexendo só nos bytes dos lumps (o srctools, ao regravar faces/texinfo, perde
     o LEAFWATERDATA e cria OVERLAY_SYSTEM_LEVELS). Os slots de texdata dos patches velhos viram os patches novos (o que
     sobrar volta ao material original) e cada texinfo velho fica com o 1º material novo das faces dele (lados de brush
@@ -444,9 +473,20 @@ def apply(path, p: Plan, hdr: bool = True) -> dict:
         if name_of(td).lower() in p.include:
             old_slots.append(td)
     # material novo de cada face, pela ordem do lump
+    # reflexo por região: material próprio (sufixo _r<k> antes da posição) com os parâmetros do reflexo, e o cubemap
+    # dele com a resolução pedida (vidro espelhado com 32 px vira borrão)
+    refl = reflexo_of(p.faces, reflexos)
+    side_of: dict[int, int] = {}
     mats = {}
     for fi, f in enumerate(p.faces):
-        mats[f.index] = (f.base.lower(), f"{folder}/{f.base.lower()}_{key(p.origins[p.assign[fi]])}")
+        tag = ""
+        if fi in refl:
+            tag = f"_r{refl[fi]}"
+            res = int((reflexos[refl[fi]].get("resolucao") or 0))
+            if res:
+                side_of[p.assign[fi]] = max(side_of.get(p.assign[fi], SIDE), 1 << max(0, res - 1).bit_length())
+        mats[f.index] = (f.base.lower(), f"{folder}/{f.base.lower()}{tag}_{key(p.origins[p.assign[fi]])}")
+    extra_keys = {f"_r{k}": _insert_keys(r) for k, r in enumerate(reflexos or [])}
     new_names = sorted({m for _b, m in mats.values()})
     base_of = {m: b for b, m in mats.values()}
     # dimensões/refletividade: as do patch velho do mesmo material
@@ -501,7 +541,9 @@ def apply(path, p: Plan, hdr: bool = True) -> dict:
         if 0 <= o and (o + 1) * FACE_SIZE <= len(orig_raw):
             struct.pack_into("<h", orig_raw, o * FACE_SIZE + 10, ti)
 
-    cubes = b"".join(struct.pack("<3ii", round(o.x), round(o.y), round(o.z), 0) for o in p.origins)
+    # tamanho no lump: 0 = padrão (32); senão o lado é 1 << (tamanho - 1), como o buildcubemaps lê
+    cubes = b"".join(struct.pack("<3ii", round(o.x), round(o.y), round(o.z), side_of[i].bit_length() if i in side_of else 0)
+                     for i, o in enumerate(p.origins))
 
     old = zipfile.ZipFile(io.BytesIO(bytes(bsp.lumps[L.PAKFILE].data)))
     buf = io.BytesIO()
@@ -516,13 +558,17 @@ def apply(path, p: Plan, hdr: bool = True) -> dict:
         z.writestr(info, old.read(info.filename), zipfile.ZIP_STORED)
     for m in new_names:
         ci_key = m.rsplit("_", 3)
+        tag = re.search(r"(_r\d+)$", ci_key[0])
+        ins = extra_keys.get(tag.group(1), {}) if tag else {}
+        insert = ("\t\"insert\"\r\n\t{\r\n" + "".join(f'\t\t"{k}"\t\t"{v}"\r\n' for k, v in ins.items()) + "\t}\r\n") if ins else ""
         z.writestr(f"materials/{m}.vmt",
                    f'"patch"\r\n{{\r\n\t"include"\t\t"materials/{base_of[m]}.vmt"\r\n\t"replace"\r\n\t{{\r\n'
-                   f'\t\t"$envmap"\t\t"{folder}/c{ci_key[1]}_{ci_key[2]}_{ci_key[3]}"\r\n\t}}\r\n}}\r\n')
-    for o in p.origins:
-        z.writestr(f"materials/{folder}/c{key(o)}.vtf", placeholder_vtf(SIDE, False))
+                   f'\t\t"$envmap"\t\t"{folder}/c{ci_key[1]}_{ci_key[2]}_{ci_key[3]}"\r\n\t}}\r\n{insert}}}\r\n')
+    for i, o in enumerate(p.origins):
+        side = side_of.get(i, SIDE)
+        z.writestr(f"materials/{folder}/c{key(o)}.vtf", placeholder_vtf(side, False))
         if hdr:
-            z.writestr(f"materials/{folder}/c{key(o)}.hdr.vtf", placeholder_vtf(SIDE, True))
+            z.writestr(f"materials/{folder}/c{key(o)}.hdr.vtf", placeholder_vtf(side, True))
     z.close()
 
     for lump, data in ((L.FACES, faces_raw), (L.TEXINFO, texinfo), (L.TEXDATA, texdata),
@@ -535,8 +581,9 @@ def apply(path, p: Plan, hdr: bool = True) -> dict:
     return {"cubemaps": len(p.origins), "patches": len(new_names), "texinfo_novos": len(extra), "removidos": dropped}
 
 
-def run(path, radius: float = RADIUS, log=print) -> Plan | None:
-    """Planeja e grava no BSP em `path` (o ht compile chama depois do vbsp)."""
+def run(path, radius: float = RADIUS, log=print, reflexos: list | None = None) -> Plan | None:
+    """Planeja e grava no BSP em `path` (o ht compile chama depois do vbsp). `reflexos`: a lista do
+    <mapa>.regioes.json (caixa, materiais, brilho, contraste, saturacao, resolucao)."""
     from srctools.bsp import BSP_LUMPS
     bsp = BSP(str(path))
     p = plan(bsp, radius)
@@ -545,7 +592,11 @@ def run(path, radius: float = RADIUS, log=print) -> Plan | None:
         return None
     hdr = bool(bsp.lumps[BSP_LUMPS.LIGHTING_HDR].data) if BSP_LUMPS.LIGHTING_HDR in bsp.lumps else True
     del bsp
-    r = apply(path, p, hdr=hdr)
+    r = apply(path, p, hdr=hdr, reflexos=reflexos)
+    if reflexos:
+        hit = reflexo_of(p.faces, reflexos)
+        for k, rf in enumerate(reflexos):
+            log(f"cubemaps: reflexo '{rf.get('nome', k)}': {sum(1 for v in hit.values() if v == k)} faces")
     log(f"cubemaps: {r['cubemaps']} (raio {radius:g}u; {p.kept} do autor mantidos, {p.water} sobre a água; {p.surfaces} superfícies, {p.transitions} de transição), {r['patches']} materiais "
         f"corrigidos; área com cubemap atrás de parede {100 * p.blocked_before:.1f}% -> {100 * p.blocked_after:.1f}%")
     return p

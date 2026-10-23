@@ -134,7 +134,8 @@ def run(vmf: Path, game: Path, vis: str = "full", rad: str = "normal", ht_flags:
     if luz == "pathtracing" and cubemaps == "auto" and rad != "off" and find_echohammer() is not None:
         from hammertools import cubemaps as cubemaps_mod
         try:
-            cubemaps_mod.run(bsp, log=say)
+            from hammertools import regioes as regioes_mod
+            cubemaps_mod.run(bsp, log=say, reflexos=(regioes_mod.load(vmf) or {}).get("reflexos"))
         except Exception as e:  # noqa: BLE001  plano de cubemaps nunca derruba a compilação
             say(f"cubemaps: plano falhou ({e}); ficam os do vbsp")
     target = wine_safe_dir(vmf.parent) / vmf.stem

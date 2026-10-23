@@ -64,6 +64,7 @@ class Plan:
     include: dict[str, str] = field(default_factory=dict)   # patch velho -> material original
     kept: int = 0
     water: int = 0                         # cubemaps acima da água
+    transitions: int = 0                   # cubemaps de transição em emendas de superfície (entrada de túnel)
     surfaces: int = 0                      # superfícies contínuas (cada uma com um cubemap só)                          # cubemaps do autor mantidos
     blocked_before: float = 0.0            # fração da área com cubemap atrás de parede (antes)
     blocked_after: float = 0.0
@@ -260,8 +261,27 @@ def plan(bsp: BSP, radius: float = RADIUS) -> Plan | None:
     for fi in range(len(faces)):
         groups[find(fi)].append(fi)
 
-    # por superfície: o cubemap que a maior área dela enxerga fica com todas as faces que o enxergam; o resto (outra
-    # sala no mesmo plano, atrás de parede) escolhe de novo entre os que ele enxerga
+    assign, after, groups_n = assign_surfaces(faces, sees_face, origins, groups)
+    n_trans = transitions(bsp, faces, origins, assign, groups)
+    return Plan(mapname, origins, assign, faces, include, kept=sum(1 for ci in chosen if ci < n_author), water=len(water_idx), surfaces=groups_n,
+                blocked_before=before / total, blocked_after=after / total, transitions=n_trans)
+
+
+SHARE_FACTOR = 2.0        # a face só adota o cubemap da superfície se ele estiver a até 2x a distância do visível mais
+SHARE_SLACK = 256.0       # perto dela + 256 (estrada que entra num túnel: o de fora, a 4.000 u, não reflete no túnel)
+
+
+def assign_surfaces(faces, sees_face, origins, groups):
+    """Cubemap de cada face. Por superfície contínua: o cubemap que a maior área dela enxerga fica com todas as faces
+    que o enxergam E estão perto o bastante dele (SHARE_*); o resto (outra sala no mesmo plano, atrás de parede, ou
+    longe dele, como o trecho dentro do túnel) escolhe de novo. Devolve (assign, área sem cubemap visível, superfícies)."""
+    share = []
+    for f, (vis, _) in zip(faces, sees_face):
+        if not vis:
+            share.append(set()); continue
+        dmin = min((origins[ci] - f.center).mag() for ci in vis)
+        lim = SHARE_FACTOR * dmin + SHARE_SLACK
+        share.append({ci for ci in vis if (origins[ci] - f.center).mag() <= lim})
     assign, after = {}, 0.0
     groups_n = 0
     for members in groups.values():
@@ -272,7 +292,7 @@ def plan(bsp: BSP, radius: float = RADIUS) -> Plan | None:
             c = sum((faces[i].center * faces[i].area for i in left), Vec()) / area
             score: dict = defaultdict(float)
             for i in left:
-                for ci in sees_face[i][0]:
+                for ci in share[i]:
                     score[ci] += faces[i].area
             if not score:
                 for i in left:
@@ -283,13 +303,77 @@ def plan(bsp: BSP, radius: float = RADIUS) -> Plan | None:
             pick = max(score, key=lambda ci: (score[ci], -(origins[ci] - c).mag()))
             rest = []
             for i in left:
-                if pick in sees_face[i][0]:
+                if pick in share[i]:
                     assign[i] = pick
                 else:
                     rest.append(i)
             left = rest
-    return Plan(mapname, origins, assign, faces, include, kept=sum(1 for ci in chosen if ci < n_author), water=len(water_idx), surfaces=groups_n,
-                blocked_before=before / total, blocked_after=after / total)
+    return assign, after, groups_n
+
+
+TRANS_ROOF = 512.0        # cubemap com teto a até isso acima está coberto (túnel, garagem); sem, está a céu aberto
+TRANS_CELL = 512.0        # um de transição por célula de emenda (estrada larga: vários pontos da mesma boca)
+
+
+def _covered(bsp: BSP, p: Vec) -> bool:
+    return blocked(bsp, p, p + Vec(0, 0, TRANS_ROOF))
+
+
+def transitions(bsp: BSP, faces, origins, assign, groups) -> int:
+    """Cubemap de transição onde a mesma superfície troca de um cubemap a céu aberto para um coberto (estrada que sai
+    do sol e entra no túnel): um cubemap novo na emenda, à altura de olho, que as faces dos dois lados passam a usar.
+    O reflexo vai de fora -> transição -> dentro em vez de saltar do claro para o escuro numa linha. Muda `origins` e
+    `assign`; devolve quantos criou."""
+    seams: dict = defaultdict(list)          # célula da emenda -> [(ponto da emenda, face a, face b, normal)]
+    cover: dict[int, bool] = {}
+    g = SURF_GAP
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        for a_i, a in enumerate(members):
+            fa = faces[a]
+            if fa.water or a not in assign:
+                continue
+            for b in members[a_i + 1:]:
+                fb = faces[b]
+                if b not in assign or assign[a] == assign[b]:
+                    continue
+                if not all(fa.lo[k] - g <= fb.hi[k] and fb.lo[k] - g <= fa.hi[k] for k in range(3)):
+                    continue
+                for ci in (assign[a], assign[b]):
+                    if ci not in cover:
+                        cover[ci] = _covered(bsp, origins[ci])
+                if cover[assign[a]] == cover[assign[b]]:
+                    continue
+                lo = Vec(*(max(fa.lo[k], fb.lo[k]) for k in range(3)))
+                hi = Vec(*(min(fa.hi[k], fb.hi[k]) for k in range(3)))
+                m = (lo + hi) / 2
+                cell = (int(m.x // TRANS_CELL), int(m.y // TRANS_CELL), int(m.z // TRANS_CELL))
+                seams[cell].append((m, a, b, fa.normal))
+    made = 0
+    moved: set[int] = set()                  # cada face muda uma vez só (face entre duas emendas fica com a primeira)
+    for pts in seams.values():
+        m = sum((p for p, *_ in pts), Vec()) / len(pts)
+        n = pts[0][3]
+        q = None
+        for h in (EYE, EYE / 2, 16.0):
+            c = Vec(round(m.x + n.x * h), round(m.y + n.y * h), round(m.z + n.z * h))
+            if not _solid(_leaf(bsp, c)):
+                q = c
+                break
+        if q is None:
+            continue
+        side = {i for _, a, b, _ in pts for i in (a, b)} - moved
+        ok = [i for i in side if not blocked(bsp, faces[i].center + faces[i].normal * 2, q)]
+        if not ok:
+            continue
+        ci = len(origins)
+        origins.append(q)
+        for i in ok:
+            assign[i] = ci
+        moved.update(ok)
+        made += 1
+    return made
 
 
 # ---------------------------------------------------------------- VTF provisório
@@ -462,6 +546,6 @@ def run(path, radius: float = RADIUS, log=print) -> Plan | None:
     hdr = bool(bsp.lumps[BSP_LUMPS.LIGHTING_HDR].data) if BSP_LUMPS.LIGHTING_HDR in bsp.lumps else True
     del bsp
     r = apply(path, p, hdr=hdr)
-    log(f"cubemaps: {r['cubemaps']} (raio {radius:g}u; {p.kept} do autor mantidos, {p.water} sobre a água; {p.surfaces} superfícies), {r['patches']} materiais "
+    log(f"cubemaps: {r['cubemaps']} (raio {radius:g}u; {p.kept} do autor mantidos, {p.water} sobre a água; {p.surfaces} superfícies, {p.transitions} de transição), {r['patches']} materiais "
         f"corrigidos; área com cubemap atrás de parede {100 * p.blocked_before:.1f}% -> {100 * p.blocked_after:.1f}%")
     return p
